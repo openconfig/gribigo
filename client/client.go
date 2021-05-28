@@ -63,9 +63,12 @@ type ClientOpt interface {
 func New(opts ...ClientOpt) (*Client, error) {
 	c := &Client{
 		qs: &clientQs{
-			sendq:    []*spb.ModifyRequest{},
-			pendq:    map[int]bool{},
-			modifyCh: make(chan *spb.ModifyRequest),
+			sendq: []*spb.ModifyRequest{},
+			pendq: map[int]bool{},
+			// Channels are blocking by default, but we want some ability to have
+			// a backlog on the sender side, we'll panic if this buffer is completely
+			// full, so we may need to handle congestion management in the future.
+			modifyCh: make(chan *spb.ModifyRequest, 1000),
 			resultq:  []*spb.ModifyResponse{},
 		},
 	}
@@ -185,7 +188,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	go func() {
 		for {
-			if c.run == false {
+			if !c.run {
 				log.V(2).Infof("shutting down recv goroutine")
 				return
 			}
@@ -206,7 +209,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	go func() {
 		for {
-			if c.run == false {
+			if !c.run {
 				log.V(2).Infof("shutting down send goroutine")
 				return
 			}
@@ -263,15 +266,27 @@ type clientQs struct {
 
 // Q enqueues a ModifyRequest to be sent to the target.
 func (c *Client) Q(m *spb.ModifyRequest) {
-	c.qs.sendMu.Lock()
-	defer c.qs.sendMu.Unlock()
-	c.qs.sendq = append(c.qs.sendq, m)
+	if !c.qs.sending {
+		c.qs.sendMu.Lock()
+		defer c.qs.sendMu.Unlock()
+		c.qs.sendq = append(c.qs.sendq, m)
+		return
+	}
+	c.qs.modifyCh <- m
 }
 
 // StartSending toggles the client to begin sending messages that are in the send
 // queue (enqued by Q) to the connection established by Connect.
 func (c *Client) StartSending() {
 	c.qs.sending = true
+
+	// take the initial set of messages that were enqueued and queue them.
+	c.qs.sendMu.Lock()
+	defer c.qs.sendMu.Unlock()
+	for _, m := range c.qs.sendq {
+		c.qs.modifyCh <- m
+	}
+	c.qs.sendq = []*spb.ModifyRequest{}
 }
 
 // Pending returns the set of AFTOperations that are pending response from the

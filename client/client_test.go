@@ -66,9 +66,10 @@ func TestHandleParams(t *testing.T) {
 
 func TestQ(t *testing.T) {
 	tests := []struct {
-		desc   string
-		inReqs []*spb.ModifyRequest
-		wantQ  []*spb.ModifyRequest
+		desc      string
+		inReqs    []*spb.ModifyRequest
+		inSending bool
+		wantQ     []*spb.ModifyRequest
 	}{{
 		desc: "single enqueued input",
 		inReqs: []*spb.ModifyRequest{{
@@ -83,6 +84,40 @@ func TestQ(t *testing.T) {
 				High: 1,
 			},
 		}},
+	}, {
+		desc: "multiple enqueued input",
+		inReqs: []*spb.ModifyRequest{{
+			ElectionId: &spb.Uint128{
+				Low:  1,
+				High: 1,
+			},
+		}, {
+			ElectionId: &spb.Uint128{
+				Low:  2,
+				High: 2,
+			},
+		}},
+		wantQ: []*spb.ModifyRequest{{
+			ElectionId: &spb.Uint128{
+				Low:  1,
+				High: 1,
+			},
+		}, {
+			ElectionId: &spb.Uint128{
+				Low:  2,
+				High: 2,
+			},
+		}},
+	}, {
+		desc: "enqueue whilst sending",
+		inReqs: []*spb.ModifyRequest{{
+			ElectionId: &spb.Uint128{
+				Low:  1,
+				High: 1,
+			},
+		}},
+		inSending: true,
+		wantQ:     []*spb.ModifyRequest{},
 	}}
 
 	for _, tt := range tests {
@@ -91,6 +126,7 @@ func TestQ(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot create client, %v", err)
 			}
+			c.qs.sending = tt.inSending
 			for _, r := range tt.inReqs {
 				c.Q(r)
 			}

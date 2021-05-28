@@ -52,8 +52,7 @@ type clientParams struct {
 	persist bool
 }
 
-// New creates a new gRIBI server.
-func New() *Server {
+func NewServer() *Server {
 	return &Server{
 		cs: map[string]*clientState{},
 	}

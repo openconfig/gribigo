@@ -63,3 +63,40 @@ func TestHandleParams(t *testing.T) {
 		})
 	}
 }
+
+func TestQ(t *testing.T) {
+	tests := []struct {
+		desc   string
+		inReqs []*spb.ModifyRequest
+		wantQ  []*spb.ModifyRequest
+	}{{
+		desc: "single enqueued input",
+		inReqs: []*spb.ModifyRequest{{
+			ElectionId: &spb.Uint128{
+				Low:  1,
+				High: 1,
+			},
+		}},
+		wantQ: []*spb.ModifyRequest{{
+			ElectionId: &spb.Uint128{
+				Low:  1,
+				High: 1,
+			},
+		}},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			c, err := New()
+			if err != nil {
+				t.Fatalf("cannot create client, %v", err)
+			}
+			for _, r := range tt.inReqs {
+				c.Q(r)
+			}
+			if diff := cmp.Diff(c.qs.sendq, tt.wantQ, protocmp.Transform()); diff != "" {
+				t.Fatalf("did not get expected send queue, %s", diff)
+			}
+		})
+	}
+}

@@ -1,4 +1,4 @@
-# gRIBIc
+# gRIBIgo
 
 This repository contains a [gRIBI](https://github.com/openconfig/gribi)
 client, written in Go, which can be executed against a gRIBI server to

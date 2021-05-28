@@ -42,7 +42,7 @@ func TestNewClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			s := New()
+			s := NewServer()
 			for i, c := range tt.inIDs {
 				wantErr := tt.wantClientErrCode[i]
 				gotErr := s.newClient(c)

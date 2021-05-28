@@ -4,7 +4,6 @@ package fluent
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 
@@ -115,12 +114,12 @@ func (g *gRIBIClient) Start(ctx context.Context) error {
 	return nil
 }
 
-// gRIBIModify stores the state and parameters that are related to the Modify
-// RPC.
-type gRIBIModify struct{}
-
 // StartSending specifies that the Modify stream to the target should be made, and
 // the client should start to send any queued messages to the target.
-func (g *gRIBIModify) StartSending() error {
-	return errors.New("unimplemented")
+func (g *gRIBIClient) StartSending(ctx context.Context) error {
+	if err := g.c.Connect(ctx); err != nil {
+		return fmt.Errorf("cannot connect Modify request, %v", err)
+	}
+	g.c.StartSending()
+	return nil
 }

@@ -62,6 +62,7 @@ type ClientOpt interface {
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...ClientOpt) (*Client, error) {
 	c := &Client{
+		run: true,
 		qs: &clientQs{
 			sendq: []*spb.ModifyRequest{},
 			pendq: map[int]bool{},
@@ -269,9 +270,11 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 	if !c.qs.sending {
 		c.qs.sendMu.Lock()
 		defer c.qs.sendMu.Unlock()
+		log.V(2).Infof("appended %s to sending queue", m)
 		c.qs.sendq = append(c.qs.sendq, m)
 		return
 	}
+	log.V(2).Infof("sending %s directly to queue", m)
 	c.qs.modifyCh <- m
 }
 
@@ -284,6 +287,7 @@ func (c *Client) StartSending() {
 	c.qs.sendMu.Lock()
 	defer c.qs.sendMu.Unlock()
 	for _, m := range c.qs.sendq {
+		log.V(2).Infof("sending %s to modify channel", m)
 		c.qs.modifyCh <- m
 	}
 	c.qs.sendq = []*spb.ModifyRequest{}

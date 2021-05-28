@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 
+	log "github.com/golang/glog"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -74,8 +75,8 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		if err != nil {
 			return status.Errorf(codes.Unknown, "error reading message from client, %v", err)
 		}
+		log.V(2).Infof("received message %s on Modify channel", in)
 		// TODO(robjs): implement message handling
-		_ = in
 	}
 }
 

@@ -58,7 +58,7 @@ func TestGRIBIClient(t *testing.T) {
 		},
 	}, {
 		desc: "simple connection to invalid server",
-		inFn: func(addr string) error {
+		inFn: func(_ string) error {
 			c := NewClient().WithTarget("some.failing.dns.name:noport")
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
@@ -68,6 +68,31 @@ func TestGRIBIClient(t *testing.T) {
 			return nil
 		},
 		wantErrSubstring: "cannot dial target",
+	}, {
+		desc: "simple connection and modify RPC",
+		inFn: func(addr string) error {
+			c := NewClient().WithTarget(addr)
+			if err := c.Start(context.Background()); err != nil {
+				return fmt.Errorf("Start(_) error: %v", err)
+			}
+			c.StartSending(context.Background())
+			// TODO(robjs): add a check against the actual return value
+			// for this test, rather than just there being no errors returned.
+			time.Sleep(2 * time.Second)
+			return nil
+		},
+	}, {
+		desc: "connection with an election ID",
+		inFn: func(addr string) error {
+			c := NewClient().WithTarget(addr).WithInitialElectionID(0, 1).WithRedundancyMode(ElectedPrimaryClient)
+			if err := c.Start(context.Background()); err != nil {
+				return fmt.Errorf("Start(_) error: %v", err)
+			}
+			c.StartSending(context.Background())
+			// TODO(robjs): also check that we get the right return message.
+			time.Sleep(2 * time.Second)
+			return nil
+		},
 	}}
 
 	for _, tt := range tests {

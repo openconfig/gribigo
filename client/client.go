@@ -61,22 +61,23 @@ type ClientOpt interface {
 // provided control parameters that live for the lifetime of the client, such as those
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...ClientOpt) (*Client, error) {
-	c := &Client{
-		qs: &clientQs{
-			sendq: []*spb.ModifyRequest{},
-			pendq: map[int]bool{},
-			// Channels are blocking by default, but we want some ability to have
-			// a backlog on the sender side, we'll panic if this buffer is completely
-			// full, so we may need to handle congestion management in the future.
-			modifyCh: make(chan *spb.ModifyRequest, 1000),
-			resultq:  []*spb.ModifyResponse{},
-		},
-	}
+	c := &Client{}
+
 	s, err := handleParams(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create client, error with parameters, %v", err)
 	}
 	c.state = s
+
+	c.Qs = &clientQs{
+		sendq: []*spb.ModifyRequest{},
+		pendq: map[int]bool{},
+		// Channels are blocking by default, but we want some ability to have
+		// a backlog on the sender side, we'll panic if this buffer is completely
+		// full, so we may need to handle congestion management in the future.
+		modifyCh: make(chan *spb.ModifyRequest, 1000),
+		resultq:  []*spb.ModifyResponse{},
+	}
 
 	return c, nil
 }

@@ -23,13 +23,13 @@ func TestNewClient(t *testing.T) {
 		desc:  "successfully create single client",
 		inIDs: []string{"c1"},
 		wantClients: map[string]*clientState{
-			"c1": {},
+			"c1": {params: &clientParams{}},
 		},
 	}, {
 		desc:  "fail to create duplicate client",
 		inIDs: []string{"c1", "c1"},
 		wantClients: map[string]*clientState{
-			"c1": {},
+			"c1": {params: &clientParams{}},
 		},
 		wantClientErrCode: map[int]codes.Code{
 			1: codes.Internal,
@@ -38,8 +38,8 @@ func TestNewClient(t *testing.T) {
 		desc:  "create multiple clients",
 		inIDs: []string{"c1", "c2"},
 		wantClients: map[string]*clientState{
-			"c1": {},
-			"c2": {},
+			"c1": {params: &clientParams{}},
+			"c2": {params: &clientParams{}},
 		},
 	}}
 

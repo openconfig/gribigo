@@ -195,6 +195,8 @@ func (s *Server) checkParams(p *spb.SessionParameters, gotMsg bool) (*spb.Modify
 func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyResponse, error) {
 	// TODO(robjs): check that the client is one that we actually need to do elections for.
 	// TODO(robjs): add election process.
+	s.elecMu.RLock()
+	defer s.elecMu.RUnlock()
 	return &spb.ModifyResponse{
 		ElectionId: s.curElecID,
 	}, nil

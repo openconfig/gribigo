@@ -4,9 +4,8 @@ package fluent
 
 import (
 	"context"
-	"errors"
 	"flag"
-	"fmt"
+	"testing"
 
 	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/client"
@@ -82,11 +81,13 @@ func (g *gRIBIClient) WithInitialElectionID(low, high uint64) *gRIBIClient {
 // Start connects the gRIBI client to the target using the specified context as
 // the connection parameters. The dial to the target is blocking, so Start() will
 // not return until a connection is successfully made. Any error in parsing the
-// specified arguments required for connections will be returned to the caller.
-func (g *gRIBIClient) Start(ctx context.Context) error {
+// specified arguments required for connections is raised using the supplied
+// testing.TB.
+func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
 	flag.Parse()
+	t.Helper()
 	if g.targetAddr == "" {
-		return fmt.Errorf("cannot dial without specifying target address")
+		t.Fatalf("cannot dial without specifying target address")
 	}
 
 	opts := []client.ClientOpt{}
@@ -95,32 +96,31 @@ func (g *gRIBIClient) Start(ctx context.Context) error {
 		opts = append(opts, client.AllPrimaryClients())
 	case ElectedPrimaryClient:
 		if g.electionID == nil {
-			return fmt.Errorf("client must specify Election ID in elected primary mode")
+			t.Fatalf("client must specify Election ID in elected primary mode")
 		}
 		opts = append(opts, client.ElectedPrimaryClient(g.electionID))
 	}
 
-	log.V(2).Infof("setting client parameters to %v", opts)
+	log.V(2).Infof("setting client parameters to %q", opts)
 	c, err := client.New(opts...)
 	if err != nil {
-		return fmt.Errorf("cannot create new client, %v", err)
+		t.Fatalf("cannot create new client, %v", err)
 	}
 	g.c = c
 
 	log.V(2).Infof("dialing %s", g.targetAddr)
 	if err := c.Dial(ctx, g.targetAddr); err != nil {
-		return fmt.Errorf("cannot dial target, %v", err)
+		t.Fatalf("cannot dial target, %v", err)
 	}
-
-	return nil
 }
 
-// gRIBIModify stores the state and parameters that are related to the Modify
-// RPC.
-type gRIBIModify struct{}
-
 // StartSending specifies that the Modify stream to the target should be made, and
-// the client should start to send any queued messages to the target.
-func (g *gRIBIModify) StartSending() error {
-	return errors.New("unimplemented")
+// the client should start to send any queued messages to the target. Any error
+// encountered is reported using the supplied testing.TB.
+func (g *gRIBIClient) StartSending(ctx context.Context, t testing.TB) {
+	t.Helper()
+	if err := g.c.Connect(ctx); err != nil {
+		t.Fatalf("cannot connect Modify request, %v", err)
+	}
+	g.c.StartSending()
 }

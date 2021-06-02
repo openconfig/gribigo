@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"sync"
 
 	log "github.com/golang/glog"
@@ -27,9 +28,9 @@ type Client struct {
 	// client.
 	qs *clientQs
 
-	// run indicates that RPCs should continue to run, when set
-	// to false, all goroutines that are serving RPCs shut down.
-	run bool
+	// shut indicates that RPCs should continue to run, when set
+	// to true, all goroutines that are serving RPCs shut down.
+	shut bool
 	// sErr stores sending errors that cause termination of the sending
 	// GoRoutine.
 	sErr error
@@ -69,7 +70,7 @@ func New(opts ...ClientOpt) (*Client, error) {
 	}
 	c.state = s
 
-	c.Qs = &clientQs{
+	c.qs = &clientQs{
 		sendq: []*spb.ModifyRequest{},
 		pendq: map[int]bool{},
 		// Channels are blocking by default, but we want some ability to have
@@ -189,14 +190,14 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	go func() {
 		for {
-			if !c.run {
+			if c.shut {
 				log.V(2).Infof("shutting down recv goroutine")
 				return
 			}
 			in, err := stream.Recv()
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
-				c.run = false
+				c.shut = true
 				return
 			}
 			if err != nil {
@@ -210,15 +211,18 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	go func() {
 		for {
-			if !c.run {
+			if c.shut {
 				log.V(2).Infof("shutting down send goroutine")
 				return
 			}
 			// read from the channel
 			m := <-c.qs.modifyCh
 			if err := stream.Send(m); err != nil {
-				log.V(2).Infof("sent Modify message %s", m)
+				log.Errorf("got error sending message, %v", err)
+				c.sErr = err
+				return
 			}
+			log.V(2).Infof("sent Modify message %s", m)
 		}
 	}()
 
@@ -270,9 +274,11 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 	if !c.qs.sending {
 		c.qs.sendMu.Lock()
 		defer c.qs.sendMu.Unlock()
+		log.V(2).Infof("appended %s to sending queue", m)
 		c.qs.sendq = append(c.qs.sendq, m)
 		return
 	}
+	log.V(2).Infof("sending %s directly to queue", m)
 	c.qs.modifyCh <- m
 }
 
@@ -285,6 +291,7 @@ func (c *Client) StartSending() {
 	c.qs.sendMu.Lock()
 	defer c.qs.sendMu.Unlock()
 	for _, m := range c.qs.sendq {
+		log.V(2).Infof("sending %s to modify channel", m)
 		c.qs.modifyCh <- m
 	}
 	c.qs.sendq = []*spb.ModifyRequest{}
@@ -299,5 +306,18 @@ func (c *Client) Pending() []int {
 	for i := range c.qs.pendq {
 		ret = append(ret, i)
 	}
+	// Ensure deterministic ordering of the pending items.
+	// Note: this may be a reason that we want to make there be more data in
+	// the pending queue, it may be useful to know when we sent the transaction
+	// to the server so that we can return latency etc.
+	sort.Ints(ret)
 	return ret
+}
+
+// Results returns the set of ModifyResponses that have been received from the
+// target.
+func (c *Client) Results() []*spb.ModifyResponse {
+	c.qs.resultMu.RLock()
+	defer c.qs.resultMu.RUnlock()
+	return append(make([]*spb.ModifyResponse, 0, len(c.qs.resultq)), c.qs.resultq...)
 }

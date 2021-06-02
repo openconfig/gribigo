@@ -9,7 +9,7 @@ import (
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
-func TestNewClient(t *testing.T) {
+func TestHandleParams(t *testing.T) {
 	tests := []struct {
 		desc      string
 		inOpts    []ClientOpt

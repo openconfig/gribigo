@@ -2,10 +2,12 @@
 package client
 
 import (
+	"context"
 	"fmt"
 
-	spb "github.com/openconfig/gribi/v1/proto/service"
 	"google.golang.org/grpc"
+
+	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 // Client is a wrapper for the gRIBI client.
@@ -37,10 +39,10 @@ type ClientOpt interface {
 	isClientOpt()
 }
 
-// NewClient creates a new gRIBI client with the specified set of options. The options
+// New creates a new gRIBI client with the specified set of options. The options
 // provided control parameters that live for the lifetime of the client, such as those
 // that are within the session parameters. A new client, or error, is returned.
-func NewClient(opts ...ClientOpt) (*Client, error) {
+func New(opts ...ClientOpt) (*Client, error) {
 	c := &Client{}
 	s, err := handleParams(opts...)
 	if err != nil {
@@ -81,10 +83,10 @@ type DialOpt interface {
 
 // Connect dials the server specified in the addr string, using the specified
 // set of dial options.
-func (c *Client) Dial(addr string, opts ...DialOpt) error {
+func (c *Client) Dial(ctx context.Context, addr string, opts ...DialOpt) error {
 	// TODO(robjs): translate any options within the dial options here, we may
 	// want to consider just accepting some gRPC dialoptions directly.
-	conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	conn, err := grpc.DialContext(ctx, addr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		return fmt.Errorf("cannot dial remote system, %v", err)
 	}

@@ -187,6 +187,12 @@ func (c *Client) Connect(ctx context.Context) error {
 		return fmt.Errorf("cannot open Modify RPC, %v", err)
 	}
 
+	// TODO(robjs): if we made these functions not niladic, and
+	// supplied to the client, then we could allow the user to
+	// overload functions that read and write - and hence do
+	// lower-layer operations to the gRIBI server directly.
+	// Modify this code to do this (make these just be default
+	// handler functions, they could still be inline).
 	go func() {
 		for {
 			if c.shut {
@@ -205,6 +211,10 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 			log.V(2).Infof("received message on Modify stream: %s", in)
+			// TODO(robjs): implement marking pending transactions as
+			// done at this point. Some specific update types - particularly
+			// election ID updates and session parameters do not need
+			// to be dequeued as they do not have an operation ID.
 		}
 	}()
 
@@ -217,8 +227,16 @@ func (c *Client) Connect(ctx context.Context) error {
 			// read from the channel
 			m := <-c.qs.modifyCh
 			if err := stream.Send(m); err != nil {
-				log.V(2).Infof("sent Modify message %s", m)
+				log.Errorf("got error sending message, %v", err)
+				c.sErr = err
+				return
 			}
+			log.V(2).Infof("sent Modify message %s", m)
+			// TODO(robjs): check here whether we need to write something
+			// new to the pending queue. This will be required for most
+			// messages but is not for:
+			// 	- election ID updates
+			// 	- session parameters.
 		}
 	}()
 

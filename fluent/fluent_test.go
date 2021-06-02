@@ -107,7 +107,7 @@ func TestGRIBIClient(t *testing.T) {
 				}
 			}
 
-			// Any errorf will be raised here if there is an unexpected error.
+			// Any unexpected error will be caught by being called directly on t from the fluent library.
 			tt.inFn(addr, t)
 		})
 	}

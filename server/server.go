@@ -32,6 +32,12 @@ type Server struct {
 	// operation within gRIBI whereby a client references some state that is
 	// associated with a prior connection that it had.
 	cs map[string]*clientState
+
+	// elecMu protects the curElecID value.
+	elecMu sync.RWMutex
+	// curElecID stores the current electionID for cases where the server is
+	// operating in SINGLE_PRIMARY mode.
+	curElecID *spb.Uint128
 }
 
 // clientState stores information that relates to a specific client
@@ -48,9 +54,17 @@ type clientState struct {
 // clientParams stores parameters that are set as part of the Modify RPC
 // initial handshake for a particular client.
 type clientParams struct {
-	// persist indicates whether the client's AFT entries should be
+	// Persist indicates whether the client's AFT entries should be
 	// persisted even after the client disconnects.
-	persist bool
+	Persist bool
+
+	// ExpectElecID indicates whether the client expects to send
+	// election IDs (i.e., the ClientRedundancy is SINGLE_PRIMARY).
+	ExpectElecID bool
+
+	// FIBAck indicates whether the client expects FIB-level
+	// acknowledgements.
+	FIBAck bool
 }
 
 // New creates a new gRIBI server.
@@ -63,10 +77,15 @@ func New() *Server {
 // Modify implements the gRIBI Modify RPC.
 func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 	// Initiate the per client state for this client.
-	if err := s.newClient(uuid.New().String()); err != nil {
+	cid := uuid.New().String()
+	log.V(2).Infof("creating client with ID %s", cid)
+	if err := s.newClient(cid); err != nil {
 		return err
 	}
 
+	// Store whether this is the first message on the channel, some options - like the session
+	// parameters can only be set as the first message.
+	var gotmsg bool
 	for {
 		in, err := ms.Recv()
 		if err == io.EOF {
@@ -76,7 +95,36 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 			return status.Errorf(codes.Unknown, "error reading message from client, %v", err)
 		}
 		log.V(2).Infof("received message %s on Modify channel", in)
-		// TODO(robjs): implement message handling
+
+		var res *spb.ModifyResponse
+		switch {
+		case in.Params != nil:
+			var err error
+			if res, err = s.checkParams(in.Params, gotmsg); err != nil {
+				// Invalid parameters is a fatal error, so we take down the Modify RPC.
+				return err
+			}
+			if err := s.updateParams(cid, in.Params); err != nil {
+				// Not being able to update parameters is a fatal error, so we take down
+				// the Modify RPC.
+				return err
+			}
+		case in.ElectionId != nil:
+			var err error
+			res, err = s.runElection(cid, in.ElectionId)
+			if err != nil {
+				return err
+			}
+		default:
+			return status.Errorf(codes.Unimplemented, "unimplemented handling of message %s", in)
+		}
+
+		// update that we have received at least one message.
+		gotmsg = true
+		if err := ms.Send(res); err != nil {
+			return status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
+		}
+
 	}
 }
 
@@ -90,4 +138,60 @@ func (s *Server) newClient(id string) error {
 	}
 	s.cs[id] = &clientState{}
 	return nil
+}
+
+// updateParams writes the parameters for the client specified by id to the server state
+// based on the received session parameters supplied in params. It returns errors if
+// the client is undefined, or the parameters have been set previously. It does not
+// ensure that the parameters are consistent with other clients on the server - but
+// rather solely updates for a particular client.
+func (s *Server) updateParams(id string, params *spb.SessionParameters) error {
+	cparam := &clientParams{}
+
+	cparam.ExpectElecID = (params.Redundancy == spb.SessionParameters_SINGLE_PRIMARY)
+	cparam.Persist = (params.Persistence == spb.SessionParameters_PRESERVE)
+	cparam.FIBAck = (params.AckType == spb.SessionParameters_RIB_AND_FIB_ACK)
+
+	s.csMu.Lock()
+	defer s.csMu.Unlock()
+	p := s.cs[id]
+	if p == nil {
+		return status.Errorf(codes.Internal, "cannot update parameters for a client with no state, %s", id)
+	}
+	if p.params != nil {
+		var err error
+		me := status.New(codes.FailedPrecondition, "cannot modify SessionParameters")
+		if me, err = me.WithDetails(&spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED,
+		}); err != nil {
+			return me.Err()
+		}
+		return me.Err()
+	}
+	s.cs[id].params = cparam
+	return nil
+}
+
+// checkParams validates that teh parameters that were supplied by the client are valid
+// within the overall server context. It returns the ModifyResponse that should be sent
+// to the client, or the populated error.
+func (s *Server) checkParams(p *spb.SessionParameters, gotMsg bool) (*spb.ModifyResponse, error) {
+	if gotMsg {
+		return nil, status.Errorf(codes.FailedPrecondition, "must send SessionParameters as the first request on a Modify channel")
+	}
+
+	// TODO(robjs): Check that parameters are self consistent.
+	// TODO(robjs): Check that the client is consistent with other clients on the system.
+
+	return &spb.ModifyResponse{
+		SessionParamsResult: &spb.SessionParametersResult{},
+	}, nil
+}
+
+func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyResponse, error) {
+	// TODO(robjs): check that the client is one that we actually need to do elections for.
+	// TODO(robjs): add election process.
+	return &spb.ModifyResponse{
+		ElectionId: s.curElecID,
+	}, nil
 }

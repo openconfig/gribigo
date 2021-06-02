@@ -101,7 +101,7 @@ func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
 		opts = append(opts, client.ElectedPrimaryClient(g.electionID))
 	}
 
-	log.V(2).Infof("setting client parameters to %v", opts)
+	log.V(2).Infof("setting client parameters to %q", opts)
 	c, err := client.New(opts...)
 	if err != nil {
 		t.Fatalf("cannot create new client, %v", err)

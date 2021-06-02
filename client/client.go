@@ -27,9 +27,9 @@ type Client struct {
 	// client.
 	qs *clientQs
 
-	// run indicates that RPCs should continue to run, when set
-	// to false, all goroutines that are serving RPCs shut down.
-	run bool
+	// shut indicates that RPCs should continue to run, when set
+	// to true, all goroutines that are serving RPCs shut down.
+	shut bool
 	// sErr stores sending errors that cause termination of the sending
 	// GoRoutine.
 	sErr error
@@ -189,14 +189,14 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	go func() {
 		for {
-			if !c.run {
+			if c.shut {
 				log.V(2).Infof("shutting down recv goroutine")
 				return
 			}
 			in, err := stream.Recv()
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
-				c.run = false
+				c.shut = true
 				return
 			}
 			if err != nil {
@@ -210,7 +210,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	go func() {
 		for {
-			if !c.run {
+			if c.shut {
 				log.V(2).Infof("shutting down send goroutine")
 				return
 			}

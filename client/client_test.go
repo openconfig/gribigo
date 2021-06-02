@@ -4,9 +4,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/protobuf/testing/protocmp"
-
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 func TestHandleParams(t *testing.T) {
@@ -132,6 +131,84 @@ func TestQ(t *testing.T) {
 			}
 			if diff := cmp.Diff(c.qs.sendq, tt.wantQ, protocmp.Transform()); diff != "" {
 				t.Fatalf("did not get expected send queue, %s", diff)
+			}
+		})
+	}
+}
+
+func TestPending(t *testing.T) {
+	tests := []struct {
+		desc     string
+		inClient *Client
+		want     []int
+	}{{
+		desc: "empty queue",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: map[int]bool{},
+			},
+		},
+		want: []int{},
+	}, {
+		desc: "populated queue",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: map[int]bool{
+					1:  true,
+					42: true,
+					84: true,
+				},
+			},
+		},
+		want: []int{1, 42, 84},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if got, want := tt.inClient.Pending(), tt.want; !cmp.Equal(got, want) {
+				t.Fatalf("did not get expected queue, got: %v, want: %q", got, want)
+			}
+		})
+	}
+}
+
+func TestResults(t *testing.T) {
+	tests := []struct {
+		desc     string
+		inClient *Client
+		want     []*spb.ModifyResponse
+	}{{
+		desc: "empty queue",
+		inClient: &Client{
+			qs: &clientQs{
+				resultq: []*spb.ModifyResponse{},
+			},
+		},
+		want: []*spb.ModifyResponse{},
+	}, {
+		desc: "populated queue",
+		inClient: &Client{
+			qs: &clientQs{
+				resultq: []*spb.ModifyResponse{{
+					ElectionId: &spb.Uint128{
+						Low:  0,
+						High: 1,
+					},
+				}},
+			},
+		},
+		want: []*spb.ModifyResponse{{
+			ElectionId: &spb.Uint128{
+				Low:  0,
+				High: 1,
+			},
+		}},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if got, want := tt.inClient.Results(), tt.want; !cmp.Equal(got, want, protocmp.Transform()) {
+				t.Fatalf("did not get expected queue, got: %v, want: %v", got, want)
 			}
 		})
 	}

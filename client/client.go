@@ -69,7 +69,7 @@ func New(opts ...ClientOpt) (*Client, error) {
 	}
 	c.state = s
 
-	c.Qs = &clientQs{
+	c.qs = &clientQs{
 		sendq: []*spb.ModifyRequest{},
 		pendq: map[int]bool{},
 		// Channels are blocking by default, but we want some ability to have

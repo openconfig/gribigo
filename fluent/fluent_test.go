@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
 	log "github.com/golang/glog"
-	"github.com/openconfig/gnmi/errdiff"
+	"github.com/openconfig/gribigo/negtest"
 	"github.com/openconfig/gribigo/server"
 	"google.golang.org/grpc"
 
@@ -43,55 +44,44 @@ func TestGRIBIClient(t *testing.T) {
 		// The function could be externally defined (i.e., this could call a library
 		// of functional tests for gRIBI to test the fake server, and ensure that the
 		// Fluent API works as expected).
-		inFn             func(string) error
-		wantErrSubstring string
+		inFn         func(string, testing.TB)
+		wantFatalMsg string
+		wantErrorMsg string
 	}{{
 		desc: "simple connection between client and server",
-		inFn: func(addr string) error {
+		inFn: func(addr string, t testing.TB) {
 			c := NewClient().WithTarget(addr)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			if err := c.Start(ctx); err != nil {
-				return err
-			}
-			return nil
+			c.Start(ctx, t)
 		},
 	}, {
 		desc: "simple connection to invalid server",
-		inFn: func(_ string) error {
+		inFn: func(_ string, t testing.TB) {
 			c := NewClient().WithTarget("some.failing.dns.name:noport")
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			if err := c.Start(ctx); err != nil {
-				return err
-			}
-			return nil
+			c.Start(ctx, t)
 		},
-		wantErrSubstring: "cannot dial target",
+		wantFatalMsg: "cannot dial target",
 	}, {
 		desc: "simple connection and modify RPC",
-		inFn: func(addr string) error {
+		inFn: func(addr string, t testing.TB) {
 			c := NewClient().WithTarget(addr)
-			if err := c.Start(context.Background()); err != nil {
-				return fmt.Errorf("Start(_) error: %v", err)
-			}
-			c.StartSending(context.Background())
+			c.Start(context.Background(), t)
+			c.StartSending(context.Background(), t)
 			// TODO(robjs): add a check against the actual return value
 			// for this test, rather than just there being no errors returned.
 			time.Sleep(2 * time.Second)
-			return nil
 		},
 	}, {
 		desc: "connection with an election ID",
-		inFn: func(addr string) error {
+		inFn: func(addr string, t testing.TB) {
 			c := NewClient().WithTarget(addr).WithInitialElectionID(0, 1).WithRedundancyMode(ElectedPrimaryClient)
-			if err := c.Start(context.Background()); err != nil {
-				return fmt.Errorf("Start(_) error: %v", err)
-			}
-			c.StartSending(context.Background())
+			c.Start(context.Background(), t)
+			c.StartSending(context.Background(), t)
 			// TODO(robjs): also check that we get the right return message.
 			time.Sleep(2 * time.Second)
-			return nil
 		},
 	}}
 
@@ -99,9 +89,26 @@ func TestGRIBIClient(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			startServer, addr := testServer()
 			go startServer()
-			if diff := errdiff.Substring(tt.inFn(addr), tt.wantErrSubstring); diff != "" {
-				t.Fatalf("did not get expected error, %s", diff)
+
+			if tt.wantFatalMsg != "" {
+				if got := negtest.ExpectFatal(t, func(t testing.TB) {
+					tt.inFn(addr, t)
+				}); !strings.Contains(got, tt.wantFatalMsg) {
+					t.Fatalf("did not get expected fatal error, got: %s, want: %s", got, tt.wantFatalMsg)
+				}
+				return
 			}
+
+			if tt.wantErrorMsg != "" {
+				if got := negtest.ExpectError(t, func(t testing.TB) {
+					tt.inFn(addr, t)
+				}); !strings.Contains(got, tt.wantErrorMsg) {
+					t.Fatalf("did not get expected error, got: %s, want: %s", got, tt.wantErrorMsg)
+				}
+			}
+
+			// Any errorf will be raised here if there is an unexpected error.
+			tt.inFn(addr, t)
 		})
 	}
 }

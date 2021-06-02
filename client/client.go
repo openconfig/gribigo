@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"sync"
 
 	log "github.com/golang/glog"
@@ -217,8 +218,11 @@ func (c *Client) Connect(ctx context.Context) error {
 			// read from the channel
 			m := <-c.qs.modifyCh
 			if err := stream.Send(m); err != nil {
-				log.V(2).Infof("sent Modify message %s", m)
+				log.Errorf("got error sending message, %v", err)
+				c.sErr = err
+				return
 			}
+			log.V(2).Infof("sent Modify message %s", m)
 		}
 	}()
 
@@ -302,5 +306,18 @@ func (c *Client) Pending() []int {
 	for i := range c.qs.pendq {
 		ret = append(ret, i)
 	}
+	// Ensure deterministic ordering of the pending items.
+	// Note: this may be a reason that we want to make there be more data in
+	// the pending queue, it may be useful to know when we sent the transaction
+	// to the server so that we can return latency etc.
+	sort.Ints(ret)
 	return ret
+}
+
+// Results returns the set of ModifyResponses that have been received from the
+// target.
+func (c *Client) Results() []*spb.ModifyResponse {
+	c.qs.resultMu.RLock()
+	defer c.qs.resultMu.RUnlock()
+	return append(make([]*spb.ModifyResponse, 0, len(c.qs.resultq)), c.qs.resultq...)
 }

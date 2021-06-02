@@ -137,6 +137,10 @@ func (s *Server) newClient(id string) error {
 		return status.Errorf(codes.Internal, "cannot create new client with duplicate ID, %s", id)
 	}
 	s.cs[id] = &clientState{}
+
+	// TODO(robjs): remove these NOOP lines, they are here to ensure static analysis
+	// passes.
+	s.cs[id].params = &clientParams{Persist: false}
 	return nil
 }
 

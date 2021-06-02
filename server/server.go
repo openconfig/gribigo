@@ -47,9 +47,9 @@ type clientState struct {
 // clientParams stores parameters that are set as part of the Modify RPC
 // initial handshake for a particular client.
 type clientParams struct {
-	// persist indicates whether the client's AFT entries should be
+	// Persist indicates whether the client's AFT entries should be
 	// persisted even after the client disconnects.
-	persist bool
+	Persist bool
 }
 
 // New creates a new gRIBI server.
@@ -88,5 +88,9 @@ func (s *Server) newClient(id string) error {
 		return status.Errorf(codes.Internal, "cannot create new client with duplicate ID, %s", id)
 	}
 	s.cs[id] = &clientState{}
+
+	// TODO(robjs): remove these NOOP lines, they are here to ensure static analysis
+	// passes.
+	s.cs[id].params = &clientParams{Persist: false}
 	return nil
 }

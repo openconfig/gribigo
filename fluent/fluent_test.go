@@ -50,7 +50,8 @@ func TestGRIBIClient(t *testing.T) {
 	}{{
 		desc: "simple connection between client and server",
 		inFn: func(addr string, t testing.TB) {
-			c := NewClient().WithTarget(addr)
+			c := NewClient()
+			c.Connection().WithTarget(addr)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			c.Start(ctx, t)
@@ -58,7 +59,8 @@ func TestGRIBIClient(t *testing.T) {
 	}, {
 		desc: "simple connection to invalid server",
 		inFn: func(_ string, t testing.TB) {
-			c := NewClient().WithTarget("some.failing.dns.name:noport")
+			c := NewClient()
+			c.Connection().WithTarget("some.failing.dns.name:noport")
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			c.Start(ctx, t)
@@ -67,7 +69,8 @@ func TestGRIBIClient(t *testing.T) {
 	}, {
 		desc: "simple connection and modify RPC",
 		inFn: func(addr string, t testing.TB) {
-			c := NewClient().WithTarget(addr)
+			c := NewClient()
+			c.Connection().WithTarget(addr)
 			c.Start(context.Background(), t)
 			c.StartSending(context.Background(), t)
 			// TODO(robjs): add a check against the actual return value
@@ -77,7 +80,8 @@ func TestGRIBIClient(t *testing.T) {
 	}, {
 		desc: "connection with an election ID",
 		inFn: func(addr string, t testing.TB) {
-			c := NewClient().WithTarget(addr).WithInitialElectionID(0, 1).WithRedundancyMode(ElectedPrimaryClient)
+			c := NewClient()
+			c.Connection().WithTarget(addr).WithInitialElectionID(0, 1).WithRedundancyMode(ElectedPrimaryClient)
 			c.Start(context.Background(), t)
 			c.StartSending(context.Background(), t)
 			// TODO(robjs): also check that we get the right return message.

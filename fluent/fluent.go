@@ -16,19 +16,21 @@ import (
 // gRIBIClient stores internal state and arguments related to the gRIBI client
 // that is exposed by the fluent API.
 type gRIBIClient struct {
+	// connection stores the configuration related to the connection.
+	connection *gRIBIConnection
+	// Internal state.
+	c *client.Client
+}
+
+type gRIBIConnection struct {
 	// targetAddr stores the address that is to be dialed by the client.
 	targetAddr string
 	// redundMode specifies the redundancy mode that the client is using,
 	// this is set only at initialisation time and cannot be changed during
 	// the lifetime of the session.
 	redundMode RedundancyMode
-	// electionID specifies the current election ID for the client, it must
-	// be set before connecting in the case that the client is using an elected
-	// master mode, and can be mutated during the lifetime of the client.
+	// electionID specifies the initial election ID for the client.
 	electionID *spb.Uint128
-
-	// Internal state.
-	c *client.Client
 }
 
 // NewClient returns a new gRIBI client instance, and is an entrypoint to this
@@ -37,10 +39,18 @@ func NewClient() *gRIBIClient {
 	return &gRIBIClient{}
 }
 
+// Connection allows any parameters relating to gRIBI connections to be set through
+// the gRIBI fluent API.
+func (g *gRIBIClient) Connection() *gRIBIConnection {
+	c := &gRIBIConnection{}
+	g.connection = c
+	return c
+}
+
 // WithTarget specifies the gRIBI target (server) address that is to be dialed,
 // the addr argument supplied is the address of the server specified in the standard
 // form of address:port.
-func (g *gRIBIClient) WithTarget(addr string) *gRIBIClient {
+func (g *gRIBIConnection) WithTarget(addr string) *gRIBIConnection {
 	g.targetAddr = addr
 	return g
 }
@@ -62,7 +72,7 @@ const (
 
 // WithRedundancyMode specifies the redundancy mode that is to be used by the client
 // from the enumerated types specified in the RedundancyMode.
-func (g *gRIBIClient) WithRedundancyMode(m RedundancyMode) *gRIBIClient {
+func (g *gRIBIConnection) WithRedundancyMode(m RedundancyMode) *gRIBIConnection {
 	g.redundMode = m
 	return g
 }
@@ -70,7 +80,7 @@ func (g *gRIBIClient) WithRedundancyMode(m RedundancyMode) *gRIBIClient {
 // WithInitialElectionID specifies the election ID that is to be used to start the
 // connection. It is not sent until a Modify RPC has been opened to the client. The
 // arguments specify the high and low 64-bit integers that from the uint128.
-func (g *gRIBIClient) WithInitialElectionID(low, high uint64) *gRIBIClient {
+func (g *gRIBIConnection) WithInitialElectionID(low, high uint64) *gRIBIConnection {
 	g.electionID = &spb.Uint128{
 		Low:  low,
 		High: high,
@@ -86,19 +96,19 @@ func (g *gRIBIClient) WithInitialElectionID(low, high uint64) *gRIBIClient {
 func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
 	flag.Parse()
 	t.Helper()
-	if g.targetAddr == "" {
+	if g.connection.targetAddr == "" {
 		t.Fatalf("cannot dial without specifying target address")
 	}
 
 	opts := []client.ClientOpt{}
-	switch g.redundMode {
+	switch g.connection.redundMode {
 	case AllPrimaryClients:
 		opts = append(opts, client.AllPrimaryClients())
 	case ElectedPrimaryClient:
-		if g.electionID == nil {
+		if g.connection.electionID == nil {
 			t.Fatalf("client must specify Election ID in elected primary mode")
 		}
-		opts = append(opts, client.ElectedPrimaryClient(g.electionID))
+		opts = append(opts, client.ElectedPrimaryClient(g.connection.electionID))
 	}
 
 	log.V(2).Infof("setting client parameters to %q", opts)
@@ -108,8 +118,8 @@ func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
 	}
 	g.c = c
 
-	log.V(2).Infof("dialing %s", g.targetAddr)
-	if err := c.Dial(ctx, g.targetAddr); err != nil {
+	log.V(2).Infof("dialing %s", g.connection.targetAddr)
+	if err := c.Dial(ctx, g.connection.targetAddr); err != nil {
 		t.Fatalf("cannot dial target, %v", err)
 	}
 }

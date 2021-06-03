@@ -16,6 +16,8 @@ import (
 )
 
 var (
+	// unixTS is a function called throughout the package to return the
+	// current unix timestamp in nanoseconds.
 	unixTS = time.Now().UnixNano
 )
 

@@ -48,6 +48,12 @@ type Client struct {
 	// rErr stores receiving errors that cause termination of the receiving
 	// GoRoutine.
 	readErr []error
+
+	// userFns stores the set of functions that have been provided by the
+	// client user as alternative implementations than the base client. This
+	// allows a client to insert custom checks at particular points in the
+	// lifecycle of a connection.
+	userFns *userFunctions
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -60,6 +66,18 @@ type clientState struct {
 	// case that the client participates in a group of SINGLE_PRIMARY
 	// clients.
 	ElectionID *spb.Uint128
+}
+
+type userFunctions struct {
+	// postRecvFn is a function that is run after every message is received
+	// after reading a message from the Modify stream from the server. It
+	// takes no arguments and returns an error which is considered non-fatal
+	// to the connection.
+	modifyPostRecvFn func() error
+
+	// TODO(robjs): consider the other callbacks that we want here, it is likely
+	// that we also should have:
+	// 		-  modifyRecvHandler -- replacing c.handleModifyResponse
 }
 
 // ClientOpt is an interface that is implemented for all options that
@@ -460,6 +478,20 @@ func (c *Client) Pending() (map[uint64]*PendingOp, error) {
 	return ret, nil
 }
 
+// PendingLen returns the length of the pending queue.
+func (c *Client) PendingLen() int {
+	c.qs.pendMu.RLock()
+	defer c.qs.pendingMu.RUnlock()
+	return len(c.qs.pendq)
+}
+
+// SendLen returns the length of the send queue.
+func (c *Client) SendLen() int {
+	c.qs.sendMu.RLock()
+	defer c.qs.sendMu.RUnlock()
+	return len(c.qs.sendq)
+}
+
 // Results returns the set of ModifyResponses that have been received from the
 // target.
 func (c *Client) Results() ([]*OpResult, error) {
@@ -510,4 +542,14 @@ func (c *Client) Status() (*ClientStatus, error) {
 	cs.ReadErrs = append(make([]error, 0, len(c.readErr)), c.readErr...)
 
 	return cs, nil
+}
+
+// SetModifyPostRecvCallback sets a function that is called after each ModifyResponse
+// is received in the client.
+func (c *Client) SetModifyPostRecvCallback(fn func() error) error {
+	if c.userFns == nil {
+		c.userFns = &userFunctions{}
+	}
+	c.userFns.modifyPostRecvFn = fn
+	return nil
 }

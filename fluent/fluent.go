@@ -20,6 +20,8 @@ type gRIBIClient struct {
 	connection *gRIBIConnection
 	// Internal state.
 	c *client.Client
+
+	complete bool
 }
 
 type gRIBIConnection struct {
@@ -132,5 +134,22 @@ func (g *gRIBIClient) StartSending(ctx context.Context, t testing.TB) {
 	if err := g.c.Connect(ctx); err != nil {
 		t.Fatalf("cannot connect Modify request, %v", err)
 	}
+	g.c.SetModifyPostSendCallback(func() error {
+		// we indicate that there is some new pending input that is
+
+		g.c.awaitCh <- false
+	})
+
+	g.c.SetModifyPostRecvCallback(func() error {
+		if g.c.PendingLen() == 0 && g.c.SendLen() == 0 {
+			g.c.awaitCh <- true
+		}
+	})
 	g.c.StartSending()
+}
+
+// Await waits until the underlying gRIBI client has completed its work to return -
+// complete is defined as both the send and pending queue being empty.
+func (g *gRIBIClient) Await(ctx context.Context, t testing.TB) {
+
 }

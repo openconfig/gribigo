@@ -67,17 +67,17 @@ type clientState struct {
 	ElectionID *spb.Uint128
 }
 
-// ClientOpt is an interface that is implemented for all options that
+// Opt is an interface that is implemented for all options that
 // can be supplied when creating a new client. This captures parameters
 // that are sent at the start of a gRIBI session that
-type ClientOpt interface {
+type Opt interface {
 	isClientOpt()
 }
 
 // New creates a new gRIBI client with the specified set of options. The options
 // provided control parameters that live for the lifetime of the client, such as those
 // that are within the session parameters. A new client, or error, is returned.
-func New(opts ...ClientOpt) (*Client, error) {
+func New(opts ...Opt) (*Client, error) {
 	c := &Client{}
 
 	s, err := handleParams(opts...)
@@ -92,8 +92,7 @@ func New(opts ...ClientOpt) (*Client, error) {
 			Ops: map[uint64]*PendingOp{},
 		},
 
-		// We make the modifyChannel unbuffered so that we know that if we are not reading
-		// from it writers can block.
+		// FIXME(robjs): explain comment here. F
 		modifyCh: make(chan *spb.ModifyRequest),
 		resultq:  []*OpResult{},
 	}
@@ -105,7 +104,7 @@ func New(opts ...ClientOpt) (*Client, error) {
 // to populate the session parameters that they are translated into. It returns a
 // populate SessionParameters protobuf along with any errors when parsing the supplied
 // set of options.
-func handleParams(opts ...ClientOpt) (*clientState, error) {
+func handleParams(opts ...Opt) (*clientState, error) {
 	if len(opts) == 0 {
 		return &clientState{}, nil
 	}
@@ -133,7 +132,7 @@ type DialOpt interface {
 	isDialOpt()
 }
 
-// Connect dials the server specified in the addr string, using the specified
+// Dial dials the server specified in the addr string, using the specified
 // set of dial options.
 func (c *Client) Dial(ctx context.Context, addr string, opts ...DialOpt) error {
 	// TODO(robjs): translate any options within the dial options here, we may

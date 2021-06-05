@@ -12,7 +12,7 @@ import (
 func TestHandleParams(t *testing.T) {
 	tests := []struct {
 		desc      string
-		inOpts    []ClientOpt
+		inOpts    []Opt
 		wantState *clientState
 		wantErr   bool
 	}{{
@@ -21,7 +21,7 @@ func TestHandleParams(t *testing.T) {
 		wantState: &clientState{},
 	}, {
 		desc: "ALL_PRIMARY client",
-		inOpts: []ClientOpt{
+		inOpts: []Opt{
 			AllPrimaryClients(),
 		},
 		wantState: &clientState{
@@ -31,7 +31,7 @@ func TestHandleParams(t *testing.T) {
 		},
 	}, {
 		desc: "SINGLE_PRIMARY client",
-		inOpts: []ClientOpt{
+		inOpts: []Opt{
 			ElectedPrimaryClient(&spb.Uint128{High: 0, Low: 1}),
 		},
 		wantState: &clientState{
@@ -42,7 +42,7 @@ func TestHandleParams(t *testing.T) {
 		},
 	}, {
 		desc: "SINGLE_PRIMARY and ALL_PRIMARY both included",
-		inOpts: []ClientOpt{
+		inOpts: []Opt{
 			ElectedPrimaryClient(&spb.Uint128{High: 0, Low: 1}),
 			AllPrimaryClients(),
 		},

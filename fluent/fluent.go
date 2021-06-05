@@ -100,7 +100,7 @@ func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
 		t.Fatalf("cannot dial without specifying target address")
 	}
 
-	opts := []client.ClientOpt{}
+	opts := []client.Opt{}
 	switch g.connection.redundMode {
 	case AllPrimaryClients:
 		opts = append(opts, client.AllPrimaryClients())

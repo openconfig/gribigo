@@ -9,5 +9,5 @@ require (
 	github.com/openconfig/gribi v0.1.1-0.20210423184541-ce37eb4ba92f
 	google.golang.org/grpc v1.37.0
 	google.golang.org/protobuf v1.26.0
-	lukechampine.com/uint128 v1.1.1 // indirect
+	lukechampine.com/uint128 v1.1.1
 )

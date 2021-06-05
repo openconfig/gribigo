@@ -35,7 +35,10 @@ jobs:
       run: go test -v -coverprofile=profile.cov ./...
 
     - name: Race Test
-      run: go test -race ./...
+      run: |
+           for i in `find . -type d | grep -v "fluent"`; do
+	     go test -race ./...
+           done
 
     - name: Coveralls
       if: ${{ matrix.go == '1.14' }}

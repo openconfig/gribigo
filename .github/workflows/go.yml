@@ -36,8 +36,7 @@ jobs:
 
     - name: Race Test
       run: |
-          for i in `find . -type d | grep -v "fluent"`; do
-            echo "./$i"
+          for i in `find . -type d -mindepth 1 -maxdepth 1 | egrep -v ".git|.github|fluent"`; do
             go test -race ./$i
           done
 

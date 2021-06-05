@@ -106,6 +106,9 @@ func New(opts ...ClientOpt) (*Client, error) {
 // populate SessionParameters protobuf along with any errors when parsing the supplied
 // set of options.
 func handleParams(opts ...ClientOpt) (*clientState, error) {
+	if len(opts) == 0 {
+		return &clientState{}, nil
+	}
 	s := &clientState{
 		SessParams: &spb.SessionParameters{},
 	}

@@ -74,6 +74,7 @@ func TestGRIBIClient(t *testing.T) {
 			c.Connection().WithTarget(addr)
 			c.Start(context.Background(), t)
 			c.StartSending(context.Background(), t)
+			time.Sleep(100 * time.Millisecond)
 			c.Await(context.Background(), t)
 			// We get results, and just expected that there are none, because we did not
 			// send anything to the client.
@@ -88,6 +89,7 @@ func TestGRIBIClient(t *testing.T) {
 			c.Connection().WithTarget(addr).WithInitialElectionID(1, 0).WithRedundancyMode(ElectedPrimaryClient)
 			c.Start(context.Background(), t)
 			c.StartSending(context.Background(), t)
+			time.Sleep(100 * time.Millisecond)
 			c.Await(context.Background(), t)
 			res := c.Results(t)
 

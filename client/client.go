@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"sync"
 	"time"
 
@@ -48,12 +49,6 @@ type Client struct {
 	// rErr stores receiving errors that cause termination of the receiving
 	// GoRoutine.
 	readErr []error
-
-	// userFns stores the set of functions that have been provided by the
-	// client user as alternative implementations than the base client. This
-	// allows a client to insert custom checks at particular points in the
-	// lifecycle of a connection.
-	userFns *userFunctions
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -66,18 +61,6 @@ type clientState struct {
 	// case that the client participates in a group of SINGLE_PRIMARY
 	// clients.
 	ElectionID *spb.Uint128
-}
-
-type userFunctions struct {
-	// postRecvFn is a function that is run after every message is received
-	// after reading a message from the Modify stream from the server. It
-	// takes no arguments and returns an error which is considered non-fatal
-	// to the connection.
-	modifyPostRecvFn func() error
-
-	// TODO(robjs): consider the other callbacks that we want here, it is likely
-	// that we also should have:
-	// 		-  modifyRecvHandler -- replacing c.handleModifyResponse
 }
 
 // ClientOpt is an interface that is implemented for all options that
@@ -101,12 +84,18 @@ func New(opts ...ClientOpt) (*Client, error) {
 
 	c.qs = &clientQs{
 		sendq: []*spb.ModifyRequest{},
-		pendq: map[uint64]*PendingOp{},
-		// Channels are blocking by default, but we want some ability to have
-		// a backlog on the sender side, we'll panic if this buffer is completely
-		// full, so we may need to handle congestion management in the future.
+		pendq: &pendingQueue{
+			Ops: map[uint64]*PendingOp{},
+		},
+		// Since we might have a case where we write into the channel faster than
+		// we read from it, we create a buffer for the channel.
 		modifyCh: make(chan *spb.ModifyRequest, 1000),
 		resultq:  []*OpResult{},
+
+		// The converged channel is implemented as a non-buffered channel, but
+		// we make sure that reads and writes from it are non-blocking, such that
+		// we do not overload it.
+
 	}
 
 	return c, nil
@@ -296,7 +285,7 @@ type clientQs struct {
 	// positive case that we get an acknowledged transaction - consider whether
 	// we want the ability to have the client handle timeouts and inject these
 	// as failed per the controller implementation.
-	pendq map[uint64]*PendingOp
+	pendq *pendingQueue
 
 	// modifyCh is the channel that is used to write to the goroutine that is
 	// the sole source of writes onto the modify stream.
@@ -313,6 +302,86 @@ type clientQs struct {
 	// sending indicates whether the client will empty the sendq. By default,
 	// messages are queued into the sendq and not sent to the target.
 	sending bool
+
+	// convergMu protects the converged boolean.
+	convergMu sync.RWMutex
+	// converged is a bool that indicates that the client is converged.
+	// Converged is defined as there being:
+	//  - no entries in the send queue
+	//	- zero entries in the pending queue
+	// this means that in some cases a client /may/ have requests on the wire
+	// that have not been responded to (e.g., updated election IDs) if they do
+	// not create entries in the pending queue.
+	converged bool
+}
+
+// pendingQueue provides a queue type that determines the set of pending
+// operations for the client. Since pending operations are added and removed
+// based on receiving a ModifyRequest or ModifyResponse in the client, there is
+// no case in which we need to individually access these elements, so they are
+// to be protected by a single mutex.
+type pendingQueue struct {
+	// ops is the set of AFT operations that are pending in the client.
+	Ops map[uint64]*PendingOp
+	// Election is the pending election that has been sent to the client, there can
+	// only be one pending update - since each election replaces the previous one. A
+	// single response is expected to clear all the election updates that have been sent
+	// to the server.
+	Election *ElectionReqDetails
+
+	// SessionParams indicates that there is a pending SessionParameters
+	// request sent to the server. There can only be one such request since
+	// we only send the request at the start of the connection, and MUST NOT
+	// send it again.
+	SessionParams *SessionParamReqDetails
+}
+
+// ElectionReqDetails stores the details of an individual election update that was sent
+// to the server.
+type ElectionReqDetails struct {
+	// Timestamp is the time at which the update was sent, specified in nanoseconds
+	// since the epoch.
+	Timestamp int64
+	// ID is the election ID that was sent to the server. This can be used to determine
+	// whether the response shows that this client actually became the master.
+	ID *spb.Uint128
+}
+
+// isPendingRequest implements the PendingRequest interface for ElectionReqDetails.
+func (*ElectionReqDetails) isPendingRequest() {}
+
+// SessionParamReqDetails stores the details of an individual session parameters update
+// that was sent to the server.
+type SessionParamReqDetails struct {
+	// Timestamp is the time at which the update was sent, specified in nanoseconds
+	// since the epoch.
+	Timestamp int64
+	// Outgoing is the parameters that were sent to the server.
+	Outgoing *spb.SessionParameters
+}
+
+// isPendingRequest implements the PendingRequest interface for SessionParamReqDetails.
+func (*SessionParamReqDetails) isPendingRequest() {}
+
+// Len returns the length of the pending queue.
+func (p *pendingQueue) Len() int {
+	if p == nil {
+		return 0
+	}
+	var i int
+	if p.SessionParams != nil {
+		i++
+	}
+	if p.Election != nil {
+		i++
+	}
+	return i + len(p.Ops)
+}
+
+// PendingRequest is an interface implemented by all types that can be reported back
+// to callers describing a pending request in the client.
+type PendingRequest interface {
+	isPendingRequest()
 }
 
 // PendingOp stores details pertaining to a pending request in the client.
@@ -323,16 +392,19 @@ type PendingOp struct {
 	Op *spb.AFTOperation
 }
 
+// isPendingRequest implements the PendingRequest interface for the PendingOp type.
+func (*PendingOp) isPendingRequest() {}
+
 // OpResult stores details pertaining to a result that was received from
 // the server.
 type OpResult struct {
 	// Timestamp is the timestamp that the result was received.
-	Timestamp uint64
+	Timestamp int64
 	// Latency is the latency of the request from the server. This is calculated
 	// based on the time that the request was sent to the client (became pending)
 	// and the time that the response was received from the server. It is expressed
 	// in nanoseconds.
-	Latency uint64
+	Latency int64
 
 	// CurrentServerElectionID indicates that the message that was received from the server
 	// was an ModifyResponse sent in response to an updated election ID, its value is the
@@ -340,10 +412,17 @@ type OpResult struct {
 	// the server.
 	CurrentServerElectionID *spb.Uint128
 
+	// SessionParameters contains the parameters that were received from the server in
+	// response to the parameters sent to the server.
+	SessionParameters *spb.SessionParametersResult
+
 	// OperationID indicates that the message that was received from the server was a
 	// ModifyResponse sent in response to an AFTOperation, its value is the ID of the
 	// operation to which it corresponds.
 	OperationID uint64
+
+	// ClientError describes an error that is internal to the client.
+	ClientError string
 
 	// TODO(robjs): add additional information about what the result was here.
 }
@@ -358,7 +437,15 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 		return
 	}
 	log.V(2).Infof("sending %s directly to queue", m)
-	c.qs.modifyCh <- m
+
+	// Non-blocking write to the modifyCh -- it's an error if we overflow
+	// the buffer, but we want to keep the client from panicking at this
+	// point.
+	select {
+	case c.qs.modifyCh <- m:
+	default:
+		log.Errorf("dropped input message %v, buffer full", m)
+	}
 }
 
 // StartSending toggles the client to begin sending messages that are in the send
@@ -383,10 +470,25 @@ func (c *Client) StartSending() {
 func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 	// Add any pending operations to the pending queue.
 	for _, o := range m.Operation {
-		if err := c.addPending(o); err != nil {
+		if err := c.addPendingOp(o); err != nil {
 			return err
 		}
 	}
+
+	if m.ElectionId != nil {
+		c.updatePendingElection(m.ElectionId)
+	}
+
+	if m.Params != nil {
+		c.pendingSessionParams(m.Params)
+	}
+
+	// every time we send a modify request, we are not converged, so rewrite
+	// converged to say no.
+	c.qs.convergMu.Lock()
+	defer c.qs.convergMu.Unlock()
+	c.qs.converged = false
+
 	return nil
 }
 
@@ -395,6 +497,10 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 // ensures that pending transactions are dequeued into the results queue. An error
 // is returned if the post processing is not possible.
 func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
+	if m == nil {
+		return errors.New("invalid nil modify response returned")
+	}
+
 	resPop := m.Result != nil
 	elecPop := m.ElectionId != nil
 	sessPop := m.SessionParamsResult != nil
@@ -409,15 +515,36 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	}
 
 	if m.ElectionId != nil {
+		er := c.clearPendingElection()
+		er.CurrentServerElectionID = m.ElectionId
 		// This is an update from the server in response to an updated master election ID.
-		c.addResult(&OpResult{
-			CurrentServerElectionID: m.ElectionId,
-		})
+		c.addResult(er)
 		return nil
 	}
 
-	// TODO(robjs): Add handling of other response types.
+	if m.SessionParamsResult != nil {
+		sr := c.clearPendingSessionParams()
+		sr.SessionParameters = m.SessionParamsResult
+		c.addResult(sr)
+	}
+
+	// TODO(robjs): add handling of received operations.
+
+	// write whether the client is converged each time we receive a message.
+	c.qs.convergMu.Lock()
+	defer c.qs.convergMu.Unlock()
+	c.qs.converged = c.isConverged()
+
 	return nil
+}
+
+// isConverged indicates whether the client is converged.
+func (c *Client) isConverged() bool {
+	c.qs.sendMu.RLock()
+	defer c.qs.sendMu.RUnlock()
+	c.qs.pendMu.RLock()
+	defer c.qs.pendMu.RUnlock()
+	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }
 
 // addResult adds the operation o to the result queue of the client.
@@ -427,21 +554,88 @@ func (c *Client) addResult(o *OpResult) {
 	c.qs.resultq = append(c.qs.resultq, o)
 }
 
-// addPending adds the operation specified by op to the pending transaction queue
+// addPendingOp adds the operation specified by op to the pending transaction queue
 // on the client. This queue stores the operations that have been sent to the server
 // but have not yet been reported on. It returns an error if the pending transaction
 // cannot be added.
-func (c *Client) addPending(op *spb.AFTOperation) error {
+func (c *Client) addPendingOp(op *spb.AFTOperation) error {
 	c.qs.pendMu.Lock()
 	defer c.qs.pendMu.Unlock()
-	if c.qs.pendq[op.Id] != nil {
+	if c.qs.pendq.Ops[op.Id] != nil {
 		return fmt.Errorf("could not enqueue operation %d, duplicate pending ID", op.Id)
 	}
-	c.qs.pendq[op.Id] = &PendingOp{
+	c.qs.pendq.Ops[op.Id] = &PendingOp{
 		Timestamp: unixTS(),
 		Op:        op,
 	}
 	return nil
+}
+
+// updatePendingElection adds the election ID specified by id to the pending transaction
+// queue on the client. There can only be a single pending election, and hence the
+// election ID is updated in place.
+func (c *Client) updatePendingElection(id *spb.Uint128) {
+	c.qs.pendMu.Lock()
+	defer c.qs.pendMu.Unlock()
+	c.qs.pendq.Election = &ElectionReqDetails{
+		Timestamp: unixTS(),
+		ID:        id,
+	}
+}
+
+// clearPendingElection clears the pending election ID and returns a result determining
+// the latency and timestamp. If there is no pending election, a result describing an error
+// is returned.
+func (c *Client) clearPendingElection() *OpResult {
+	c.qs.pendMu.Lock()
+	defer c.qs.pendMu.Unlock()
+	e := c.qs.pendq.Election
+	if e == nil {
+		return &OpResult{
+			Timestamp:   unixTS(),
+			ClientError: "received a election update when there was none pending",
+		}
+	}
+
+	n := unixTS()
+	c.qs.pendq.Election = nil
+	return &OpResult{
+		Timestamp: n,
+		Latency:   n - e.Timestamp,
+	}
+}
+
+// pendingSessionParams updates the client's outgoing queue to indicate that there
+// is a pending session parameters request.
+func (c *Client) pendingSessionParams(out *spb.SessionParameters) {
+	c.qs.pendMu.Lock()
+	defer c.qs.pendMu.Unlock()
+	c.qs.pendq.SessionParams = &SessionParamReqDetails{
+		Timestamp: unixTS(),
+		Outgoing:  out,
+	}
+}
+
+// clearPendingSessionParams clears the pending session parameters request in the client
+// and returns an OpResult describing the timing of the response.
+func (c *Client) clearPendingSessionParams() *OpResult {
+	c.qs.pendMu.Lock()
+	defer c.qs.pendMu.Unlock()
+	e := c.qs.pendq.SessionParams
+
+	if e == nil {
+		return &OpResult{
+			Timestamp:   unixTS(),
+			ClientError: "received a session parameter result when there was none pending",
+		}
+	}
+
+	c.qs.pendq.SessionParams = nil
+	n := unixTS()
+	return &OpResult{
+		Timestamp: n,
+		Latency:   n - e.Timestamp,
+	}
 }
 
 // addReadErr adds an error experienced when reading from the server to the readErr
@@ -461,35 +655,35 @@ func (c *Client) addSendErr(err error) {
 }
 
 // Pending returns the set of AFTOperations that are pending response from the
-// target.
-func (c *Client) Pending() (map[uint64]*PendingOp, error) {
+// target, it returns a slice of PendingRequest interfaces which describes the contents
+// of the pending queues.
+func (c *Client) Pending() ([]PendingRequest, error) {
 	if c.qs == nil {
 		return nil, errors.New("invalid (nil) queues in client")
 	}
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
-	ret := map[uint64]*PendingOp{}
-	for _, o := range c.qs.pendq {
-		if o.Op == nil {
-			return nil, fmt.Errorf("invalid nil operation in pending queue, %v", o)
+	ret := []PendingRequest{}
+
+	ids := []uint64{}
+	for k, o := range c.qs.pendq.Ops {
+		if o == nil || o.Op == nil {
+			return nil, errors.New("invalid (nil) operation in pending queue")
 		}
-		ret[o.Op.Id] = o
+		ids = append(ids, k)
+	}
+
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, v := range ids {
+		ret = append(ret, c.qs.pendq.Ops[v])
+	}
+	if c.qs.pendq.Election != nil {
+		ret = append(ret, c.qs.pendq.Election)
+	}
+	if c.qs.pendq.SessionParams != nil {
+		ret = append(ret, c.qs.pendq.SessionParams)
 	}
 	return ret, nil
-}
-
-// PendingLen returns the length of the pending queue.
-func (c *Client) PendingLen() int {
-	c.qs.pendMu.RLock()
-	defer c.qs.pendingMu.RUnlock()
-	return len(c.qs.pendq)
-}
-
-// SendLen returns the length of the send queue.
-func (c *Client) SendLen() int {
-	c.qs.sendMu.RLock()
-	defer c.qs.sendMu.RUnlock()
-	return len(c.qs.sendq)
 }
 
 // Results returns the set of ModifyResponses that have been received from the
@@ -508,8 +702,8 @@ func (c *Client) Results() ([]*OpResult, error) {
 type ClientStatus struct {
 	// Timestamp expressed in nanoseconds since the epoch that the status was retrieved.
 	Timestamp int64
-	// PendingTransactions is a map keyed by the uint64 operation ID
-	PendingTransactions map[uint64]*PendingOp
+	// PendingTransactions is the slice of pending operations on the client.
+	PendingTransactions []PendingRequest
 	Results             []*OpResult
 	SendErrs            []error
 	ReadErrs            []error
@@ -544,12 +738,12 @@ func (c *Client) Status() (*ClientStatus, error) {
 	return cs, nil
 }
 
-// SetModifyPostRecvCallback sets a function that is called after each ModifyResponse
-// is received in the client.
-func (c *Client) SetModifyPostRecvCallback(fn func() error) error {
-	if c.userFns == nil {
-		c.userFns = &userFunctions{}
+// AwaitConverged waits until the client is converged and writes to the supplied
+// channel. The function blocks until such time as the client returns.
+func (c *Client) AwaitConverged() {
+	for {
+		if c.isConverged() {
+			return
+		}
 	}
-	c.userFns.modifyPostRecvFn = fn
-	return nil
 }

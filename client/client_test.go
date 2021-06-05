@@ -141,46 +141,108 @@ func TestPending(t *testing.T) {
 	tests := []struct {
 		desc     string
 		inClient *Client
-		want     map[uint64]*PendingOp
+		want     []PendingRequest
 		wantErr  bool
 	}{{
 		desc: "empty queue",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: map[uint64]*PendingOp{},
+				pendq: &pendingQueue{},
 			},
 		},
-		want: map[uint64]*PendingOp{},
+		want: []PendingRequest{},
 	}, {
-		desc: "populated queue",
+		desc: "populated operations queue",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: map[uint64]*PendingOp{
-					1:  {Op: &spb.AFTOperation{Id: 1}},
-					42: {Op: &spb.AFTOperation{Id: 42}},
-					84: {Op: &spb.AFTOperation{Id: 84}},
+				pendq: &pendingQueue{
+					Ops: map[uint64]*PendingOp{
+						1:  {Timestamp: 1, Op: &spb.AFTOperation{Id: 1}},
+						42: {Timestamp: 42, Op: &spb.AFTOperation{Id: 42}},
+						84: {Timestamp: 84, Op: &spb.AFTOperation{Id: 84}},
+					},
 				},
 			},
 		},
-		want: map[uint64]*PendingOp{
-			1:  {Op: &spb.AFTOperation{Id: 1}},
-			42: {Op: &spb.AFTOperation{Id: 42}},
-			84: {Op: &spb.AFTOperation{Id: 84}},
+		want: []PendingRequest{
+			&PendingOp{Timestamp: 1, Op: &spb.AFTOperation{Id: 1}},
+			&PendingOp{Timestamp: 42, Op: &spb.AFTOperation{Id: 42}},
+			&PendingOp{Timestamp: 84, Op: &spb.AFTOperation{Id: 84}},
+		},
+	}, {
+		desc: "populated election ID",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Election: &ElectionReqDetails{
+						Timestamp: 21,
+						ID:        &spb.Uint128{High: 1, Low: 1},
+					},
+				},
+			},
+		},
+		want: []PendingRequest{
+			&ElectionReqDetails{
+				Timestamp: 21,
+				ID:        &spb.Uint128{High: 1, Low: 1},
+			},
+		},
+	}, {
+		desc: "populated session parameters",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					SessionParams: &SessionParamReqDetails{
+						Timestamp: 42,
+						Outgoing: &spb.SessionParameters{
+							AckType: spb.SessionParameters_RIB_AND_FIB_ACK,
+						},
+					},
+				},
+			},
+		},
+		want: []PendingRequest{
+			&SessionParamReqDetails{
+				Timestamp: 42,
+				Outgoing: &spb.SessionParameters{
+					AckType: spb.SessionParameters_RIB_AND_FIB_ACK,
+				},
+			},
+		},
+	}, {
+		desc: "invalid operation in Ops queue",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Ops: map[uint64]*PendingOp{
+						0: {Timestamp: 42},
+					},
+				},
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "all queues populated",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Election:      &ElectionReqDetails{Timestamp: 0},
+					SessionParams: &SessionParamReqDetails{Timestamp: 1},
+					Ops: map[uint64]*PendingOp{
+						0: {Timestamp: 3, Op: &spb.AFTOperation{Id: 42}},
+					},
+				},
+			},
+		},
+		want: []PendingRequest{
+			&PendingOp{Timestamp: 3, Op: &spb.AFTOperation{Id: 42}},
+			&ElectionReqDetails{Timestamp: 0},
+			&SessionParamReqDetails{Timestamp: 1},
 		},
 	}, {
 		desc:     "nil queues",
 		inClient: &Client{},
 		wantErr:  true,
-	}, {
-		desc: "nil operation in queue",
-		inClient: &Client{
-			qs: &clientQs{
-				pendq: map[uint64]*PendingOp{
-					1: {},
-				},
-			},
-		},
-		wantErr: true,
 	}}
 
 	for _, tt := range tests {
@@ -260,13 +322,13 @@ func TestStatus(t *testing.T) {
 		desc: "empty queues",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq:   map[uint64]*PendingOp{},
+				pendq:   &pendingQueue{},
 				resultq: []*OpResult{},
 			},
 		},
 		wantStatus: &ClientStatus{
 			Timestamp:           42,
-			PendingTransactions: map[uint64]*PendingOp{},
+			PendingTransactions: []PendingRequest{},
 			Results:             []*OpResult{},
 			SendErrs:            []error{},
 			ReadErrs:            []error{},
@@ -275,8 +337,12 @@ func TestStatus(t *testing.T) {
 		desc: "populated queues",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: map[uint64]*PendingOp{
-					1: {Timestamp: 100, Op: &spb.AFTOperation{Id: 42}},
+				pendq: &pendingQueue{
+					Ops: map[uint64]*PendingOp{
+						0: {Timestamp: 1, Op: &spb.AFTOperation{Id: 0}},
+					},
+					Election:      &ElectionReqDetails{Timestamp: 2},
+					SessionParams: &SessionParamReqDetails{Timestamp: 3},
 				},
 				resultq: []*OpResult{{
 					Timestamp: 50,
@@ -285,13 +351,10 @@ func TestStatus(t *testing.T) {
 		},
 		wantStatus: &ClientStatus{
 			Timestamp: 42,
-			PendingTransactions: map[uint64]*PendingOp{
-				42: {
-					Timestamp: 100,
-					Op: &spb.AFTOperation{
-						Id: 42,
-					},
-				},
+			PendingTransactions: []PendingRequest{
+				&PendingOp{Timestamp: 1, Op: &spb.AFTOperation{Id: 0}},
+				&ElectionReqDetails{Timestamp: 2},
+				&SessionParamReqDetails{Timestamp: 3},
 			},
 			Results: []*OpResult{{
 				Timestamp: 50,
@@ -300,15 +363,9 @@ func TestStatus(t *testing.T) {
 			ReadErrs: []error{},
 		},
 	}, {
-		desc: "erroneous pending queue",
-		inClient: &Client{
-			qs: &clientQs{
-				pendq: map[uint64]*PendingOp{
-					1: {},
-				},
-			},
-		},
-		wantErr: true,
+		desc:     "erroneous queues",
+		inClient: &Client{},
+		wantErr:  true,
 	}}
 
 	for _, tt := range tests {
@@ -327,14 +384,17 @@ func TestStatus(t *testing.T) {
 	}
 }
 
-func TestPostProcModifyResponse(t *testing.T) {
+func TestHandleModifyResponse(t *testing.T) {
+	unixTS = func() int64 { return 42 }
 	tests := []struct {
 		desc        string
+		inClient    *Client
 		inResponse  *spb.ModifyResponse
 		wantResults []*OpResult
 		wantErr     bool
 	}{{
-		desc: "invalid combination of fields populated",
+		desc:     "invalid combination of fields populated",
+		inClient: &Client{},
 		inResponse: &spb.ModifyResponse{
 			Result: []*spb.AFTResult{{
 				Id: 42,
@@ -344,25 +404,107 @@ func TestPostProcModifyResponse(t *testing.T) {
 		wantErr: true,
 	}, {
 		desc: "election ID populated",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Election: &ElectionReqDetails{
+						Timestamp: 2,
+					},
+				},
+			},
+		},
 		inResponse: &spb.ModifyResponse{
 			ElectionId: &spb.Uint128{High: 0, Low: 42},
 		},
 		wantResults: []*OpResult{{
+			Timestamp:               42,
+			Latency:                 40,
 			CurrentServerElectionID: &spb.Uint128{High: 0, Low: 42},
+		}},
+	}, {
+		desc: "invalid ModifyResponse",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{},
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "no populated election ID",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{},
+			},
+		},
+		inResponse: &spb.ModifyResponse{
+			ElectionId: &spb.Uint128{Low: 1},
+		},
+		wantResults: []*OpResult{{
+			Timestamp:               42,
+			CurrentServerElectionID: &spb.Uint128{Low: 1},
+			ClientError:             "received a election update when there was none pending",
+		}},
+	}, {
+		desc: "session parameters populated",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					SessionParams: &SessionParamReqDetails{
+						Timestamp: 20,
+					},
+				},
+			},
+		},
+		inResponse: &spb.ModifyResponse{
+			SessionParamsResult: &spb.SessionParametersResult{
+				Status: spb.SessionParametersResult_OK,
+			},
+		},
+		wantResults: []*OpResult{{
+			Timestamp: 42,
+			Latency:   22,
+			SessionParameters: &spb.SessionParametersResult{
+				Status: spb.SessionParametersResult_OK,
+			},
+		}},
+	}, {
+		desc: "session parameters received but not pending",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{},
+			},
+		},
+		inResponse: &spb.ModifyResponse{
+			SessionParamsResult: &spb.SessionParametersResult{
+				Status: spb.SessionParametersResult_OK,
+			},
+		},
+		wantResults: []*OpResult{{
+			Timestamp: 42,
+			SessionParameters: &spb.SessionParametersResult{
+				Status: spb.SessionParametersResult_OK,
+			},
+			ClientError: "received a session parameter result when there was none pending",
 		}},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			c, err := New()
-			if err != nil {
-				t.Fatalf("got error initialising client, %v", err)
-			}
-			if err := c.handleModifyResponse(tt.inResponse); (err != nil) != tt.wantErr {
+			c := tt.inClient
+
+			err := c.handleModifyResponse(tt.inResponse)
+			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error status, got: %v, wantErr: %v?", err, tt.wantErr)
 			}
+			if err != nil {
+				return
+			}
 
-			if diff := cmp.Diff(c.qs.resultq, tt.wantResults, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+			if diff := cmp.Diff(
+				c.qs.resultq, tt.wantResults,
+				protocmp.Transform(),
+				cmpopts.EquateEmpty(),
+				cmpopts.EquateErrors()); diff != "" {
 				t.Fatalf("did not get expected result queue, diff(-got,+want):\n%s", diff)
 			}
 		})
@@ -370,7 +512,6 @@ func TestPostProcModifyResponse(t *testing.T) {
 }
 
 func TestHandleModifyRequest(t *testing.T) {
-
 	// overload unix timestamp function to ensure output is deterministic.
 	unixTS = func() int64 { return 42 }
 
@@ -378,7 +519,7 @@ func TestHandleModifyRequest(t *testing.T) {
 		desc        string
 		inRequest   *spb.ModifyRequest
 		inClient    *Client
-		wantPending map[uint64]*PendingOp
+		wantPending *pendingQueue
 		wantErr     bool
 	}{{
 		desc: "valid input",
@@ -388,10 +529,12 @@ func TestHandleModifyRequest(t *testing.T) {
 			}},
 		},
 		inClient: func() *Client { c, _ := New(); return c }(),
-		wantPending: map[uint64]*PendingOp{
-			1: {
-				Timestamp: 42,
-				Op:        &spb.AFTOperation{Id: 1},
+		wantPending: &pendingQueue{
+			Ops: map[uint64]*PendingOp{
+				1: {
+					Timestamp: 42,
+					Op:        &spb.AFTOperation{Id: 1},
+				},
 			},
 		},
 	}, {
@@ -403,15 +546,53 @@ func TestHandleModifyRequest(t *testing.T) {
 		},
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: map[uint64]*PendingOp{
-					128: {},
+				pendq: &pendingQueue{
+					Ops: map[uint64]*PendingOp{
+						128: {},
+					},
 				},
 			},
 		},
-		wantPending: map[uint64]*PendingOp{
-			128: {},
+		wantPending: &pendingQueue{
+			Ops: map[uint64]*PendingOp{
+				128: {},
+			},
 		},
 		wantErr: true,
+	}, {
+		desc: "election ID update",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{},
+			},
+		},
+		inRequest: &spb.ModifyRequest{ElectionId: &spb.Uint128{Low: 1}},
+		wantPending: &pendingQueue{
+			Election: &ElectionReqDetails{
+				Timestamp: 42,
+				ID:        &spb.Uint128{Low: 1},
+			},
+		},
+	}, {
+		desc: "session params update",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{},
+			},
+		},
+		inRequest: &spb.ModifyRequest{
+			Params: &spb.SessionParameters{
+				AckType: spb.SessionParameters_RIB_AND_FIB_ACK,
+			},
+		},
+		wantPending: &pendingQueue{
+			SessionParams: &SessionParamReqDetails{
+				Timestamp: 42,
+				Outgoing: &spb.SessionParameters{
+					AckType: spb.SessionParameters_RIB_AND_FIB_ACK,
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {
@@ -425,4 +606,71 @@ func TestHandleModifyRequest(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConverged(t *testing.T) {
+	tests := []struct {
+		desc     string
+		inClient *Client
+		want     bool
+	}{{
+		desc: "converged - uninitialised",
+		inClient: &Client{
+			qs: &clientQs{},
+		},
+		want: true,
+	}, {
+		desc: "converged",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{},
+			},
+		},
+		want: true,
+	}, {
+		desc: "not converged - send queued",
+		inClient: &Client{
+			qs: &clientQs{
+				sendq: []*spb.ModifyRequest{{}},
+			},
+		},
+	}, {
+		desc: "not converged - pending queue, ops",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Ops: map[uint64]*PendingOp{
+						0: {},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "not converged - pending queue, election",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Election: &ElectionReqDetails{},
+				},
+			},
+		},
+	}, {
+		desc: "not converged - pending queue, params",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					SessionParams: &SessionParamReqDetails{},
+				},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if got, want := tt.inClient.isConverged(), tt.want; got != want {
+				t.Fatalf("did not get expected converged status, got: %v, want: %v", got, want)
+			}
+		})
+	}
+
 }

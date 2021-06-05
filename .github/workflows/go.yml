@@ -36,9 +36,11 @@ jobs:
 
     - name: Race Test
       run: |
-           for i in `find . -type d | grep -v "fluent"`; do
-             go test -race ./$i
-           done
+          find .
+          for i in `find . -type d | grep -v "fluent"`; do
+            echo $i
+            #go test -race ./$i
+          done
 
     - name: Coveralls
       if: ${{ matrix.go == '1.14' }}

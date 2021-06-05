@@ -1,5 +1,3 @@
-# gRIBIgo
-
 ![gribigo-logo](doc/gribigo.png)
 
 ![gribigo-status](https://github.com/openconfig/gribigo/actions/workflows/go.yml/badge.svg)

@@ -1,7 +1,7 @@
 # gRIBIgo
 
-![gribigo-logo][doc/gribigo.png]
-![gribigo-status][https://github.com/openconfig/gribigo/actions/workflows/go.yml/badge.svg]
+![gribigo-logo](doc/gribigo.png)
+![gribigo-status](https://github.com/openconfig/gribigo/actions/workflows/go.yml/badge.svg)
 
 This repository contains a [gRIBI](https://github.com/openconfig/gribi)
 client, written in Go, which can be executed against a gRIBI server to

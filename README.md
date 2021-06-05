@@ -1,6 +1,7 @@
 # gRIBIgo
 
 ![gribigo-logo](doc/gribigo.png)
+
 ![gribigo-status](https://github.com/openconfig/gribigo/actions/workflows/go.yml/badge.svg)
 
 This repository contains a [gRIBI](https://github.com/openconfig/gribi)

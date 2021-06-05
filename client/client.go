@@ -92,7 +92,7 @@ func New(opts ...Opt) (*Client, error) {
 			Ops: map[uint64]*PendingOp{},
 		},
 
-		// FIXME(robjs): explain comment here. F
+		// modifyCh is unbuffered so that where needed, writes can be blocking.
 		modifyCh: make(chan *spb.ModifyRequest),
 		resultq:  []*OpResult{},
 	}

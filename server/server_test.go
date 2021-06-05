@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -23,13 +24,13 @@ func TestNewClient(t *testing.T) {
 		desc:  "successfully create single client",
 		inIDs: []string{"c1"},
 		wantClients: map[string]*clientState{
-			"c1": {params: &clientParams{}},
+			"c1": {},
 		},
 	}, {
 		desc:  "fail to create duplicate client",
 		inIDs: []string{"c1", "c1"},
 		wantClients: map[string]*clientState{
-			"c1": {params: &clientParams{}},
+			"c1": {},
 		},
 		wantClientErrCode: map[int]codes.Code{
 			1: codes.Internal,
@@ -38,8 +39,8 @@ func TestNewClient(t *testing.T) {
 		desc:  "create multiple clients",
 		inIDs: []string{"c1", "c2"},
 		wantClients: map[string]*clientState{
-			"c1": {params: &clientParams{}},
-			"c2": {params: &clientParams{}},
+			"c1": {},
+			"c2": {},
 		},
 	}}
 
@@ -56,7 +57,9 @@ func TestNewClient(t *testing.T) {
 					t.Fatalf("did not get expected error code, got: %v (%v), want: %v", status.Code(gotErr), gotErr, wantErr)
 				}
 			}
-			if diff := cmp.Diff(tt.wantClients, s.cs, cmp.AllowUnexported(clientState{})); diff != "" {
+			if diff := cmp.Diff(tt.wantClients, s.cs,
+				cmp.AllowUnexported(clientState{}),
+				cmpopts.EquateEmpty()); diff != "" {
 				t.Fatalf("did not get expected clients, diff(-want,+got):\n%s", diff)
 			}
 		})
@@ -154,6 +157,189 @@ func TestUpdateParams(t *testing.T) {
 
 			if diff := cmp.Diff(tt.inServer.cs[tt.inID].params, tt.wantState); diff != "" {
 				t.Fatalf("did not get expected state, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestCheckParams(t *testing.T) {
+	tests := []struct {
+		desc         string
+		inParams     *spb.SessionParameters
+		inGotMsg     bool
+		wantResponse *spb.ModifyResponse
+		wantErrCode  codes.Code
+	}{{
+		desc:        "already received message",
+		inGotMsg:    true,
+		wantErrCode: codes.FailedPrecondition,
+	}, {
+		desc:     "received OK message",
+		inParams: &spb.SessionParameters{},
+		wantResponse: &spb.ModifyResponse{
+			SessionParamsResult: &spb.SessionParametersResult{
+				Status: spb.SessionParametersResult_OK,
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			s := New()
+			got, err := s.checkParams(tt.inParams, tt.inGotMsg)
+			if err != nil {
+				st, ok := status.FromError(err)
+				if !ok {
+					t.Fatalf("got error that was not a status.Status, got: %v", err)
+				}
+				if st.Code() != tt.wantErrCode {
+					t.Fatalf("did not get expected code, got: %s, want: %s", st.Code(), tt.wantErrCode)
+				}
+				return
+			}
+
+			if diff := cmp.Diff(got, tt.wantResponse, protocmp.Transform()); diff != "" {
+				t.Fatalf("did not get expected error, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestIsNewMaster(t *testing.T) {
+	tests := []struct {
+		desc       string
+		inCand     *spb.Uint128
+		inExist    *spb.Uint128
+		wantMaster bool
+		wantEqual  bool
+		wantErr    bool
+	}{{
+		desc:       "new master - low only",
+		inCand:     &spb.Uint128{Low: 2},
+		inExist:    &spb.Uint128{Low: 1},
+		wantMaster: true,
+	}, {
+		desc:       "new master - high only",
+		inCand:     &spb.Uint128{High: 2},
+		inExist:    &spb.Uint128{High: 1},
+		wantMaster: true,
+	}, {
+		desc:       "new master - high and low",
+		inCand:     &spb.Uint128{High: 4, Low: 3},
+		inExist:    &spb.Uint128{High: 4, Low: 2},
+		wantMaster: true,
+	}, {
+		desc:      "equal",
+		inCand:    &spb.Uint128{High: 42, Low: 42},
+		inExist:   &spb.Uint128{High: 42, Low: 42},
+		wantEqual: true,
+	}, {
+		desc:       "nil input",
+		inCand:     &spb.Uint128{High: 4242, Low: 4242},
+		wantMaster: true,
+	}, {
+		desc:    "not master",
+		inCand:  &spb.Uint128{High: 1, Low: 1},
+		inExist: &spb.Uint128{High: 44, Low: 42},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			gotMaster, gotEqual, err := isNewMaster(tt.inCand, tt.inExist)
+
+			if got, want := (err != nil), tt.wantErr; got != want {
+				t.Fatalf("did not get expected error, gotErr: %v, want: %v", err, want)
+			}
+
+			if got, want := gotMaster, tt.wantMaster; got != want {
+				t.Errorf("did not get expected master result, got: %v, want: %v", got, want)
+			}
+
+			if got, want := gotEqual, tt.wantEqual; got != want {
+				t.Errorf("did not get expected equal result, got: %v, want: %v", got, want)
+			}
+		})
+	}
+}
+
+func TestRunElection(t *testing.T) {
+	tests := []struct {
+		desc             string
+		inServer         *Server
+		inID             string
+		inElecID         *spb.Uint128
+		wantResponse     *spb.ModifyResponse
+		wantServerElecID *spb.Uint128
+		wantServerMaster string
+		wantErrCode      codes.Code
+	}{{
+		desc:     "becomes master - no election ID",
+		inServer: &Server{},
+		inID:     "c1",
+		inElecID: &spb.Uint128{High: 0, Low: 1},
+		wantResponse: &spb.ModifyResponse{
+			ElectionId: &spb.Uint128{High: 0, Low: 1},
+		},
+		wantServerElecID: &spb.Uint128{High: 0, Low: 1},
+		wantServerMaster: "c1",
+	}, {
+		desc: "becomes master - election ID present",
+		inServer: &Server{
+			curElecID: &spb.Uint128{
+				High: 0,
+				Low:  1,
+			},
+		},
+		inID:     "c1",
+		inElecID: &spb.Uint128{High: 0, Low: 2},
+		wantResponse: &spb.ModifyResponse{
+			ElectionId: &spb.Uint128{High: 0, Low: 2},
+		},
+		wantServerElecID: &spb.Uint128{High: 0, Low: 2},
+		wantServerMaster: "c1",
+	}, {
+		desc: "does not become master",
+		inServer: &Server{
+			curElecID: &spb.Uint128{
+				High: 0,
+				Low:  4000,
+			},
+			curMaster: "existing",
+		},
+		inID:     "c1",
+		inElecID: &spb.Uint128{High: 0, Low: 2},
+		wantResponse: &spb.ModifyResponse{
+			ElectionId: &spb.Uint128{High: 0, Low: 4000},
+		},
+		wantServerElecID: &spb.Uint128{High: 0, Low: 4000},
+		wantServerMaster: "existing",
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			s := tt.inServer
+			got, err := s.runElection(tt.inID, tt.inElecID)
+			if err != nil {
+				st, ok := status.FromError(err)
+				if !ok {
+					t.Fatalf("returned error that was not a status.Status, got:%v", err)
+				}
+				if got, want := st.Code(), tt.wantErrCode; got != want {
+					t.Fatalf("did not get expected error code, got: %s, want: %s", got, want)
+				}
+				return
+			}
+
+			if diff := cmp.Diff(got, tt.wantResponse, protocmp.Transform()); diff != "" {
+				t.Errorf("did not get expected response, diff(-got,+want):\n%s", diff)
+			}
+
+			if got, want := s.curElecID, tt.wantServerElecID; !cmp.Equal(got, want, protocmp.Transform()) {
+				t.Errorf("did not get expected server ID, got: %s, want: %s", got, want)
+			}
+
+			if got, want := s.curMaster, tt.wantServerMaster; !cmp.Equal(got, want) {
+				t.Errorf("did not get expected master ID, got: %s, want: %s", got, want)
 			}
 		})
 	}

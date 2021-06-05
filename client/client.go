@@ -2,6 +2,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,11 +13,14 @@ import (
 
 	log "github.com/golang/glog"
 	"google.golang.org/grpc"
+	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 var (
+	// unixTS is a function that returns a timestamp in nanoseconds for the current time.
+	// It can be overloaded in unit tests to ensure that deterministic output is received.
 	unixTS = time.Now().UnixNano
 )
 
@@ -87,15 +91,11 @@ func New(opts ...ClientOpt) (*Client, error) {
 		pendq: &pendingQueue{
 			Ops: map[uint64]*PendingOp{},
 		},
-		// Since we might have a case where we write into the channel faster than
-		// we read from it, we create a buffer for the channel.
-		modifyCh: make(chan *spb.ModifyRequest, 1000),
+
+		// We make the modifyChannel unbuffered so that we know that if we are not reading
+		// from it writers can block.
+		modifyCh: make(chan *spb.ModifyRequest),
 		resultq:  []*OpResult{},
-
-		// The converged channel is implemented as a non-buffered channel, but
-		// we make sure that reads and writes from it are non-blocking, such that
-		// we do not overload it.
-
 	}
 
 	return c, nil
@@ -427,6 +427,31 @@ type OpResult struct {
 	// TODO(robjs): add additional information about what the result was here.
 }
 
+// String returns a string for an OpResult for debugging purposes.
+func (o *OpResult) String() string {
+	buf := &bytes.Buffer{}
+	buf.WriteString(fmt.Sprintf("%d (%d nsec):", o.Timestamp, o.Latency))
+
+	if v := o.CurrentServerElectionID; v != nil {
+		e := uint128.New(v.Low, v.High)
+		buf.WriteString(fmt.Sprintf(" ElectionID: %s", e))
+	}
+
+	if v := o.OperationID; v != 0 {
+		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d }", v))
+	}
+
+	if v := o.SessionParameters; v != nil {
+		buf.WriteString(fmt.Sprintf(" SessionParameterResult: OK (%s)", v.String()))
+	}
+
+	if v := o.ClientError; v != "" {
+		buf.WriteString(fmt.Sprintf(" With Error: %s", v))
+	}
+
+	return buf.String()
+}
+
 // Q enqueues a ModifyRequest to be sent to the target.
 func (c *Client) Q(m *spb.ModifyRequest) {
 	if !c.qs.sending {
@@ -510,7 +535,7 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 			pop++
 		}
 	}
-	if pop == 0 || pop > 1 {
+	if pop > 1 {
 		return fmt.Errorf("invalid returned message, ElectionID, Result, and SessionParametersResult are mutually exclusive, got: %s", m)
 	}
 

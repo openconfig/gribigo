@@ -37,7 +37,7 @@ jobs:
     - name: Race Test
       run: |
            for i in `find . -type d | grep -v "fluent"`; do
-	     go test -race ./...
+             go test -race ./$i
            done
 
     - name: Coveralls

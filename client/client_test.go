@@ -16,11 +16,9 @@ func TestHandleParams(t *testing.T) {
 		wantState *clientState
 		wantErr   bool
 	}{{
-		desc:   "client with default parameters",
-		inOpts: nil,
-		wantState: &clientState{
-			SessParams: &spb.SessionParameters{},
-		},
+		desc:      "client with default parameters",
+		inOpts:    nil,
+		wantState: &clientState{},
 	}, {
 		desc: "ALL_PRIMARY client",
 		inOpts: []ClientOpt{

@@ -1,10 +1,10 @@
 package server
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -24,13 +24,13 @@ func TestNewClient(t *testing.T) {
 		desc:  "successfully create single client",
 		inIDs: []string{"c1"},
 		wantClients: map[string]*clientState{
-			"c1": {},
+			"c1": {params: &clientParams{}},
 		},
 	}, {
 		desc:  "fail to create duplicate client",
 		inIDs: []string{"c1", "c1"},
 		wantClients: map[string]*clientState{
-			"c1": {},
+			"c1": {params: &clientParams{}},
 		},
 		wantClientErrCode: map[int]codes.Code{
 			1: codes.Internal,
@@ -39,8 +39,8 @@ func TestNewClient(t *testing.T) {
 		desc:  "create multiple clients",
 		inIDs: []string{"c1", "c2"},
 		wantClients: map[string]*clientState{
-			"c1": {},
-			"c2": {},
+			"c1": {params: &clientParams{}},
+			"c2": {params: &clientParams{}},
 		},
 	}}
 
@@ -58,8 +58,7 @@ func TestNewClient(t *testing.T) {
 				}
 			}
 			if diff := cmp.Diff(tt.wantClients, s.cs,
-				cmp.AllowUnexported(clientState{}),
-				cmpopts.EquateEmpty()); diff != "" {
+				cmp.AllowUnexported(clientState{})); diff != "" {
 				t.Fatalf("did not get expected clients, diff(-want,+got):\n%s", diff)
 			}
 		})
@@ -162,20 +161,176 @@ func TestUpdateParams(t *testing.T) {
 	}
 }
 
+func TestCheckClientsConsistent(t *testing.T) {
+	tests := []struct {
+		desc     string
+		inServer *Server
+		inID     string
+		inParams *clientParams
+		want     bool
+		wantErr  bool
+	}{{
+		desc: "inconsistent clients",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{
+						ExpectElecID: true,
+					},
+				},
+			},
+		},
+		inParams: &clientParams{},
+		inID:     "c2",
+		want:     false,
+	}, {
+		desc: "consistent clients",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{
+						ExpectElecID: true,
+					},
+				},
+			},
+		},
+		inParams: &clientParams{
+			ExpectElecID: true,
+		},
+		inID: "c2",
+		want: true,
+	}, {
+		desc: "nil parameters for existing client",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {},
+			},
+		},
+		inParams: &clientParams{},
+		inID:     "c2",
+		wantErr:  true,
+	}, {
+		desc:     "nil parameters for new client",
+		inServer: &Server{},
+		inID:     "error",
+		wantErr:  true,
+	}, {
+		desc: "skip this client",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {},
+			},
+		},
+		inParams: &clientParams{},
+		inID:     "c1",
+		want:     true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := tt.inServer.checkClientsConsistent(tt.inID, tt.inParams)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got err: %v, wantErr? %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("did not get expected consistency value, got: %v, want: %v", got, tt.want)
+			}
+		})
+	}
+}
 func TestCheckParams(t *testing.T) {
 	tests := []struct {
-		desc         string
-		inParams     *spb.SessionParameters
-		inGotMsg     bool
-		wantResponse *spb.ModifyResponse
-		wantErrCode  codes.Code
+		desc           string
+		inID           string
+		inServer       *Server
+		inParams       *spb.SessionParameters
+		inGotMsg       bool
+		wantResponse   *spb.ModifyResponse
+		wantErrCode    codes.Code
+		wantErrDetails *spb.ModifyRPCErrorDetails
 	}{{
-		desc:        "already received message",
+		desc: "already received message",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {params: &clientParams{}},
+			},
+		},
+		inID:        "c1",
 		inGotMsg:    true,
+		inParams:    &spb.SessionParameters{},
 		wantErrCode: codes.FailedPrecondition,
+		wantErrDetails: &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED,
+		},
 	}, {
-		desc:     "received OK message",
-		inParams: &spb.SessionParameters{},
+		desc: "invalid combination",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {params: &clientParams{}},
+			},
+		},
+		inID: "c1",
+		inParams: &spb.SessionParameters{
+			Persistence: spb.SessionParameters_PRESERVE,
+			Redundancy:  spb.SessionParameters_ALL_PRIMARY,
+		},
+		wantErrCode: codes.FailedPrecondition,
+		wantErrDetails: &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		},
+		// TODO(robjs): test invalid combination, since today we do not actually support >1 mode, we cannot
+		// test this directly.
+
+	}, {
+		desc: "ALL_PRIMARY unsupported",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {params: &clientParams{}},
+			},
+		},
+		inID: "c1",
+		inParams: &spb.SessionParameters{
+			Redundancy: spb.SessionParameters_ALL_PRIMARY,
+		},
+		wantErrCode: codes.Unimplemented,
+		wantErrDetails: &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		},
+	}, {
+		desc: "nil parameters",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {params: &clientParams{}},
+			},
+		},
+		wantErrCode: codes.Internal,
+	}, {
+		desc: "delete persistence unsupported",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {params: &clientParams{}},
+			},
+		},
+		inParams: &spb.SessionParameters{
+			Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+			Persistence: spb.SessionParameters_DELETE,
+		},
+		wantErrCode: codes.Unimplemented,
+		wantErrDetails: &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		},
+	}, {
+		desc: "received OK message",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {params: &clientParams{}},
+			},
+		},
+		inID: "c1",
+		inParams: &spb.SessionParameters{
+			Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+			Persistence: spb.SessionParameters_PRESERVE,
+		},
 		wantResponse: &spb.ModifyResponse{
 			SessionParamsResult: &spb.SessionParametersResult{
 				Status: spb.SessionParametersResult_OK,
@@ -185,16 +340,21 @@ func TestCheckParams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			s := New()
-			got, err := s.checkParams(tt.inParams, tt.inGotMsg)
+			s := tt.inServer
+			got, err := s.checkParams(tt.inID, tt.inParams, tt.inGotMsg)
 			if err != nil {
 				st, ok := status.FromError(err)
 				if !ok {
 					t.Fatalf("got error that was not a status.Status, got: %v", err)
 				}
 				if st.Code() != tt.wantErrCode {
-					t.Fatalf("did not get expected code, got: %s, want: %s", st.Code(), tt.wantErrCode)
+					t.Fatalf("did not get expected code, got: %s, want: %s, error: %v", st.Code(), tt.wantErrCode, err)
 				}
+
+				if errS := chkErrDetails(st, tt.wantErrDetails); errS != "" {
+					t.Fatalf(errS)
+				}
+
 				return
 			}
 
@@ -262,6 +422,21 @@ func TestIsNewMaster(t *testing.T) {
 	}
 }
 
+// chkErrDetails is a helper to check whether a status contains an expected ModifyRPCErrorDetails.
+func chkErrDetails(st *status.Status, d *spb.ModifyRPCErrorDetails) string {
+	if d == nil {
+		// skip check if it's not expected
+		return ""
+	}
+	if got := len(st.Details()); got != 1 {
+		return fmt.Sprintf("did not get expected number of details arguments, got: %d (%v), want: 1", got, st.Details())
+	}
+	if got, want := st.Details()[0], d; !cmp.Equal(got, want, protocmp.Transform()) {
+		return fmt.Sprintf("did not get expected error details, got: %s, want: %s", got, want)
+	}
+	return ""
+}
+
 func TestRunElection(t *testing.T) {
 	tests := []struct {
 		desc             string
@@ -272,9 +447,16 @@ func TestRunElection(t *testing.T) {
 		wantServerElecID *spb.Uint128
 		wantServerMaster string
 		wantErrCode      codes.Code
+		wantErrDetails   *spb.ModifyRPCErrorDetails
 	}{{
-		desc:     "becomes master - no election ID",
-		inServer: &Server{},
+		desc: "becomes master - no election ID",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {&clientParams{
+					ExpectElecID: true,
+				}},
+			},
+		},
 		inID:     "c1",
 		inElecID: &spb.Uint128{High: 0, Low: 1},
 		wantResponse: &spb.ModifyResponse{
@@ -285,6 +467,11 @@ func TestRunElection(t *testing.T) {
 	}, {
 		desc: "becomes master - election ID present",
 		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {&clientParams{
+					ExpectElecID: true,
+				}},
+			},
 			curElecID: &spb.Uint128{
 				High: 0,
 				Low:  1,
@@ -300,6 +487,13 @@ func TestRunElection(t *testing.T) {
 	}, {
 		desc: "does not become master",
 		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{
+						ExpectElecID: true,
+					},
+				},
+			},
 			curElecID: &spb.Uint128{
 				High: 0,
 				Low:  4000,
@@ -313,6 +507,22 @@ func TestRunElection(t *testing.T) {
 		},
 		wantServerElecID: &spb.Uint128{High: 0, Low: 4000},
 		wantServerMaster: "existing",
+	}, {
+		desc: "not expecting election",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{
+						ExpectElecID: false,
+					},
+				},
+			},
+		},
+		inID:        "c1",
+		wantErrCode: codes.FailedPrecondition,
+		wantErrDetails: &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY,
+		},
 	}}
 
 	for _, tt := range tests {
@@ -325,8 +535,13 @@ func TestRunElection(t *testing.T) {
 					t.Fatalf("returned error that was not a status.Status, got:%v", err)
 				}
 				if got, want := st.Code(), tt.wantErrCode; got != want {
-					t.Fatalf("did not get expected error code, got: %s, want: %s", got, want)
+					t.Fatalf("did not get expected error code, got: %s, want: %s (error: %v)", got, want, err)
 				}
+
+				if errS := chkErrDetails(st, tt.wantErrDetails); errS != "" {
+					t.Fatalf(errS)
+				}
+
 				return
 			}
 

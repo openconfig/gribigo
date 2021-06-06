@@ -3,6 +3,7 @@
 package server
 
 import (
+	"fmt"
 	"io"
 	"sync"
 
@@ -53,6 +54,16 @@ type clientState struct {
 	params *clientParams
 }
 
+// DeepCopy returns a copy of the clientState struct.
+func (cs *clientState) DeepCopy() *clientState {
+	if cs.params == nil {
+		return &clientState{}
+	}
+	return &clientState{
+		params: cs.params.DeepCopy(),
+	}
+}
+
 // clientParams stores parameters that are set as part of the Modify RPC
 // initial handshake for a particular client.
 type clientParams struct {
@@ -67,6 +78,20 @@ type clientParams struct {
 	// FIBAck indicates whether the client expects FIB-level
 	// acknowledgements.
 	FIBAck bool
+}
+
+// DeepCopy returns a copy of the clientParams struct.
+func (cp *clientParams) DeepCopy() *clientParams {
+	return &clientParams{
+		Persist:      cp.Persist,
+		ExpectElecID: cp.ExpectElecID,
+		FIBAck:       cp.FIBAck,
+	}
+}
+
+// Equal returns true if the candidate clientParams n is equal to the receiver cp.
+func (cp *clientParams) Equal(n *clientParams) bool {
+	return cp.Persist == n.Persist && cp.FIBAck == n.FIBAck && cp.ExpectElecID == n.ExpectElecID
 }
 
 // New creates a new gRIBI server.
@@ -102,7 +127,7 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		switch {
 		case in.Params != nil:
 			var err error
-			if res, err = s.checkParams(in.Params, gotmsg); err != nil {
+			if res, err = s.checkParams(cid, in.Params, gotmsg); err != nil {
 				// Invalid parameters is a fatal error, so we take down the Modify RPC.
 				return err
 			}
@@ -138,7 +163,10 @@ func (s *Server) newClient(id string) error {
 	if s.cs[id] != nil {
 		return status.Errorf(codes.Internal, "cannot create new client with duplicate ID, %s", id)
 	}
-	s.cs[id] = &clientState{}
+	s.cs[id] = &clientState{
+		// Set to the default set of parameters.
+		params: &clientParams{},
+	}
 
 	return nil
 }
@@ -162,35 +190,127 @@ func (s *Server) updateParams(id string, params *spb.SessionParameters) error {
 		return status.Errorf(codes.Internal, "cannot update parameters for a client with no state, %s", id)
 	}
 	if p.params != nil {
-		var err error
-		me := status.New(codes.FailedPrecondition, "cannot modify SessionParameters")
-		if me, err = me.WithDetails(&spb.ModifyRPCErrorDetails{
+		return addModifyErrDetailsOrReturn(status.New(codes.FailedPrecondition, "cannot modify SessionParameters"), &spb.ModifyRPCErrorDetails{
 			Reason: spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED,
-		}); err != nil {
-			return me.Err()
-		}
-		return me.Err()
+		})
 	}
 	s.cs[id].params = cparam
 	return nil
 }
 
-// checkParams validates that teh parameters that were supplied by the client are valid
-// within the overall server context. It returns the ModifyResponse that should be sent
+// addModifyErrDetailsOrReturn takes an input status (s), and ModifyRPCErrorDetails proto (d) and appends
+// d to s. If an error is encountered, s is returned, otherwise the appended version is returned. The return
+// type is a Go error which can be returned directly.
+func addModifyErrDetailsOrReturn(s *status.Status, d *spb.ModifyRPCErrorDetails) error {
+	ns, err := s.WithDetails(d)
+	if err != nil {
+		return s.Err()
+	}
+	return ns.Err()
+}
+
+// checkParams validates that the parameters that were supplied by the client with the specified
+// ID are valid within the overall server context. It returns the ModifyResponse that should be sent
 // to the client, or the populated error.
-func (s *Server) checkParams(p *spb.SessionParameters, gotMsg bool) (*spb.ModifyResponse, error) {
-	if gotMsg {
-		return nil, status.Errorf(codes.FailedPrecondition, "must send SessionParameters as the first request on a Modify channel")
+func (s *Server) checkParams(id string, p *spb.SessionParameters, gotMsg bool) (*spb.ModifyResponse, error) {
+	if p == nil {
+		return nil, status.Newf(codes.Internal, "invalid nil parameters when checking for client %s, got: %v", id, p).Err()
 	}
 
-	// TODO(robjs): Check that parameters are self consistent.
-	// TODO(robjs): Check that the client is consistent with other clients on the system.
+	if gotMsg {
+		// TODO(robjs): the spec should spell out that this can't be sent after the first message is
+		// received, whatever the type.
+		return nil, addModifyErrDetailsOrReturn(status.New(codes.FailedPrecondition, "cannot send session parameters after another message"), &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED,
+		})
+	}
+
+	// TODO(robjs): confirm with folks what their thoughts are on whether we support persistence
+	// other than DELETE in ALL_PRIMARY. I think that we should not support this since it means
+	// that we need to externalise the client ID (so that the client can delete its old entries, but
+	// not others).
+	if p.Redundancy == spb.SessionParameters_ALL_PRIMARY && p.Persistence == spb.SessionParameters_PRESERVE {
+		return nil, addModifyErrDetailsOrReturn(status.New(codes.FailedPrecondition, "cannot have ALL_PRIMARY client with persistence PRESERVE"), &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		})
+	}
+
+	// The fake server supports both RIB and FIB ACKing (given that we do not have any real
+	// FIB, they are basically the same :-)). It does not (currently) support ALL_PRIMARY
+	// mode of operations.
+	if p.Redundancy == spb.SessionParameters_ALL_PRIMARY {
+		return nil, addModifyErrDetailsOrReturn(status.Newf(codes.Unimplemented, "ALL_PRIMARY redundancy are not supported"), &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		})
+	}
+
+	// The fake server does not (currently) support delete, so we just return an error
+	// if the client is asking for anything other than persisting the entries.
+	if p.Persistence == spb.SessionParameters_DELETE {
+		return nil, addModifyErrDetailsOrReturn(status.Newf(codes.Unimplemented, "persistence modes other than PRESERVE are not supported"), &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		})
+	}
+
+	cp := &clientParams{
+		FIBAck:       p.GetAckType() == spb.SessionParameters_RIB_ACK,
+		ExpectElecID: p.GetRedundancy() == spb.SessionParameters_SINGLE_PRIMARY,
+		Persist:      p.GetPersistence() == spb.SessionParameters_PRESERVE,
+	}
+
+	consistent, err := s.checkClientsConsistent(id, cp)
+	if err != nil {
+		return nil, status.Newf(codes.Internal, "got unexpected error checking for consistency, %v", err).Err()
+	}
+	if !consistent {
+		return nil, addModifyErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "client %s is not consistent with other clients", id), &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_PARAMS_DIFFER_FROM_OTHER_CLIENTS,
+		})
+	}
+
+	if err := s.setClientParams(id, cp); err != nil {
+		return nil, status.Errorf(codes.Internal, "internal error setting parameters, %v", err)
+	}
 
 	return &spb.ModifyResponse{
 		SessionParamsResult: &spb.SessionParametersResult{
 			Status: spb.SessionParametersResult_OK,
 		},
 	}, nil
+}
+
+// checkClientsConsistent ensures that the client described by id and the parameters p is consistent
+// with other clients in the server.
+func (s *Server) checkClientsConsistent(id string, p *clientParams) (bool, error) {
+	if p == nil {
+		return false, fmt.Errorf("unexpected nil parameters for client %s", id)
+	}
+
+	s.csMu.RLock()
+	defer s.csMu.RUnlock()
+	for cid, state := range s.cs {
+		if id == cid {
+			continue
+		}
+		if state == nil || state.params == nil {
+			return false, fmt.Errorf("client %s has invalid nil parameter state", cid)
+		}
+		if !state.params.Equal(p) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// setClientParams sets the parameters for client with id to have the specified parameters.
+func (s *Server) setClientParams(id string, p *clientParams) error {
+	s.csMu.Lock()
+	defer s.csMu.Unlock()
+	if s.cs[id] == nil {
+		return fmt.Errorf("cannot find client %s, known clients: %v", id, s.cs)
+	}
+	s.cs[id].params = p
+	return nil
 }
 
 // isNewMaster takes two election IDs and determines whether the candidate (cand) is a new
@@ -219,8 +339,32 @@ func isNewMaster(cand, exist *spb.Uint128) (bool, bool, error) {
 	return false, false, nil
 }
 
+// getClientStateCopy returns a copy of the state for the client with the specified ID, since
+// the state of a client is immutable after the initial creation, we never allow a client to
+// get a copy of the pointer so that they could change this. It returns a copy of the clientState
+// an error.
+func (s *Server) getClientStateCopy(id string) (*clientState, error) {
+	s.csMu.RLock()
+	defer s.csMu.RUnlock()
+	if s.cs[id] == nil {
+		return nil, fmt.Errorf("unknown client %s", id)
+	}
+	return s.cs[id].DeepCopy(), nil
+}
+
+// runElection runs an election on the server and checks whether the client with the specified id is
+// the new master.
 func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyResponse, error) {
-	// TODO(robjs): check that the client is one that we actually need to do elections for.
+	cs, err := s.getClientStateCopy(id)
+	if err != nil {
+		return nil, err
+	}
+	if !cs.params.ExpectElecID {
+		return nil, addModifyErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "client ID %s does not expect elections", id), &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY,
+		})
+	}
+
 	s.elecMu.RLock()
 	defer s.elecMu.RUnlock()
 	nm, _, err := isNewMaster(elecID, s.curElecID)

@@ -31,6 +31,9 @@ type gRIBIConnection struct {
 	redundMode RedundancyMode
 	// electionID specifies the initial election ID for the client.
 	electionID *spb.Uint128
+	// persist indicates whether the client requests that the server persists
+	// entries after it disconnects.
+	persist bool
 }
 
 // NewClient returns a new gRIBI client instance, and is an entrypoint to this
@@ -52,6 +55,11 @@ func (g *gRIBIClient) Connection() *gRIBIConnection {
 // form of address:port.
 func (g *gRIBIConnection) WithTarget(addr string) *gRIBIConnection {
 	g.targetAddr = addr
+	return g
+}
+
+func (g *gRIBIConnection) WithPersistence() *gRIBIConnection {
+	g.persist = true
 	return g
 }
 
@@ -109,6 +117,10 @@ func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
 			t.Fatalf("client must specify Election ID in elected primary mode")
 		}
 		opts = append(opts, client.ElectedPrimaryClient(g.connection.electionID))
+	}
+
+	if g.connection.persist {
+		opts = append(opts, client.PersistEntries())
 	}
 
 	log.V(2).Infof("setting client parameters to %+v", opts)

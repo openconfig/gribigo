@@ -121,6 +121,8 @@ func handleParams(opts ...Opt) (*clientState, error) {
 		case *electedPrimaryClient:
 			s.SessParams.Redundancy = spb.SessionParameters_SINGLE_PRIMARY
 			s.ElectionID = v.electionID
+		case *persistEntries:
+			s.SessParams.Persistence = spb.SessionParameters_PRESERVE
 		}
 	}
 	return s, nil
@@ -182,6 +184,18 @@ type electedPrimaryClient struct {
 }
 
 func (electedPrimaryClient) isClientOpt() {}
+
+// PersistEntries indicates that the client should request that the server
+// persists entries after it has disconnected. By default, a gRIBI server will
+// purge all entries when the client disconnects. This persistence mode may
+// only be used when the redundancy mode is AllPrimaryClients.
+func PersistEntries() *persistEntries {
+	return &persistEntries{}
+}
+
+type persistEntries struct{}
+
+func (persistEntries) isClientOpt() {}
 
 // Connect establishes a Modify RPC to the client and sends the initial session
 // parameters/election ID if required. The Modify RPC is stored within the client
@@ -765,12 +779,37 @@ func (c *Client) Status() (*ClientStatus, error) {
 	return cs, nil
 }
 
+// hasErrors reports whether there are errors that have been encountered
+// in the client. It returns two slices of errors containing the send
+// and recv errors
+func (c *Client) hasErrors() ([]error, []error) {
+	c.readErrMu.RLock()
+	defer c.readErrMu.RUnlock()
+	c.sendErrMu.RLock()
+	defer c.sendErrMu.RUnlock()
+	if len(c.readErr) != 0 || len(c.sendErr) != 0 {
+		return c.sendErr, c.readErr
+	}
+	return nil, nil
+}
+
+// ClientError encapsulates send and receive errors for the client.
+type ClientErr struct {
+	Send, Recv []error
+}
+
+// Error implements the error interface.
+func (c *ClientErr) Error() string { return fmt.Sprintf("errors: send: %v, recv: %v", c.Send, c.Recv) }
+
 // AwaitConverged waits until the client is converged and writes to the supplied
 // channel. The function blocks until such time as the client returns.
-func (c *Client) AwaitConverged() {
+func (c *Client) AwaitConverged() error {
 	for {
+		if sendE, recvE := c.hasErrors(); len(sendE) != 0 || len(recvE) != 0 {
+			return &ClientErr{Send: sendE, Recv: recvE}
+		}
 		if c.isConverged() {
-			return
+			return nil
 		}
 	}
 }

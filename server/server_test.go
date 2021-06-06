@@ -81,11 +81,12 @@ func TestUpdateParams(t *testing.T) {
 		inParams: &spb.SessionParameters{},
 		wantCode: codes.Internal,
 	}, {
-		desc: "client with existing state",
+		desc: "client with previously set state",
 		inServer: &Server{
 			cs: map[string]*clientState{
 				"c1": {
-					params: &clientParams{},
+					params:    &clientParams{},
+					setParams: true,
 				},
 			},
 		},
@@ -98,7 +99,11 @@ func TestUpdateParams(t *testing.T) {
 	}, {
 		desc: "new client, with all fields as default",
 		inServer: &Server{
-			cs: map[string]*clientState{"c1": {}},
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{},
+				},
+			},
 		},
 		inID:     "c1",
 		inParams: &spb.SessionParameters{},
@@ -110,7 +115,11 @@ func TestUpdateParams(t *testing.T) {
 	}, {
 		desc: "new client, with all fields non-default",
 		inServer: &Server{
-			cs: map[string]*clientState{"c1": {}},
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{},
+				},
+			},
 		},
 		inID: "c1",
 		inParams: &spb.SessionParameters{
@@ -452,9 +461,10 @@ func TestRunElection(t *testing.T) {
 		desc: "becomes master - no election ID",
 		inServer: &Server{
 			cs: map[string]*clientState{
-				"c1": {&clientParams{
-					ExpectElecID: true,
-				}},
+				"c1": {
+					params: &clientParams{
+						ExpectElecID: true,
+					}},
 			},
 		},
 		inID:     "c1",
@@ -468,9 +478,10 @@ func TestRunElection(t *testing.T) {
 		desc: "becomes master - election ID present",
 		inServer: &Server{
 			cs: map[string]*clientState{
-				"c1": {&clientParams{
-					ExpectElecID: true,
-				}},
+				"c1": {
+					params: &clientParams{
+						ExpectElecID: true,
+					}},
 			},
 			curElecID: &spb.Uint128{
 				High: 0,

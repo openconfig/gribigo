@@ -52,6 +52,9 @@ type clientState struct {
 	// parameters in any other context (i.e., after other ModifyRequest
 	// messages have been sent, or to adjust these parameters).
 	params *clientParams
+	// setParams indicates whether the parameters have been explicitly
+	// written.
+	setParams bool
 }
 
 // DeepCopy returns a copy of the clientState struct.
@@ -186,14 +189,15 @@ func (s *Server) updateParams(id string, params *spb.SessionParameters) error {
 	s.csMu.Lock()
 	defer s.csMu.Unlock()
 	p := s.cs[id]
-	if p == nil {
+	if p == nil || p.params == nil {
 		return status.Errorf(codes.Internal, "cannot update parameters for a client with no state, %s", id)
 	}
-	if p.params != nil {
+	if p.setParams {
 		return addModifyErrDetailsOrReturn(status.New(codes.FailedPrecondition, "cannot modify SessionParameters"), &spb.ModifyRPCErrorDetails{
 			Reason: spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED,
 		})
 	}
+	s.cs[id].setParams = true
 	s.cs[id].params = cparam
 	return nil
 }
@@ -295,6 +299,7 @@ func (s *Server) checkClientsConsistent(id string, p *clientParams) (bool, error
 		if state == nil || state.params == nil {
 			return false, fmt.Errorf("client %s has invalid nil parameter state", cid)
 		}
+
 		if !state.params.Equal(p) {
 			return false, nil
 		}

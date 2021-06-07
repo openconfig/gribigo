@@ -136,7 +136,16 @@ func TestQ(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot create client, %v", err)
 			}
-			c.qs.sending = tt.inSending
+			if tt.inSending {
+				c.qs.sending = tt.inSending
+				// avoid test deadlock by emptying the queue if we're sending.
+				go func() {
+					for {
+						<-c.qs.modifyCh
+					}
+				}()
+			}
+
 			for _, r := range tt.inReqs {
 				c.Q(r)
 			}

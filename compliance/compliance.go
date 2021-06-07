@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/openconfig/gribigo/chk"
 	"github.com/openconfig/gribigo/client"
@@ -46,8 +45,8 @@ func ModifyConnectionWithElectionID(addr string, t testing.TB) {
 	c.Connection().WithTarget(addr).WithInitialElectionID(1, 0).WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence()
 	c.Start(context.Background(), t)
 	c.StartSending(context.Background(), t)
-	time.Sleep(10 * time.Millisecond)
-	if err := c.Await(context.Background(), t); err != nil {
+	err := c.Await(context.Background(), t)
+	if err != nil {
 		t.Fatalf("got unexpected error on client, %v", err)
 	}
 	res := c.Results(t)

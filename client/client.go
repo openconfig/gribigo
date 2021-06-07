@@ -518,14 +518,8 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 	}
 	log.V(2).Infof("sending %s directly to queue", m)
 
-	// Non-blocking write to the modifyCh -- it's an error if we overflow
-	// the buffer, but we want to keep the client from panicking at this
-	// point.
-	select {
-	case c.qs.modifyCh <- m:
-	default:
-		log.Errorf("dropped input message %v, buffer full", m)
-	}
+	c.qs.modifyCh <- m
+
 }
 
 // StartSending toggles the client to begin sending messages that are in the send

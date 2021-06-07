@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -47,6 +48,16 @@ func TestHandleParams(t *testing.T) {
 			AllPrimaryClients(),
 		},
 		wantErr: true,
+	}, {
+		desc: "Persistence requested",
+		inOpts: []Opt{
+			PersistEntries(),
+		},
+		wantState: &clientState{
+			SessParams: &spb.SessionParameters{
+				Persistence: spb.SessionParameters_PRESERVE,
+			},
+		},
 	}}
 
 	for _, tt := range tests {
@@ -671,4 +682,41 @@ func TestConverged(t *testing.T) {
 		})
 	}
 
+}
+
+func TestHasErrors(t *testing.T) {
+	e := errors.New("error")
+	tests := []struct {
+		desc        string
+		inClient    *Client
+		wantSendErr []error
+		wantRecvErr []error
+	}{{
+		desc:     "no errors",
+		inClient: &Client{},
+	}, {
+		desc: "send error",
+		inClient: &Client{
+			sendErr: []error{e},
+		},
+		wantSendErr: []error{e},
+	}, {
+		desc: "recv error",
+		inClient: &Client{
+			readErr: []error{e},
+		},
+		wantRecvErr: []error{e},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			gotSend, gotRecv := tt.inClient.hasErrors()
+			if diff := cmp.Diff(gotSend, tt.wantSendErr, cmpopts.EquateErrors()); diff != "" {
+				t.Fatalf("did not get expected send errors, diff(-got,+want):\n%s", diff)
+			}
+			if diff := cmp.Diff(gotRecv, tt.wantRecvErr, cmpopts.EquateErrors()); diff != "" {
+				t.Fatalf("did not get expected recv errors, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
 }

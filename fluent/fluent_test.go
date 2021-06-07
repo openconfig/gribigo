@@ -86,7 +86,7 @@ func TestGRIBIClient(t *testing.T) {
 		desc: "connection with an election ID",
 		inFn: func(addr string, t testing.TB) {
 			c := NewClient()
-			c.Connection().WithTarget(addr).WithInitialElectionID(1, 0).WithRedundancyMode(ElectedPrimaryClient)
+			c.Connection().WithTarget(addr).WithInitialElectionID(1, 0).WithRedundancyMode(ElectedPrimaryClient).WithPersistence()
 			c.Start(context.Background(), t)
 			c.StartSending(context.Background(), t)
 			time.Sleep(100 * time.Millisecond)
@@ -100,6 +100,16 @@ func TestGRIBIClient(t *testing.T) {
 			if !chk.HasSuccessfulSessionParams(res) {
 				t.Errorf("did not get expected successful session params, got: %v, want: SessionParams=OK", res)
 			}
+		},
+	}, {
+		desc: "unsuccessful connection - check converges",
+		inFn: func(addr string, t testing.TB) {
+			c := NewClient()
+			c.Connection().WithTarget(addr).WithRedundancyMode(AllPrimaryClients)
+			c.Start(context.Background(), t)
+			c.StartSending(context.Background(), t)
+			time.Sleep(100 * time.Millisecond)
+			c.Await(context.Background(), t)
 		},
 	}}
 

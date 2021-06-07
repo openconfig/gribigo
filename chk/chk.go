@@ -18,6 +18,8 @@ func HasElectionID(res []*client.OpResult, low, high uint64) bool {
 	return false
 }
 
+// HasSuccessfulSessionParams returns true if the result queue supplied contains an update which
+// indicates that the session parameters were accepted by the server.
 func HasSuccessfulSessionParams(res []*client.OpResult) bool {
 	for _, r := range res {
 		if v := r.SessionParameters; v != nil {

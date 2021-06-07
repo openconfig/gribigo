@@ -620,6 +620,8 @@ func (c *Client) isConverged() bool {
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
 
+	fmt.Printf("pending is %+v\n", c.qs.pendq)
+
 	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0 && !c.sendInProgress.Load() && !c.recvInProgress.Load()
 }
 

@@ -51,12 +51,6 @@ github.com/openconfig/gribi v0.1.1-0.20210423184541-ce37eb4ba92f h1:8vRtC+y0xh9B
 github.com/openconfig/gribi v0.1.1-0.20210423184541-ce37eb4ba92f/go.mod h1:OoH46A2kV42cIXGyviYmAlGmn6cHjGduyC2+I9d/iVs=
 github.com/openconfig/ygot v0.6.0/go.mod h1:o30svNf7O0xK+R35tlx95odkDmZWS9JyWWQSmIhqwAs=
 github.com/openconfig/ygot v0.10.4/go.mod h1:oCQNdXnv7dWc8scTDgoFkauv1wwplJn5HspHcjlxSAQ=
-github.com/openconfig/ygot v0.10.12-0.20210607003502-535f5a86c8ba h1:OSTM/Re7YTUKWMx7nNrLd90nmJgxtJIpjAyYZKOEKWg=
-github.com/openconfig/ygot v0.10.12-0.20210607003502-535f5a86c8ba/go.mod h1:oCQNdXnv7dWc8scTDgoFkauv1wwplJn5HspHcjlxSAQ=
-github.com/openconfig/ygot v0.10.12-0.20210607015612-0fac9538ce77 h1:+HtB9lApyYxIGDxJXeuhVpYXcfRs6qKlipyMLQ9rr4I=
-github.com/openconfig/ygot v0.10.12-0.20210607015612-0fac9538ce77/go.mod h1:NDGFcX73PnipISpF8yuDpwrsOAl6vqqK4mNPvscWzXA=
-github.com/openconfig/ygot v0.10.12-0.20210607021145-e9d3ec7076b3 h1:E+yuJ/gQjOfyz0nj2tW9beUU4VSHaDC7ra0CkCabQAY=
-github.com/openconfig/ygot v0.10.12-0.20210607021145-e9d3ec7076b3/go.mod h1:NDGFcX73PnipISpF8yuDpwrsOAl6vqqK4mNPvscWzXA=
 github.com/openconfig/ygot v0.10.12-0.20210607023847-236b43a9ef73 h1:OqF67xYS+Cktm+0hxJAZcOm5paXCzLYP43UH9UsrltA=
 github.com/openconfig/ygot v0.10.12-0.20210607023847-236b43a9ef73/go.mod h1:NDGFcX73PnipISpF8yuDpwrsOAl6vqqK4mNPvscWzXA=
 github.com/pborman/getopt v0.0.0-20190409184431-ee0cd42419d3/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=

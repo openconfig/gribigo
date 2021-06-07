@@ -615,14 +615,15 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 
 // isConverged indicates whether the client is converged.
 func (c *Client) isConverged() bool {
+	if c.sendInProgress.Load() || c.recvInProgress.Load() {
+		return false
+	}
+
 	c.qs.sendMu.RLock()
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
-
-	fmt.Printf("pending is %+v\n", c.qs.pendq)
-
-	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0 && !c.sendInProgress.Load() && !c.recvInProgress.Load()
+	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }
 
 // addResult adds the operation o to the result queue of the client.

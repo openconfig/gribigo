@@ -479,6 +479,7 @@ type OpResult struct {
 // String returns a string for an OpResult for debugging purposes.
 func (o *OpResult) String() string {
 	buf := &bytes.Buffer{}
+	buf.WriteString("<")
 	buf.WriteString(fmt.Sprintf("%d (%d nsec):", o.Timestamp, o.Latency))
 
 	if v := o.CurrentServerElectionID; v != nil {
@@ -497,6 +498,7 @@ func (o *OpResult) String() string {
 	if v := o.ClientError; v != "" {
 		buf.WriteString(fmt.Sprintf(" With Error: %s", v))
 	}
+	buf.WriteString(">")
 
 	return buf.String()
 }

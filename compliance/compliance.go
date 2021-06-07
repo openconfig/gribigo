@@ -6,6 +6,7 @@ package compliance
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/openconfig/gribigo/chk"
@@ -48,6 +49,8 @@ func ModifyConnectionWithElectionID(addr string, t testing.TB) {
 		t.Fatalf("got unexpected error on client, %v", err)
 	}
 	res := c.Results(t)
+
+	fmt.Printf("got %v\n", res)
 
 	if !chk.HasElectionID(res, 1, 0) {
 		t.Errorf("did not get expected election ID, got: %v, want: ElectionID=1", res)

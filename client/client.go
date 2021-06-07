@@ -12,6 +12,7 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"lukechampine.com/uint128"
 
@@ -53,6 +54,17 @@ type Client struct {
 	// rErr stores receiving errors that cause termination of the receiving
 	// GoRoutine.
 	readErr []error
+
+	// sendInProgress is an atomically updated boolean that is used to
+	// indicate that the process of sending a message is in progress. We use it
+	// to ensure that between sending a message to the server, and post-processing
+	// of the ModifyRequest (to record its details in the queue), we do not
+	// report that the client is converged.
+	sendInProgress *atomic.Bool
+	// recvinProgress is an atomically updated boolean that is used to indicate
+	// that the process of receiving a message is in progress. It is used in
+	// a similar manner to the sendInProgress atomic bool.
+	recvInProgress *atomic.Bool
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -78,7 +90,10 @@ type Opt interface {
 // provided control parameters that live for the lifetime of the client, such as those
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...Opt) (*Client, error) {
-	c := &Client{}
+	c := &Client{
+		sendInProgress: atomic.NewBool(false),
+		recvInProgress: atomic.NewBool(false),
+	}
 
 	s, err := handleParams(opts...)
 	if err != nil {
@@ -228,13 +243,27 @@ func (c *Client) Connect(ctx context.Context) error {
 	// lower-layer operations to the gRIBI server directly.
 	// Modify this code to do this (make these just be default
 	// handler functions, they could still be inline).
+
+	rec := func(in *spb.ModifyResponse) {
+		// mark that we're in process of processing a recv, we defer the clearing of this flag
+		// so that we don't need to remember it before every return.
+		c.recvInProgress.Store(true)
+		defer func() { c.recvInProgress.Store(false) }()
+
+		log.V(2).Infof("received message on Modify stream: %s", in)
+		if err := c.handleModifyResponse(in); err != nil {
+			log.Errorf("got error processing message received from server, %v", err)
+			c.addReadErr(err)
+		}
+	}
+
 	go func() {
 		for {
 			if c.shut {
 				log.V(2).Infof("shutting down recv goroutine")
 				return
 			}
-			in, err := stream.Recv()
+			m, err := stream.Recv()
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
 				c.shut = true
@@ -245,14 +274,28 @@ func (c *Client) Connect(ctx context.Context) error {
 				c.addReadErr(err)
 				return
 			}
-			log.V(2).Infof("received message on Modify stream: %s", in)
-
-			if err := c.handleModifyResponse(in); err != nil {
-				log.Errorf("got error processing message received from server, %v", err)
-				c.addReadErr(err)
-			}
+			rec(m)
 		}
 	}()
+
+	is := func(m *spb.ModifyRequest) {
+		// mark that we're in process of processing a send, we defer the clearing of this flag
+		// so that we don't need to remember it before every return.
+		c.sendInProgress.Store(true)
+		defer func() { c.sendInProgress.Store(false) }()
+		if err := stream.Send(m); err != nil {
+			log.Errorf("got error sending message, %v", err)
+			c.addSendErr(err)
+			return
+		}
+		log.V(2).Infof("sent Modify message %s", m)
+
+		if err := c.handleModifyRequest(m); err != nil {
+			log.Errorf("got error processing message that was sent, %v", err)
+			c.addSendErr(err)
+		}
+
+	}
 
 	go func() {
 		for {
@@ -260,19 +303,9 @@ func (c *Client) Connect(ctx context.Context) error {
 				log.V(2).Infof("shutting down send goroutine")
 				return
 			}
-			// read from the channel
-			m := <-c.qs.modifyCh
-			if err := stream.Send(m); err != nil {
-				log.Errorf("got error sending message, %v", err)
-				c.addSendErr(err)
-				return
-			}
-			log.V(2).Infof("sent Modify message %s", m)
 
-			if err := c.handleModifyRequest(m); err != nil {
-				log.Errorf("got error processing message that was sent, %v", err)
-				c.addSendErr(err)
-			}
+			// read from the channel
+			is(<-c.qs.modifyCh)
 		}
 	}()
 
@@ -493,7 +526,6 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 // queue (enqued by Q) to the connection established by Connect.
 func (c *Client) StartSending() {
 	c.qs.sending = true
-
 	// take the initial set of messages that were enqueued and queue them.
 	c.qs.sendMu.Lock()
 	defer c.qs.sendMu.Unlock()
@@ -585,7 +617,8 @@ func (c *Client) isConverged() bool {
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
-	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
+
+	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0 && !c.sendInProgress.Load() && !c.recvInProgress.Load()
 }
 
 // addResult adds the operation o to the result queue of the client.

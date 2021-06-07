@@ -7,7 +7,6 @@ package compliance
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/openconfig/gribigo/chk"
 	"github.com/openconfig/gribigo/client"
@@ -27,7 +26,7 @@ func ModifyConnection(addr string, t testing.TB) {
 	c.Connection().WithTarget(addr)
 	c.Start(context.Background(), t)
 	c.StartSending(context.Background(), t)
-	time.Sleep(100 * time.Millisecond)
+	//time.Sleep(100 * time.Millisecond)
 	c.Await(context.Background(), t)
 	// We get results, and just expected that there are none, because we did not
 	// send anything to the client.
@@ -41,7 +40,7 @@ func ModifyConnectionWithElectionID(addr string, t testing.TB) {
 	c.Connection().WithTarget(addr).WithInitialElectionID(1, 0).WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence()
 	c.Start(context.Background(), t)
 	c.StartSending(context.Background(), t)
-	time.Sleep(100 * time.Millisecond)
+	//time.Sleep(100 * time.Millisecond)
 	if err := c.Await(context.Background(), t); err != nil {
 		t.Fatalf("got unexpected error on client, %v", err)
 	}
@@ -61,7 +60,7 @@ func ModifyConnectionSinglePrimaryPreserve(addr string, t testing.TB) {
 	c.Connection().WithTarget(addr).WithRedundancyMode(fluent.AllPrimaryClients).WithPersistence()
 	c.Start(context.Background(), t)
 	c.StartSending(context.Background(), t)
-	time.Sleep(100 * time.Millisecond)
+	//time.Sleep(100 * time.Millisecond)
 	err := c.Await(context.Background(), t)
 	if err == nil {
 		t.Fatalf("did not get expected error from server, got: nil")

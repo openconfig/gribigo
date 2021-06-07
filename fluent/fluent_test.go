@@ -84,6 +84,7 @@ func TestGRIBIClient(t *testing.T) {
 			c.Connection().WithTarget(addr).WithInitialElectionID(0, 1).WithRedundancyMode(ElectedPrimaryClient)
 			c.Start(context.Background(), t)
 			c.StartSending(context.Background(), t)
+			c.Await(context.Background(), t)
 			// TODO(robjs): also check that we get the right return message.
 			time.Sleep(2 * time.Second)
 		},

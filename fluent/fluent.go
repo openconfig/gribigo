@@ -134,3 +134,9 @@ func (g *gRIBIClient) StartSending(ctx context.Context, t testing.TB) {
 	}
 	g.c.StartSending()
 }
+
+// Await waits until the underlying gRIBI client has completed its work to return -
+// complete is defined as both the send and pending queue being empty.
+func (g *gRIBIClient) Await(ctx context.Context, t testing.TB) {
+	g.c.AwaitConverged()
+}

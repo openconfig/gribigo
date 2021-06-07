@@ -48,7 +48,6 @@ func TestGRIBIClient(t *testing.T) {
 			c.Connection().WithTarget(addr).WithRedundancyMode(AllPrimaryClients)
 			c.Start(context.Background(), t)
 			c.StartSending(context.Background(), t)
-			//time.Sleep(100 * time.Millisecond)
 			// NB: we discard the error here, this test case is just to check we are
 			// marked converged.
 			c.Await(context.Background(), t)

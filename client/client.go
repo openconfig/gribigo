@@ -2,6 +2,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,11 +13,14 @@ import (
 
 	log "github.com/golang/glog"
 	"google.golang.org/grpc"
+	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 var (
+	// unixTS is a function that returns a timestamp in nanoseconds for the current time.
+	// It can be overloaded in unit tests to ensure that deterministic output is received.
 	unixTS = time.Now().UnixNano
 )
 
@@ -63,17 +67,17 @@ type clientState struct {
 	ElectionID *spb.Uint128
 }
 
-// ClientOpt is an interface that is implemented for all options that
+// Opt is an interface that is implemented for all options that
 // can be supplied when creating a new client. This captures parameters
 // that are sent at the start of a gRIBI session that
-type ClientOpt interface {
+type Opt interface {
 	isClientOpt()
 }
 
 // New creates a new gRIBI client with the specified set of options. The options
 // provided control parameters that live for the lifetime of the client, such as those
 // that are within the session parameters. A new client, or error, is returned.
-func New(opts ...ClientOpt) (*Client, error) {
+func New(opts ...Opt) (*Client, error) {
 	c := &Client{}
 
 	s, err := handleParams(opts...)
@@ -87,15 +91,10 @@ func New(opts ...ClientOpt) (*Client, error) {
 		pendq: &pendingQueue{
 			Ops: map[uint64]*PendingOp{},
 		},
-		// Since we might have a case where we write into the channel faster than
-		// we read from it, we create a buffer for the channel.
-		modifyCh: make(chan *spb.ModifyRequest, 1000),
+
+		// modifyCh is unbuffered so that where needed, writes can be blocking.
+		modifyCh: make(chan *spb.ModifyRequest),
 		resultq:  []*OpResult{},
-
-		// The converged channel is implemented as a non-buffered channel, but
-		// we make sure that reads and writes from it are non-blocking, such that
-		// we do not overload it.
-
 	}
 
 	return c, nil
@@ -105,7 +104,10 @@ func New(opts ...ClientOpt) (*Client, error) {
 // to populate the session parameters that they are translated into. It returns a
 // populate SessionParameters protobuf along with any errors when parsing the supplied
 // set of options.
-func handleParams(opts ...ClientOpt) (*clientState, error) {
+func handleParams(opts ...Opt) (*clientState, error) {
+	if len(opts) == 0 {
+		return &clientState{}, nil
+	}
 	s := &clientState{
 		SessParams: &spb.SessionParameters{},
 	}
@@ -130,7 +132,7 @@ type DialOpt interface {
 	isDialOpt()
 }
 
-// Connect dials the server specified in the addr string, using the specified
+// Dial dials the server specified in the addr string, using the specified
 // set of dial options.
 func (c *Client) Dial(ctx context.Context, addr string, opts ...DialOpt) error {
 	// TODO(robjs): translate any options within the dial options here, we may
@@ -427,6 +429,31 @@ type OpResult struct {
 	// TODO(robjs): add additional information about what the result was here.
 }
 
+// String returns a string for an OpResult for debugging purposes.
+func (o *OpResult) String() string {
+	buf := &bytes.Buffer{}
+	buf.WriteString(fmt.Sprintf("%d (%d nsec):", o.Timestamp, o.Latency))
+
+	if v := o.CurrentServerElectionID; v != nil {
+		e := uint128.New(v.Low, v.High)
+		buf.WriteString(fmt.Sprintf(" ElectionID: %s", e))
+	}
+
+	if v := o.OperationID; v != 0 {
+		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d }", v))
+	}
+
+	if v := o.SessionParameters; v != nil {
+		buf.WriteString(fmt.Sprintf(" SessionParameterResult: OK (%s)", v.String()))
+	}
+
+	if v := o.ClientError; v != "" {
+		buf.WriteString(fmt.Sprintf(" With Error: %s", v))
+	}
+
+	return buf.String()
+}
+
 // Q enqueues a ModifyRequest to be sent to the target.
 func (c *Client) Q(m *spb.ModifyRequest) {
 	if !c.qs.sending {
@@ -510,7 +537,7 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 			pop++
 		}
 	}
-	if pop == 0 || pop > 1 {
+	if pop > 1 {
 		return fmt.Errorf("invalid returned message, ElectionID, Result, and SessionParametersResult are mutually exclusive, got: %s", m)
 	}
 

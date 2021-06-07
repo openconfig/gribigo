@@ -9,6 +9,7 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"github.com/openconfig/gribigo/chk"
 	"github.com/openconfig/gribigo/negtest"
 	"github.com/openconfig/gribigo/server"
 	"google.golang.org/grpc"
@@ -73,20 +74,32 @@ func TestGRIBIClient(t *testing.T) {
 			c.Connection().WithTarget(addr)
 			c.Start(context.Background(), t)
 			c.StartSending(context.Background(), t)
-			// TODO(robjs): add a check against the actual return value
-			// for this test, rather than just there being no errors returned.
-			time.Sleep(2 * time.Second)
+			time.Sleep(100 * time.Millisecond)
+			c.Await(context.Background(), t)
+			// We get results, and just expected that there are none, because we did not
+			// send anything to the client.
+			if r := c.Results(t); len(r) != 0 {
+				t.Fatalf("did not get expected number of return messages, got: %d (%v), want: 0", len(r), r)
+			}
 		},
 	}, {
 		desc: "connection with an election ID",
 		inFn: func(addr string, t testing.TB) {
 			c := NewClient()
-			c.Connection().WithTarget(addr).WithInitialElectionID(0, 1).WithRedundancyMode(ElectedPrimaryClient)
+			c.Connection().WithTarget(addr).WithInitialElectionID(1, 0).WithRedundancyMode(ElectedPrimaryClient)
 			c.Start(context.Background(), t)
 			c.StartSending(context.Background(), t)
+			time.Sleep(100 * time.Millisecond)
 			c.Await(context.Background(), t)
-			// TODO(robjs): also check that we get the right return message.
-			time.Sleep(2 * time.Second)
+			res := c.Results(t)
+
+			if !chk.HasElectionID(res, 1, 0) {
+				t.Errorf("did not get expected election ID, got: %v, want: ElectionID=1", res)
+			}
+
+			if !chk.HasSuccessfulSessionParams(res) {
+				t.Errorf("did not get expected successful session params, got: %v, want: SessionParams=OK", res)
+			}
 		},
 	}}
 

@@ -100,7 +100,7 @@ func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
 		t.Fatalf("cannot dial without specifying target address")
 	}
 
-	opts := []client.ClientOpt{}
+	opts := []client.Opt{}
 	switch g.connection.redundMode {
 	case AllPrimaryClients:
 		opts = append(opts, client.AllPrimaryClients())
@@ -111,7 +111,7 @@ func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
 		opts = append(opts, client.ElectedPrimaryClient(g.connection.electionID))
 	}
 
-	log.V(2).Infof("setting client parameters to %q", opts)
+	log.V(2).Infof("setting client parameters to %+v", opts)
 	c, err := client.New(opts...)
 	if err != nil {
 		t.Fatalf("cannot create new client, %v", err)
@@ -139,4 +139,15 @@ func (g *gRIBIClient) StartSending(ctx context.Context, t testing.TB) {
 // complete is defined as both the send and pending queue being empty.
 func (g *gRIBIClient) Await(ctx context.Context, t testing.TB) {
 	g.c.AwaitConverged()
+}
+
+// Results returns the transaction results from the client. If the client is not converged
+// it will return a partial set of results from transactions that have completed, otherwise
+// it will return the complete set of results received from the server.
+func (g *gRIBIClient) Results(t testing.TB) []*client.OpResult {
+	r, err := g.c.Results()
+	if err != nil {
+		t.Fatalf("did not get valid results, %v", err)
+	}
+	return r
 }

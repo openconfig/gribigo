@@ -33,11 +33,13 @@ type Server struct {
 	// associated with a prior connection that it had.
 	cs map[string]*clientState
 
-	// elecMu protects the curElecID value.
+	// elecMu protects the curElecID and curMaster values.
 	elecMu sync.RWMutex
 	// curElecID stores the current electionID for cases where the server is
 	// operating in SINGLE_PRIMARY mode.
 	curElecID *spb.Uint128
+	// curMaster stores the current master's UUID.
+	curMaster string
 }
 
 // clientState stores information that relates to a specific client
@@ -138,9 +140,6 @@ func (s *Server) newClient(id string) error {
 	}
 	s.cs[id] = &clientState{}
 
-	// TODO(robjs): remove these NOOP lines, they are here to ensure static analysis
-	// passes.
-	s.cs[id].params = &clientParams{Persist: false}
 	return nil
 }
 
@@ -188,15 +187,52 @@ func (s *Server) checkParams(p *spb.SessionParameters, gotMsg bool) (*spb.Modify
 	// TODO(robjs): Check that the client is consistent with other clients on the system.
 
 	return &spb.ModifyResponse{
-		SessionParamsResult: &spb.SessionParametersResult{},
+		SessionParamsResult: &spb.SessionParametersResult{
+			Status: spb.SessionParametersResult_OK,
+		},
 	}, nil
+}
+
+// isNewMaster takes two election IDs and determines whether the candidate (cand) is a new
+// master given the existing master (exist). It returns:
+//  - a bool which indicates whether the candidate is the new master
+//  - a bool which indicates whether this is an election ID with the same election ID
+//  - an error indicating whether this was an invalid update
+func isNewMaster(cand, exist *spb.Uint128) (bool, bool, error) {
+	if exist == nil {
+		return true, false, nil
+	}
+	if cand.High > exist.High {
+		return true, false, nil
+	}
+	if cand.Low > exist.Low {
+		return true, false, nil
+	}
+	if cand.High == exist.High && cand.Low == exist.Low {
+		return false, true, nil
+	}
+	// TODO(robjs): currently this is not specified in the spec, since this is the
+	// election ID going backwards, but it seems like we could not return an error here
+	// since it might just be a stale client telling us that they think that they're the
+	// master. However, we could return an error just to say "hey, you're somehow out of sync
+	// with the master election system".
+	return false, false, nil
 }
 
 func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyResponse, error) {
 	// TODO(robjs): check that the client is one that we actually need to do elections for.
-	// TODO(robjs): add election process.
 	s.elecMu.RLock()
 	defer s.elecMu.RUnlock()
+	nm, _, err := isNewMaster(elecID, s.curElecID)
+	if err != nil {
+		return nil, err
+	}
+
+	if nm {
+		s.curElecID = elecID
+		s.curMaster = id
+	}
+
 	return &spb.ModifyResponse{
 		ElectionId: s.curElecID,
 	}, nil

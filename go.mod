@@ -12,4 +12,5 @@ require (
 	github.com/openconfig/ygot v0.10.12-0.20210607023847-236b43a9ef73
 	google.golang.org/grpc v1.37.0
 	google.golang.org/protobuf v1.26.0
+	lukechampine.com/uint128 v1.1.1
 )

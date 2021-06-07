@@ -1,8 +1,14 @@
-# gRIBIgo
+![gribigo-logo](doc/gribigo.png)
+
+![gribigo-status](https://github.com/openconfig/gribigo/actions/workflows/go.yml/badge.svg)
 
 This repository contains a [gRIBI](https://github.com/openconfig/gribi)
-client, written in Go, which can be executed against a gRIBI server to
-program entries.
+client and in-memory server, written in Go, which serves as a reference
+implementation for the gRIBI protocol.
+
+In addition, the `fluent/` directory contains a human-readable API for use in
+writing functional tests against a gRIBI server. This API is designed for use intest frameworks such as [ONDATRA](https://github.com/openconfig/ondatra). The
+fluent-style API is a test-only library.
 
 **Note**: This is not an official Google product.
 

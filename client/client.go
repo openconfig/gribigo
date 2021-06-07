@@ -249,7 +249,6 @@ func (c *Client) Connect(ctx context.Context) error {
 		// so that we don't need to remember it before every return.
 		c.recvInProgress.Store(true)
 		defer func() { c.recvInProgress.Store(false) }()
-
 		log.V(2).Infof("received message on Modify stream: %s", in)
 		if err := c.handleModifyResponse(in); err != nil {
 			log.Errorf("got error processing message received from server, %v", err)
@@ -264,6 +263,11 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 			m, err := stream.Recv()
+			// Mark that we're receiving as close as possible to reading the message. If
+			// we do not do this then we have some cycles within which isConverged will
+			// return true. We don't worry about setting it back, as rec() resets this
+			// back to false once the processing is actually done.
+			c.recvInProgress.Store(true)
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
 				c.shut = true

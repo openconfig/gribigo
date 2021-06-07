@@ -52,16 +52,6 @@ func TestGRIBIClient(t *testing.T) {
 			// marked converged.
 			c.Await(context.Background(), t)
 		},
-	}, {
-		desc: "unsuccessful connection - check converges",
-		inFn: func(addr string, t testing.TB) {
-			c := NewClient()
-			c.Connection().WithTarget(addr).WithRedundancyMode(AllPrimaryClients)
-			c.Start(context.Background(), t)
-			c.StartSending(context.Background(), t)
-			time.Sleep(100 * time.Millisecond)
-			c.Await(context.Background(), t)
-		},
 	}}
 
 	for _, tt := range tests {

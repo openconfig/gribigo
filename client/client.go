@@ -288,6 +288,10 @@ func (c *Client) Connect(ctx context.Context) error {
 		// so that we don't need to remember it before every return.
 		c.sendInProgress.Add(1)
 		defer c.sendInProgress.Sub(1)
+		if err := c.handleModifyRequest(m); err != nil {
+			log.Errorf("got error processing message that was sent, %v", err)
+			c.addSendErr(err)
+		}
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
 			c.addSendErr(err)
@@ -295,10 +299,6 @@ func (c *Client) Connect(ctx context.Context) error {
 		}
 		log.V(2).Infof("sent Modify message %s", m)
 
-		if err := c.handleModifyRequest(m); err != nil {
-			log.Errorf("got error processing message that was sent, %v", err)
-			c.addSendErr(err)
-		}
 	}
 
 	go func() {
@@ -531,7 +531,6 @@ func (c *Client) StartSending() {
 // a specified ID.
 func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 	// Add any pending operations to the pending queue.
-
 	for _, o := range m.Operation {
 		if err := c.addPendingOp(o); err != nil {
 			return err
@@ -590,7 +589,6 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 
 	if m.SessionParamsResult != nil {
 		fmt.Printf("setting session params to nil for %s, converged? %v\n", m, c.isConverged())
-
 		sr := c.clearPendingSessionParams()
 		sr.SessionParameters = m.SessionParamsResult
 		c.qs.resultq = append(c.qs.resultq, sr)

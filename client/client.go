@@ -267,7 +267,6 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 			m, err := stream.Recv()
-
 			c.recvInProgress.Add(1)
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
@@ -544,6 +543,7 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 	}
 
 	if m.Params != nil {
+		fmt.Printf("updating the session parameters, converged? %v\n", c.isConverged())
 		c.pendingSessionParams(m.Params)
 	}
 
@@ -604,6 +604,12 @@ func (c *Client) isConverged() bool {
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
+
+	// we don't really need this mutex, but we should check whether anyone is
+	// trying to write to the results queue.
+	c.qs.resultMu.RLock()
+	defer c.qs.resultMu.RUnlock()
+
 	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }
 

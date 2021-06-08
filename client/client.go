@@ -248,10 +248,6 @@ func (c *Client) Connect(ctx context.Context) error {
 	// handler functions, they could still be inline).
 
 	rec := func(in *spb.ModifyResponse) {
-		// mark that we're in process of processing a recv, we defer the clearing of this flag
-		// so that we don't need to remember it before every return.
-		c.recvInProgress.Add(1)
-		defer c.recvInProgress.Sub(1)
 		log.V(2).Infof("received message on Modify stream: %s", in)
 		if err := c.handleModifyResponse(in); err != nil {
 			log.Errorf("got error processing message received from server, %v", err)
@@ -266,6 +262,7 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 			m, err := stream.Recv()
+			c.recvInProgress.Add(1)
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
 				c.shut.Store(true)
@@ -277,7 +274,7 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 			rec(m)
-
+			c.recvInProgress.Sub(1)
 		}
 	}()
 
@@ -506,7 +503,6 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 	log.V(2).Infof("sending %s directly to queue", m)
 
 	c.qs.modifyCh <- m
-
 }
 
 // StartSending toggles the client to begin sending messages that are in the send

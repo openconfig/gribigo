@@ -251,6 +251,8 @@ func (c *Client) Connect(ctx context.Context) error {
 	// handler functions, they could still be inline).
 
 	rec := func(in *spb.ModifyResponse) {
+		c.resInProgress.Inc()
+		defer c.resInProgress.Dec()
 		log.V(2).Infof("received message on Modify stream: %s", in)
 		if err := c.handleModifyResponse(in); err != nil {
 			log.Errorf("got error processing message received from server, %v", err)
@@ -555,7 +557,7 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	c.resInProgress.Inc()
 	defer c.resInProgress.Dec()
-	fmt.Printf("handling %s, pending: %d", m, c.resInProgress.Load())
+	fmt.Printf("handling %s, pending: %d\n", m, c.resInProgress.Load())
 
 	if m == nil {
 		return errors.New("invalid nil modify response returned")

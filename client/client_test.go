@@ -417,6 +417,7 @@ func TestHandleModifyResponse(t *testing.T) {
 		inClient: &Client{
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 			qs: &clientQs{
 				sending: &atomic.Bool{},
 			},
@@ -441,6 +442,7 @@ func TestHandleModifyResponse(t *testing.T) {
 			},
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 		},
 		inResponse: &spb.ModifyResponse{
 			ElectionId: &spb.Uint128{High: 0, Low: 42},
@@ -459,6 +461,7 @@ func TestHandleModifyResponse(t *testing.T) {
 			},
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 		},
 		wantErr: true,
 	}, {
@@ -470,6 +473,7 @@ func TestHandleModifyResponse(t *testing.T) {
 			},
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 		},
 		inResponse: &spb.ModifyResponse{
 			ElectionId: &spb.Uint128{Low: 1},
@@ -492,6 +496,7 @@ func TestHandleModifyResponse(t *testing.T) {
 			},
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 		},
 		inResponse: &spb.ModifyResponse{
 			SessionParamsResult: &spb.SessionParametersResult{
@@ -514,6 +519,7 @@ func TestHandleModifyResponse(t *testing.T) {
 			},
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 		},
 		inResponse: &spb.ModifyResponse{
 			SessionParamsResult: &spb.SessionParametersResult{
@@ -663,6 +669,7 @@ func TestConverged(t *testing.T) {
 			qs:             &clientQs{},
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 		},
 		want: true,
 	}, {
@@ -673,6 +680,7 @@ func TestConverged(t *testing.T) {
 			},
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 		},
 		want: true,
 	}, {
@@ -683,6 +691,7 @@ func TestConverged(t *testing.T) {
 			},
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 		},
 	}, {
 		desc: "not converged - pending queue, ops",
@@ -696,6 +705,7 @@ func TestConverged(t *testing.T) {
 			},
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 		},
 	}, {
 		desc: "not converged - pending queue, election",
@@ -707,6 +717,7 @@ func TestConverged(t *testing.T) {
 			},
 			sendInProgress: &atomic.Uint64{},
 			recvInProgress: &atomic.Uint64{},
+			resInProgress:  &atomic.Uint64{},
 		},
 	}, {
 		desc: "not converged - pending queue, params",
@@ -718,6 +729,7 @@ func TestConverged(t *testing.T) {
 			},
 			sendInProgress: atomic.NewUint64(0),
 			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(0),
 		},
 	}, {
 		desc: "not converged, sending in progress",
@@ -725,6 +737,7 @@ func TestConverged(t *testing.T) {
 			qs:             &clientQs{},
 			sendInProgress: atomic.NewUint64(1),
 			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(0),
 		},
 	}, {
 		desc: "not converged, receive in progress",
@@ -732,6 +745,15 @@ func TestConverged(t *testing.T) {
 			qs:             &clientQs{},
 			sendInProgress: atomic.NewUint64(0),
 			recvInProgress: atomic.NewUint64(1),
+			resInProgress:  atomic.NewUint64(0),
+		},
+	}, {
+		desc: "not converged, result in progress",
+		inClient: &Client{
+			qs:             &clientQs{},
+			sendInProgress: atomic.NewUint64(0),
+			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(1),
 		},
 	}, {
 		desc: "converged, explicitly set values",
@@ -739,6 +761,7 @@ func TestConverged(t *testing.T) {
 			qs:             &clientQs{},
 			sendInProgress: atomic.NewUint64(0),
 			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(0),
 		},
 		want: true,
 	}, {
@@ -747,6 +770,7 @@ func TestConverged(t *testing.T) {
 			qs:             &clientQs{},
 			sendInProgress: atomic.NewUint64(42),
 			recvInProgress: atomic.NewUint64(84),
+			resInProgress:  atomic.NewUint64(128),
 		},
 		want: false,
 	}}

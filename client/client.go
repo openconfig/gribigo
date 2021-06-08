@@ -66,6 +66,8 @@ type Client struct {
 	// a similar manner to the sendInProgress atomic bool.
 	recvInProgress *atomic.Uint64
 
+	resInProgress *atomic.Uint64
+
 	globalLock sync.Mutex
 }
 
@@ -96,6 +98,7 @@ func New(opts ...Opt) (*Client, error) {
 		shut:           atomic.NewBool(false),
 		sendInProgress: atomic.NewUint64(0),
 		recvInProgress: atomic.NewUint64(0),
+		resInProgress:  atomic.NewUint64(0),
 	}
 
 	s, err := handleParams(opts...)
@@ -420,7 +423,7 @@ func (p *pendingQueue) Len() int {
 	if p.Election != nil {
 		i++
 	}
-	fmt.Printf("--> %d, %+v\n", p)
+	fmt.Printf("--> %d, %+v\n", i, p)
 	return i + len(p.Ops)
 }
 
@@ -573,6 +576,9 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 		return fmt.Errorf("invalid returned message, ElectionID, Result, and SessionParametersResult are mutually exclusive, got: %s", m)
 	}
 
+	c.resInProgress.Inc()
+	defer c.resInProgress.Dec()
+
 	if m.ElectionId != nil {
 		er := c.clearPendingElection()
 		er.CurrentServerElectionID = m.ElectionId
@@ -593,7 +599,7 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 
 // isConverged indicates whether the client is converged.
 func (c *Client) isConverged() bool {
-	if c.sendInProgress.Load() != 0 || c.recvInProgress.Load() != 0 {
+	if c.sendInProgress.Load() != 0 || c.recvInProgress.Load() != 0 || c.resInProgress.Load() != 0 {
 		return false
 	}
 
@@ -601,7 +607,7 @@ func (c *Client) isConverged() bool {
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
-	fmt.Printf("s: %d, r: %d, send: %v, pend: %v\n", c.sendInProgress.Load(), c.recvInProgress.Load(), c.qs.sendq, c.qs.pendq)q
+	fmt.Printf("s: %d, r: %d, send: %v, pend: %v\n", c.sendInProgress.Load(), c.recvInProgress.Load(), c.qs.sendq, c.qs.pendq)
 	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }
 

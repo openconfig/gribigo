@@ -575,8 +575,13 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 		return fmt.Errorf("invalid returned message, ElectionID, Result, and SessionParametersResult are mutually exclusive, got: %s", m)
 	}
 
+	// At this point we know we will have something to add to the results, so ensure that we
+	// hold the results lock. This also stops the client from converging.
+	c.qs.resultMu.Lock()
+	defer c.qs.resultMu.RUnlock()
+
 	if m.ElectionId != nil {
-		fmt.Printf("setting election ID to nil for %s, converged? %v", m, c.isConverged())
+		fmt.Printf("setting election ID to nil for %s, converged? %v\n", m, c.isConverged())
 		er := c.clearPendingElection()
 		er.CurrentServerElectionID = m.ElectionId
 		// This is an update from the server in response to an updated master election ID.
@@ -584,7 +589,8 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	}
 
 	if m.SessionParamsResult != nil {
-		fmt.Printf("setting session params to nil for %s, converged? %v", m, c.isConverged())
+		fmt.Printf("setting session params to nil for %s, converged? %v\n", m, c.isConverged())
+
 		sr := c.clearPendingSessionParams()
 		sr.SessionParameters = m.SessionParamsResult
 		c.addResult(sr)

@@ -596,6 +596,7 @@ func (c *Client) isConverged() bool {
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
+	fmt.Printf("s: %d, r: %d, send: %v, pend: %v\n", c.sendInProgress.Load(), c.recvInProgress.Load(), c.qs.sendq, c.qs.pendq)
 	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }
 

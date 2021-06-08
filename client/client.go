@@ -113,8 +113,6 @@ func New(opts ...Opt) (*Client, error) {
 		resultq:  []*OpResult{},
 
 		sending: atomic.NewBool(false),
-		// A client starts out converged, because it has no messages that are pending.
-		converged: atomic.NewBool(true),
 	}
 
 	return c, nil
@@ -355,15 +353,6 @@ type clientQs struct {
 	// sending indicates whether the client will empty the sendq. By default,
 	// messages are queued into the sendq and not sent to the target.
 	sending *atomic.Bool
-
-	// converged is a bool that indicates that the client is converged.
-	// Converged is defined as there being:
-	//  - no entries in the send queue
-	//	- zero entries in the pending queue
-	// this means that in some cases a client /may/ have requests on the wire
-	// that have not been responded to (e.g., updated election IDs) if they do
-	// not create entries in the pending queue.
-	converged *atomic.Bool
 }
 
 // pendingQueue provides a queue type that determines the set of pending

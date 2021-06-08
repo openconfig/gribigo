@@ -578,14 +578,14 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	// At this point we know we will have something to add to the results, so ensure that we
 	// hold the results lock. This also stops the client from converging.
 	c.qs.resultMu.Lock()
-	defer c.qs.resultMu.RUnlock()
+	defer c.qs.resultMu.Unlock()
 
 	if m.ElectionId != nil {
 		fmt.Printf("setting election ID to nil for %s, converged? %v\n", m, c.isConverged())
 		er := c.clearPendingElection()
 		er.CurrentServerElectionID = m.ElectionId
 		// This is an update from the server in response to an updated master election ID.
-		c.addResult(er)
+		c.qs.resultq = append(c.qs.resultq, er)
 	}
 
 	if m.SessionParamsResult != nil {
@@ -593,7 +593,7 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 
 		sr := c.clearPendingSessionParams()
 		sr.SessionParameters = m.SessionParamsResult
-		c.addResult(sr)
+		c.qs.resultq = append(c.qs.resultq, sr)
 	}
 
 	// TODO(robjs): add handling of received operations.
@@ -611,15 +611,12 @@ func (c *Client) isConverged() bool {
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
-
-	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
-}
-
-// addResult adds the operation o to the result queue of the client.
-func (c *Client) addResult(o *OpResult) {
+	// acquire the results mutex, just to ensure that no-one is writing there
+	// right now.
 	c.qs.resultMu.Lock()
 	defer c.qs.resultMu.Unlock()
-	c.qs.resultq = append(c.qs.resultq, o)
+
+	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }
 
 // addPendingOp adds the operation specified by op to the pending transaction queue

@@ -65,6 +65,8 @@ type Client struct {
 	// that the process of receiving a message is in progress. It is used in
 	// a similar manner to the sendInProgress atomic bool.
 	recvInProgress *atomic.Uint64
+
+	globalLock sync.Mutex
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -262,25 +264,31 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 			m, err := stream.Recv()
+			c.globalLock.Lock()
 			c.recvInProgress.Add(1)
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
 				c.shut.Store(true)
+				c.globalLock.Unlock()
 				return
 			}
 			if err != nil {
 				log.Errorf("got error receiving message, %v", err)
 				c.addReadErr(err)
+				c.globalLock.Unlock()
 				return
 			}
 			rec(m)
 			c.recvInProgress.Sub(1)
+			c.globalLock.Unlock()
 		}
 	}()
 
 	is := func(m *spb.ModifyRequest) {
 		// mark that we're in process of processing a send, we defer the clearing of this flag
 		// so that we don't need to remember it before every return.
+		c.globalLock.Lock()
+		defer c.globalLock.Unlock()
 		c.sendInProgress.Add(1)
 		defer c.sendInProgress.Sub(1)
 		if err := stream.Send(m); err != nil {

@@ -55,6 +55,11 @@ type Client struct {
 	// GoRoutine.
 	readErr []error
 
+	// awaiting is a read-write mutex that is used to ensure that we know
+	// when any operation that might affect the convergence state of the
+	// client is in-flight. Functions that are performing operations that may
+	// result in a change take a read-lock, functions that are dependent upon
+	// the client being in a consistent state take a write-lock on this mutex.
 	awaiting sync.RWMutex
 }
 
@@ -225,6 +230,9 @@ func (c *Client) Connect(ctx context.Context) error {
 	// Modify this code to do this (make these just be default
 	// handler functions, they could still be inline).
 
+	// res takes a received modify response and error, and returns
+	// a bool indicating that the loop within whcih it is called should
+	// exit.
 	rec := func(in *spb.ModifyResponse, err error) bool {
 		log.V(2).Infof("received message on Modify stream: %s", in)
 		c.awaiting.RLock()
@@ -260,15 +268,11 @@ func (c *Client) Connect(ctx context.Context) error {
 		}
 	}()
 
+	// is handles an input modify request and returns a bool when
+	// the loop within which it is called should exit.
 	is := func(m *spb.ModifyRequest) bool {
 		c.awaiting.RLock()
 		defer c.awaiting.RUnlock()
-		//if err := c.handleModifyRequest(m); err != nil {
-		//	log.Errorf("got error processing message that was to be sent, %v", err)
-		//	c.addSendErr(err)
-		//	return true
-		//}
-
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
 			c.addSendErr(err)
@@ -595,13 +599,6 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 
 // isConverged indicates whether the client is converged.
 func (c *Client) isConverged() bool {
-	// we need to check here that no-one is doing an operation that we might care about
-	// impacting convergence. this is:
-	//  - sending a message
-	//	- post-processing a sent message
-	//	- reading a message
-	//	- post-procesing a read message
-
 	c.qs.sendMu.RLock()
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
@@ -820,13 +817,29 @@ func (c *ClientErr) Error() string { return fmt.Sprintf("errors: send: %v, recv:
 // channel. The function blocks until such time as the client returns.
 func (c *Client) AwaitConverged() error {
 	for {
-		c.awaiting.Lock()
-		if sendE, recvE := c.hasErrors(); len(sendE) != 0 || len(recvE) != 0 {
-			return &ClientErr{Send: sendE, Recv: recvE}
+		// we need to check here that no-one is doing an operation that we might care about
+		// impacting convergence. this is:
+		//  - sending a message
+		//	- post-processing a sent message
+		//	- reading a message
+		//	- post-procesing a read message
+		// we do this by holding the awaiting mutex.
+		done, err := func() (bool, error) {
+			c.awaiting.Lock()
+			defer c.awaiting.Unlock()
+			if sendE, recvE := c.hasErrors(); len(sendE) != 0 || len(recvE) != 0 {
+				return true, &ClientErr{Send: sendE, Recv: recvE}
+			}
+			if c.isConverged() {
+				return true, nil
+			}
+			return false, nil
+		}()
+		if err != nil {
+			return err
 		}
-		if c.isConverged() {
+		if done {
 			return nil
 		}
-		c.awaiting.Unlock()
 	}
 }

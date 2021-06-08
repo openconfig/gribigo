@@ -55,18 +55,7 @@ type Client struct {
 	// GoRoutine.
 	readErr []error
 
-	// sendInProgress is an atomically updated boolean that is used to
-	// indicate that the process of sending a message is in progress. We use it
-	// to ensure that between sending a message to the server, and post-processing
-	// of the ModifyRequest (to record its details in the queue), we do not
-	// report that the client is converged.
-	sendInProgress *atomic.Uint64
-	// recvinProgress is an atomically updated boolean that is used to indicate
-	// that the process of receiving a message is in progress. It is used in
-	// a similar manner to the sendInProgress atomic bool.
-	recvInProgress *atomic.Uint64
-
-	resInProgress *atomic.Uint64
+	running sync.WaitGroup
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -93,10 +82,7 @@ type Opt interface {
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...Opt) (*Client, error) {
 	c := &Client{
-		shut:           atomic.NewBool(false),
-		sendInProgress: atomic.NewUint64(0),
-		recvInProgress: atomic.NewUint64(0),
-		resInProgress:  atomic.NewUint64(0),
+		shut: atomic.NewBool(false),
 	}
 
 	s, err := handleParams(opts...)
@@ -251,8 +237,6 @@ func (c *Client) Connect(ctx context.Context) error {
 	// handler functions, they could still be inline).
 
 	rec := func(in *spb.ModifyResponse) {
-		c.resInProgress.Inc()
-		defer c.resInProgress.Dec()
 		log.V(2).Infof("received message on Modify stream: %s", in)
 		if err := c.handleModifyResponse(in); err != nil {
 			log.Errorf("got error processing message received from server, %v", err)
@@ -267,7 +251,6 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 			m, err := stream.Recv()
-			c.recvInProgress.Add(1)
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
 				c.shut.Store(true)
@@ -278,30 +261,34 @@ func (c *Client) Connect(ctx context.Context) error {
 				c.addReadErr(err)
 				return
 			}
-			rec(m)
-			c.recvInProgress.Sub(1)
+			c.running.Add(1)
+			go func() {
+				defer c.running.Done()
+				rec(m)
+			}()
 		}
 	}()
 
 	is := func(m *spb.ModifyRequest) {
 		// mark that we're in process of processing a send, we defer the clearing of this flag
 		// so that we don't need to remember it before every return.
-		c.sendInProgress.Add(1)
-		defer c.sendInProgress.Sub(1)
-		if err := c.handleModifyRequest(m); err != nil {
-			log.Errorf("got error processing message that was to be sent, %v", err)
-			c.addSendErr(err)
-			return
-		}
-		fmt.Printf("sending %s (conv: %v)\n", m, c.isConverged())
-
+		fmt.Printf("acquiring send lock @ 274\n")
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
 			c.addSendErr(err)
 			return
 		}
-		log.V(2).Infof("sent Modify message %s", m)
+		c.running.Add(1)
+		go func() {
+			if err := c.handleModifyRequest(m); err != nil {
+				log.Errorf("got error processing message that was to be sent, %v", err)
+				c.addSendErr(err)
+				return
+			}
+			c.running.Done()
+		}()
 
+		log.V(2).Infof("sent Modify message %s", m)
 	}
 
 	go func() {
@@ -556,9 +543,7 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 // ensures that pending transactions are dequeued into the results queue. An error
 // is returned if the post processing is not possible.
 func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
-	c.resInProgress.Inc()
-	defer c.resInProgress.Dec()
-	fmt.Printf("handling %s, pending: %d\n", m, c.resInProgress.Load())
+	fmt.Printf("handling %s\n", m)
 
 	if m == nil {
 		return errors.New("invalid nil modify response returned")
@@ -583,7 +568,6 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	defer c.qs.resultMu.Unlock()
 
 	if m.ElectionId != nil {
-		fmt.Printf("setting election ID to nil for %s, converged? %v\n", m, c.isConverged())
 		er := c.clearPendingElection()
 		er.CurrentServerElectionID = m.ElectionId
 		// This is an update from the server in response to an updated master election ID.
@@ -591,7 +575,6 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	}
 
 	if m.SessionParamsResult != nil {
-		fmt.Printf("setting session params to nil for %s, converged? %v\n", m, c.isConverged())
 		sr := c.clearPendingSessionParams()
 		sr.SessionParameters = m.SessionParamsResult
 		c.qs.resultq = append(c.qs.resultq, sr)
@@ -604,9 +587,7 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 
 // isConverged indicates whether the client is converged.
 func (c *Client) isConverged() bool {
-	if c.sendInProgress.Load() != 0 || c.recvInProgress.Load() != 0 || c.resInProgress.Load() != 0 {
-		return false
-	}
+	c.running.Wait()
 
 	c.qs.sendMu.RLock()
 	defer c.qs.sendMu.RUnlock()
@@ -758,7 +739,6 @@ func (c *Client) Results() ([]*OpResult, error) {
 	if c.qs == nil {
 		return nil, errors.New("invalid (nil) queues in client")
 	}
-	fmt.Printf("note, converged? %v\n", c.isConverged())
 	c.qs.resultMu.RLock()
 	defer c.qs.resultMu.RUnlock()
 	return append(make([]*OpResult, 0, len(c.qs.resultq)), c.qs.resultq...), nil

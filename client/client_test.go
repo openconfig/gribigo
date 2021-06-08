@@ -289,9 +289,6 @@ func TestResults(t *testing.T) {
 			qs: &clientQs{
 				resultq: []*OpResult{},
 			},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(0),
 		},
 		want: []*OpResult{},
 	}, {
@@ -305,9 +302,6 @@ func TestResults(t *testing.T) {
 					},
 				}},
 			},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(0),
 		},
 		want: []*OpResult{{
 			CurrentServerElectionID: &spb.Uint128{
@@ -350,9 +344,6 @@ func TestStatus(t *testing.T) {
 				pendq:   &pendingQueue{},
 				resultq: []*OpResult{},
 			},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(0),
 		},
 		wantStatus: &ClientStatus{
 			Timestamp:           42,
@@ -376,9 +367,6 @@ func TestStatus(t *testing.T) {
 					Timestamp: 50,
 				}},
 			},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(0),
 		},
 		wantStatus: &ClientStatus{
 			Timestamp: 42,
@@ -427,9 +415,6 @@ func TestHandleModifyResponse(t *testing.T) {
 	}{{
 		desc: "invalid combination of fields populated",
 		inClient: &Client{
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
 			qs: &clientQs{
 				sending: &atomic.Bool{},
 			},
@@ -452,9 +437,6 @@ func TestHandleModifyResponse(t *testing.T) {
 				},
 				sending: &atomic.Bool{},
 			},
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
 		},
 		inResponse: &spb.ModifyResponse{
 			ElectionId: &spb.Uint128{High: 0, Low: 42},
@@ -471,9 +453,6 @@ func TestHandleModifyResponse(t *testing.T) {
 				pendq:   &pendingQueue{},
 				sending: &atomic.Bool{},
 			},
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
 		},
 		wantErr: true,
 	}, {
@@ -483,9 +462,6 @@ func TestHandleModifyResponse(t *testing.T) {
 				pendq:   &pendingQueue{},
 				sending: &atomic.Bool{},
 			},
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
 		},
 		inResponse: &spb.ModifyResponse{
 			ElectionId: &spb.Uint128{Low: 1},
@@ -506,9 +482,6 @@ func TestHandleModifyResponse(t *testing.T) {
 				},
 				sending: &atomic.Bool{},
 			},
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
 		},
 		inResponse: &spb.ModifyResponse{
 			SessionParamsResult: &spb.SessionParametersResult{
@@ -529,9 +502,6 @@ func TestHandleModifyResponse(t *testing.T) {
 				pendq:   &pendingQueue{},
 				sending: &atomic.Bool{},
 			},
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
 		},
 		inResponse: &spb.ModifyResponse{
 			SessionParamsResult: &spb.SessionParametersResult{
@@ -612,9 +582,6 @@ func TestHandleModifyRequest(t *testing.T) {
 				},
 				sending: &atomic.Bool{},
 			},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(0),
 		},
 		wantPending: &pendingQueue{
 			Ops: map[uint64]*PendingOp{
@@ -629,9 +596,6 @@ func TestHandleModifyRequest(t *testing.T) {
 				pendq:   &pendingQueue{},
 				sending: &atomic.Bool{},
 			},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(0),
 		},
 		inRequest: &spb.ModifyRequest{ElectionId: &spb.Uint128{Low: 1}},
 		wantPending: &pendingQueue{
@@ -647,9 +611,6 @@ func TestHandleModifyRequest(t *testing.T) {
 				pendq:   &pendingQueue{},
 				sending: &atomic.Bool{},
 			},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(0),
 		},
 		inRequest: &spb.ModifyRequest{
 			Params: &spb.SessionParameters{
@@ -687,10 +648,7 @@ func TestConverged(t *testing.T) {
 	}{{
 		desc: "converged - uninitialised",
 		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
+			qs: &clientQs{},
 		},
 		want: true,
 	}, {
@@ -699,9 +657,6 @@ func TestConverged(t *testing.T) {
 			qs: &clientQs{
 				pendq: &pendingQueue{},
 			},
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
 		},
 		want: true,
 	}, {
@@ -710,9 +665,6 @@ func TestConverged(t *testing.T) {
 			qs: &clientQs{
 				sendq: []*spb.ModifyRequest{{}},
 			},
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
 		},
 	}, {
 		desc: "not converged - pending queue, ops",
@@ -724,9 +676,6 @@ func TestConverged(t *testing.T) {
 					},
 				},
 			},
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
 		},
 	}, {
 		desc: "not converged - pending queue, election",
@@ -736,9 +685,6 @@ func TestConverged(t *testing.T) {
 					Election: &ElectionReqDetails{},
 				},
 			},
-			sendInProgress: &atomic.Uint64{},
-			recvInProgress: &atomic.Uint64{},
-			resInProgress:  &atomic.Uint64{},
 		},
 	}, {
 		desc: "not converged - pending queue, params",
@@ -748,50 +694,32 @@ func TestConverged(t *testing.T) {
 					SessionParams: &SessionParamReqDetails{},
 				},
 			},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(0),
 		},
 	}, {
 		desc: "not converged, sending in progress",
 		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: atomic.NewUint64(1),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(0),
+			qs: &clientQs{},
 		},
 	}, {
 		desc: "not converged, receive in progress",
 		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(1),
-			resInProgress:  atomic.NewUint64(0),
+			qs: &clientQs{},
 		},
 	}, {
 		desc: "not converged, result in progress",
 		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(1),
+			qs: &clientQs{},
 		},
 	}, {
 		desc: "converged, explicitly set values",
 		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: atomic.NewUint64(0),
-			recvInProgress: atomic.NewUint64(0),
-			resInProgress:  atomic.NewUint64(0),
+			qs: &clientQs{},
 		},
 		want: true,
 	}, {
 		desc: "not converged, explicitly set values",
 		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: atomic.NewUint64(42),
-			recvInProgress: atomic.NewUint64(84),
-			resInProgress:  atomic.NewUint64(128),
+			qs: &clientQs{},
 		},
 		want: false,
 	}}

@@ -65,6 +65,8 @@ type Client struct {
 	// that the process of receiving a message is in progress. It is used in
 	// a similar manner to the sendInProgress atomic bool.
 	recvInProgress *atomic.Uint64
+
+	rmu sync.Mutex
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -263,6 +265,7 @@ func (c *Client) Connect(ctx context.Context) error {
 			}
 			m, err := stream.Recv()
 			c.recvInProgress.Add(1)
+			c.rmu.Lock()
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
 				c.shut.Store(true)
@@ -275,6 +278,7 @@ func (c *Client) Connect(ctx context.Context) error {
 			}
 			rec(m)
 			c.recvInProgress.Sub(1)
+			c.rmu.Unlock()
 		}
 	}()
 

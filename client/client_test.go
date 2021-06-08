@@ -289,6 +289,9 @@ func TestResults(t *testing.T) {
 			qs: &clientQs{
 				resultq: []*OpResult{},
 			},
+			sendInProgress: atomic.NewUint64(0),
+			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(0),
 		},
 		want: []*OpResult{},
 	}, {
@@ -302,6 +305,9 @@ func TestResults(t *testing.T) {
 					},
 				}},
 			},
+			sendInProgress: atomic.NewUint64(0),
+			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(0),
 		},
 		want: []*OpResult{{
 			CurrentServerElectionID: &spb.Uint128{
@@ -344,6 +350,9 @@ func TestStatus(t *testing.T) {
 				pendq:   &pendingQueue{},
 				resultq: []*OpResult{},
 			},
+			sendInProgress: atomic.NewUint64(0),
+			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(0),
 		},
 		wantStatus: &ClientStatus{
 			Timestamp:           42,
@@ -367,6 +376,9 @@ func TestStatus(t *testing.T) {
 					Timestamp: 50,
 				}},
 			},
+			sendInProgress: atomic.NewUint64(0),
+			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(0),
 		},
 		wantStatus: &ClientStatus{
 			Timestamp: 42,

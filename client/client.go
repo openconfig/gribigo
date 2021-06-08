@@ -746,10 +746,10 @@ func (c *Client) Pending() ([]PendingRequest, error) {
 // Results returns the set of ModifyResponses that have been received from the
 // target.
 func (c *Client) Results() ([]*OpResult, error) {
-	fmt.Printf("note, pending? %v", c.isConverged())
 	if c.qs == nil {
 		return nil, errors.New("invalid (nil) queues in client")
 	}
+	fmt.Printf("note, converged? %v\n", c.isConverged())
 	c.qs.resultMu.RLock()
 	defer c.qs.resultMu.RUnlock()
 	return append(make([]*OpResult, 0, len(c.qs.resultq)), c.qs.resultq...), nil

@@ -41,7 +41,7 @@ type Client struct {
 
 	// shut indicates that RPCs should continue to run, when set
 	// to true, all goroutines that are serving RPCs shut down.
-	shut bool
+	shut *atomic.Bool
 
 	// sendErrMu protects the sendErr slice.
 	sendErrMu sync.RWMutex
@@ -91,6 +91,7 @@ type Opt interface {
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...Opt) (*Client, error) {
 	c := &Client{
+		shut:           atomic.NewBool(false),
 		sendInProgress: atomic.NewBool(false),
 		recvInProgress: atomic.NewBool(false),
 	}
@@ -110,6 +111,9 @@ func New(opts ...Opt) (*Client, error) {
 		// modifyCh is unbuffered so that where needed, writes can be blocking.
 		modifyCh: make(chan *spb.ModifyRequest),
 		resultq:  []*OpResult{},
+
+		sending:   atomic.NewBool(false),
+		converged: atomic.NewBool(false),
 	}
 
 	return c, nil
@@ -248,7 +252,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		// mark that we're in process of processing a recv, we defer the clearing of this flag
 		// so that we don't need to remember it before every return.
 		c.recvInProgress.Store(true)
-		defer func() { c.recvInProgress.Store(false) }()
+		defer c.recvInProgress.Store(false)
 		log.V(2).Infof("received message on Modify stream: %s", in)
 		if err := c.handleModifyResponse(in); err != nil {
 			log.Errorf("got error processing message received from server, %v", err)
@@ -258,7 +262,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	go func() {
 		for {
-			if c.shut {
+			if c.shut.Load() {
 				log.V(2).Infof("shutting down recv goroutine")
 				return
 			}
@@ -270,7 +274,7 @@ func (c *Client) Connect(ctx context.Context) error {
 			c.recvInProgress.Store(true)
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
-				c.shut = true
+				c.shut.Store(true)
 				return
 			}
 			if err != nil {
@@ -286,7 +290,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		// mark that we're in process of processing a send, we defer the clearing of this flag
 		// so that we don't need to remember it before every return.
 		c.sendInProgress.Store(true)
-		defer func() { c.sendInProgress.Store(false) }()
+		defer c.sendInProgress.Store(false)
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
 			c.addSendErr(err)
@@ -303,7 +307,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	go func() {
 		for {
-			if c.shut {
+			if c.shut.Load() {
 				log.V(2).Infof("shutting down send goroutine")
 				return
 			}
@@ -354,10 +358,8 @@ type clientQs struct {
 
 	// sending indicates whether the client will empty the sendq. By default,
 	// messages are queued into the sendq and not sent to the target.
-	sending bool
+	sending *atomic.Bool
 
-	// convergMu protects the converged boolean.
-	convergMu sync.RWMutex
 	// converged is a bool that indicates that the client is converged.
 	// Converged is defined as there being:
 	//  - no entries in the send queue
@@ -365,7 +367,7 @@ type clientQs struct {
 	// this means that in some cases a client /may/ have requests on the wire
 	// that have not been responded to (e.g., updated election IDs) if they do
 	// not create entries in the pending queue.
-	converged bool
+	converged *atomic.Bool
 }
 
 // pendingQueue provides a queue type that determines the set of pending
@@ -509,7 +511,7 @@ func (o *OpResult) String() string {
 
 // Q enqueues a ModifyRequest to be sent to the target.
 func (c *Client) Q(m *spb.ModifyRequest) {
-	if !c.qs.sending {
+	if !c.qs.sending.Load() {
 		c.qs.sendMu.Lock()
 		defer c.qs.sendMu.Unlock()
 		log.V(2).Infof("appended %s to sending queue", m)
@@ -525,7 +527,7 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 // StartSending toggles the client to begin sending messages that are in the send
 // queue (enqued by Q) to the connection established by Connect.
 func (c *Client) StartSending() {
-	c.qs.sending = true
+	c.qs.sending.Store(true)
 	// take the initial set of messages that were enqueued and queue them.
 	c.qs.sendMu.Lock()
 	defer c.qs.sendMu.Unlock()
@@ -558,9 +560,7 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 
 	// every time we send a modify request, we are not converged, so rewrite
 	// converged to say no.
-	c.qs.convergMu.Lock()
-	defer c.qs.convergMu.Unlock()
-	c.qs.converged = false
+	c.qs.converged.Store(false)
 
 	return nil
 }
@@ -604,9 +604,7 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	// TODO(robjs): add handling of received operations.
 
 	// write whether the client is converged each time we receive a message.
-	c.qs.convergMu.Lock()
-	defer c.qs.convergMu.Unlock()
-	c.qs.converged = c.isConverged()
+	c.qs.converged.Store(c.isConverged())
 
 	return nil
 }
@@ -614,6 +612,10 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 // isConverged indicates whether the client is converged.
 func (c *Client) isConverged() bool {
 	if c.sendInProgress.Load() || c.recvInProgress.Load() {
+		return false
+	}
+
+	if len(c.qs.modifyCh) != 0 {
 		return false
 	}
 

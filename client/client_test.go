@@ -137,7 +137,7 @@ func TestQ(t *testing.T) {
 				t.Fatalf("cannot create client, %v", err)
 			}
 			if tt.inSending {
-				c.qs.sending = tt.inSending
+				c.qs.sending = atomic.NewBool(tt.inSending)
 				// avoid test deadlock by emptying the queue if we're sending.
 				go func() {
 					for {
@@ -417,6 +417,10 @@ func TestHandleModifyResponse(t *testing.T) {
 		inClient: &Client{
 			sendInProgress: &atomic.Bool{},
 			recvInProgress: &atomic.Bool{},
+			qs: &clientQs{
+				sending:   &atomic.Bool{},
+				converged: &atomic.Bool{},
+			},
 		},
 		inResponse: &spb.ModifyResponse{
 			Result: []*spb.AFTResult{{
@@ -434,6 +438,8 @@ func TestHandleModifyResponse(t *testing.T) {
 						Timestamp: 2,
 					},
 				},
+				sending:   &atomic.Bool{},
+				converged: &atomic.Bool{},
 			},
 			sendInProgress: &atomic.Bool{},
 			recvInProgress: &atomic.Bool{},
@@ -450,7 +456,9 @@ func TestHandleModifyResponse(t *testing.T) {
 		desc: "invalid ModifyResponse",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: &pendingQueue{},
+				pendq:     &pendingQueue{},
+				sending:   &atomic.Bool{},
+				converged: &atomic.Bool{},
 			},
 			sendInProgress: &atomic.Bool{},
 			recvInProgress: &atomic.Bool{},
@@ -460,7 +468,9 @@ func TestHandleModifyResponse(t *testing.T) {
 		desc: "no populated election ID",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: &pendingQueue{},
+				pendq:     &pendingQueue{},
+				sending:   &atomic.Bool{},
+				converged: &atomic.Bool{},
 			},
 			sendInProgress: &atomic.Bool{},
 			recvInProgress: &atomic.Bool{},
@@ -482,6 +492,8 @@ func TestHandleModifyResponse(t *testing.T) {
 						Timestamp: 20,
 					},
 				},
+				sending:   &atomic.Bool{},
+				converged: &atomic.Bool{},
 			},
 			sendInProgress: &atomic.Bool{},
 			recvInProgress: &atomic.Bool{},
@@ -502,7 +514,9 @@ func TestHandleModifyResponse(t *testing.T) {
 		desc: "session parameters received but not pending",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: &pendingQueue{},
+				pendq:     &pendingQueue{},
+				sending:   &atomic.Bool{},
+				converged: &atomic.Bool{},
 			},
 			sendInProgress: &atomic.Bool{},
 			recvInProgress: &atomic.Bool{},
@@ -584,6 +598,8 @@ func TestHandleModifyRequest(t *testing.T) {
 						128: {},
 					},
 				},
+				sending:   &atomic.Bool{},
+				converged: &atomic.Bool{},
 			},
 		},
 		wantPending: &pendingQueue{
@@ -596,7 +612,9 @@ func TestHandleModifyRequest(t *testing.T) {
 		desc: "election ID update",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: &pendingQueue{},
+				pendq:     &pendingQueue{},
+				sending:   &atomic.Bool{},
+				converged: &atomic.Bool{},
 			},
 		},
 		inRequest: &spb.ModifyRequest{ElectionId: &spb.Uint128{Low: 1}},
@@ -610,7 +628,9 @@ func TestHandleModifyRequest(t *testing.T) {
 		desc: "session params update",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: &pendingQueue{},
+				pendq:     &pendingQueue{},
+				sending:   &atomic.Bool{},
+				converged: &atomic.Bool{},
 			},
 		},
 		inRequest: &spb.ModifyRequest{

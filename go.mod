@@ -9,7 +9,7 @@ require (
 	github.com/openconfig/gnmi v0.0.0-20200508230933-d19cebf5e7be
 	github.com/openconfig/goyang v0.2.2
 	github.com/openconfig/gribi v0.1.1-0.20210423184541-ce37eb4ba92f
-	github.com/openconfig/ygot v0.10.12
+	github.com/openconfig/ygot v0.10.13-0.20210608155735-ef101584b484
 	google.golang.org/grpc v1.37.0
 	google.golang.org/protobuf v1.26.0
 	lukechampine.com/uint128 v1.1.1

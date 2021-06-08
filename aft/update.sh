@@ -13,6 +13,14 @@ runsed() {
 git clone https://github.com/openconfig/gribi.git
 go get github.com/openconfig/ygot@latest
 go install github.com/openconfig/ygot/generator
+
+(
+  cd gribi;
+  for i in `find v1/yang/patches -name *.patch | sort`; do
+    patch -b -p1 < $i;
+  done
+)
+
 generator -path=gribi -output_file=oc.go \
     -package_name=aft -generate_fakeroot -fakeroot_name=RIB -compress_paths=true \
     -shorten_enum_leaf_names \
@@ -21,6 +29,8 @@ generator -path=gribi -output_file=oc.go \
     -typedef_enum_with_defmod \
     -enum_suffix_for_simple_union_enums \
     -exclude_modules=openconfig-interfaces,ietf-interfaces \
+    -generate_getters \
+    -generate_leaf_getters \
     gribi/v1/yang/gribi-aft.yang
 
 git clone -b v0.4 https://github.com/mbrukman/autogen.git

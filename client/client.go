@@ -60,11 +60,11 @@ type Client struct {
 	// to ensure that between sending a message to the server, and post-processing
 	// of the ModifyRequest (to record its details in the queue), we do not
 	// report that the client is converged.
-	sendInProgress *atomic.Bool
+	sendInProgress *atomic.Uint64
 	// recvinProgress is an atomically updated boolean that is used to indicate
 	// that the process of receiving a message is in progress. It is used in
 	// a similar manner to the sendInProgress atomic bool.
-	recvInProgress *atomic.Bool
+	recvInProgress *atomic.Uint64
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -92,8 +92,8 @@ type Opt interface {
 func New(opts ...Opt) (*Client, error) {
 	c := &Client{
 		shut:           atomic.NewBool(false),
-		sendInProgress: atomic.NewBool(false),
-		recvInProgress: atomic.NewBool(false),
+		sendInProgress: atomic.NewUint64(0),
+		recvInProgress: atomic.NewUint64(0),
 	}
 
 	s, err := handleParams(opts...)
@@ -112,8 +112,9 @@ func New(opts ...Opt) (*Client, error) {
 		modifyCh: make(chan *spb.ModifyRequest),
 		resultq:  []*OpResult{},
 
-		sending:   atomic.NewBool(false),
-		converged: atomic.NewBool(false),
+		sending: atomic.NewBool(false),
+		// A client starts out converged, because it has no messages that are pending.
+		converged: atomic.NewBool(true),
 	}
 
 	return c, nil
@@ -251,8 +252,8 @@ func (c *Client) Connect(ctx context.Context) error {
 	rec := func(in *spb.ModifyResponse) {
 		// mark that we're in process of processing a recv, we defer the clearing of this flag
 		// so that we don't need to remember it before every return.
-		c.recvInProgress.Store(true)
-		defer c.recvInProgress.Store(false)
+		c.recvInProgress.Add(1)
+		defer c.recvInProgress.Sub(1)
 		log.V(2).Infof("received message on Modify stream: %s", in)
 		if err := c.handleModifyResponse(in); err != nil {
 			log.Errorf("got error processing message received from server, %v", err)
@@ -267,11 +268,6 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 			m, err := stream.Recv()
-			// Mark that we're receiving as close as possible to reading the message. If
-			// we do not do this then we have some cycles within which isConverged will
-			// return true. We don't worry about setting it back, as rec() resets this
-			// back to false once the processing is actually done.
-			c.recvInProgress.Store(true)
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
 				c.shut.Store(true)
@@ -283,14 +279,15 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 			rec(m)
+
 		}
 	}()
 
 	is := func(m *spb.ModifyRequest) {
 		// mark that we're in process of processing a send, we defer the clearing of this flag
 		// so that we don't need to remember it before every return.
-		c.sendInProgress.Store(true)
-		defer c.sendInProgress.Store(false)
+		c.sendInProgress.Add(1)
+		defer c.sendInProgress.Sub(1)
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
 			c.addSendErr(err)
@@ -302,7 +299,6 @@ func (c *Client) Connect(ctx context.Context) error {
 			log.Errorf("got error processing message that was sent, %v", err)
 			c.addSendErr(err)
 		}
-
 	}
 
 	go func() {
@@ -543,6 +539,7 @@ func (c *Client) StartSending() {
 // that pending transactions are enqueued into the pending queue where they have
 // a specified ID.
 func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
+	fmt.Printf("handling %s\n", m)
 	// Add any pending operations to the pending queue.
 	for _, o := range m.Operation {
 		if err := c.addPendingOp(o); err != nil {
@@ -557,10 +554,6 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 	if m.Params != nil {
 		c.pendingSessionParams(m.Params)
 	}
-
-	// every time we send a modify request, we are not converged, so rewrite
-	// converged to say no.
-	c.qs.converged.Store(false)
 
 	return nil
 }
@@ -592,7 +585,6 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 		er.CurrentServerElectionID = m.ElectionId
 		// This is an update from the server in response to an updated master election ID.
 		c.addResult(er)
-		return nil
 	}
 
 	if m.SessionParamsResult != nil {
@@ -603,19 +595,13 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 
 	// TODO(robjs): add handling of received operations.
 
-	// write whether the client is converged each time we receive a message.
-	c.qs.converged.Store(c.isConverged())
-
 	return nil
 }
 
 // isConverged indicates whether the client is converged.
 func (c *Client) isConverged() bool {
-	if c.sendInProgress.Load() || c.recvInProgress.Load() {
-		return false
-	}
-
-	if len(c.qs.modifyCh) != 0 {
+	if c.sendInProgress.Load() != 0 || c.recvInProgress.Load() != 0 {
+		fmt.Printf("returning false because something is in progress\n")
 		return false
 	}
 
@@ -623,6 +609,7 @@ func (c *Client) isConverged() bool {
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
+	fmt.Printf("returning %v because of queue lengths, send: %d, pend: %d --> %+v\n", len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0, len(c.qs.sendq), c.qs.pendq.Len(), c.qs.pendq)
 	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }
 
@@ -669,6 +656,7 @@ func (c *Client) clearPendingElection() *OpResult {
 	c.qs.pendMu.Lock()
 	defer c.qs.pendMu.Unlock()
 	e := c.qs.pendq.Election
+	fmt.Printf("found pending election %+v\n", e)
 	if e == nil {
 		return &OpResult{
 			Timestamp:   unixTS(),
@@ -678,6 +666,7 @@ func (c *Client) clearPendingElection() *OpResult {
 
 	n := unixTS()
 	c.qs.pendq.Election = nil
+	fmt.Printf("set election to nil\n")
 	return &OpResult{
 		Timestamp: n,
 		Latency:   n - e.Timestamp,

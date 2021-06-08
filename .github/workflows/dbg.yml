@@ -39,31 +39,3 @@ jobs:
           for i in `find . -type d -mindepth 1 -maxdepth 1 | egrep -v ".git|.github|fluent|doc"`; do
             go test -race ./$i
           done
-
-  static_analysis:
-    name: Static Analysis
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Install Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: '1.14'
-        id: go
-
-      - name: Install required static analysis tools
-        run: |
-          go get -u honnef.co/go/tools/cmd/staticcheck
-
-      - name: Check out code
-        uses: actions/checkout@v2
-
-      - name: Go vet
-        run: go vet ./...
-
-      - name: Check gofmt
-        run: diff -u <(echo -n) <(gofmt -d -s .)
-
-      - name: Staticcheck
-        run: |
-          staticcheck ./...

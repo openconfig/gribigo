@@ -555,6 +555,7 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	c.resInProgress.Inc()
 	defer c.resInProgress.Dec()
+	fmt.Printf("handling %s, pending: %d", m, c.resInProgress.Load())
 
 	if m == nil {
 		return errors.New("invalid nil modify response returned")

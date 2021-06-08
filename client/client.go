@@ -545,6 +545,7 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 	if m.Params != nil {
 		fmt.Printf("updating the session parameters, converged? %v\n", c.isConverged())
 		c.pendingSessionParams(m.Params)
+		fmt.Printf("updated the sessionParameters, converged? %v\n", c.isConverged())
 	}
 
 	return nil

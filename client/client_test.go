@@ -612,6 +612,9 @@ func TestHandleModifyRequest(t *testing.T) {
 				},
 				sending: &atomic.Bool{},
 			},
+			sendInProgress: atomic.NewUint64(0),
+			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(0),
 		},
 		wantPending: &pendingQueue{
 			Ops: map[uint64]*PendingOp{
@@ -626,6 +629,9 @@ func TestHandleModifyRequest(t *testing.T) {
 				pendq:   &pendingQueue{},
 				sending: &atomic.Bool{},
 			},
+			sendInProgress: atomic.NewUint64(0),
+			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(0),
 		},
 		inRequest: &spb.ModifyRequest{ElectionId: &spb.Uint128{Low: 1}},
 		wantPending: &pendingQueue{
@@ -641,6 +647,9 @@ func TestHandleModifyRequest(t *testing.T) {
 				pendq:   &pendingQueue{},
 				sending: &atomic.Bool{},
 			},
+			sendInProgress: atomic.NewUint64(0),
+			recvInProgress: atomic.NewUint64(0),
+			resInProgress:  atomic.NewUint64(0),
 		},
 		inRequest: &spb.ModifyRequest{
 			Params: &spb.SessionParameters{

@@ -695,33 +695,6 @@ func TestConverged(t *testing.T) {
 				},
 			},
 		},
-	}, {
-		desc: "not converged, sending in progress",
-		inClient: &Client{
-			qs: &clientQs{},
-		},
-	}, {
-		desc: "not converged, receive in progress",
-		inClient: &Client{
-			qs: &clientQs{},
-		},
-	}, {
-		desc: "not converged, result in progress",
-		inClient: &Client{
-			qs: &clientQs{},
-		},
-	}, {
-		desc: "converged, explicitly set values",
-		inClient: &Client{
-			qs: &clientQs{},
-		},
-		want: true,
-	}, {
-		desc: "not converged, explicitly set values",
-		inClient: &Client{
-			qs: &clientQs{},
-		},
-		want: false,
 	}}
 
 	for _, tt := range tests {

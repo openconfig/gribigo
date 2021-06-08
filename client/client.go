@@ -212,17 +212,6 @@ func (persistEntries) isClientOpt() {}
 // An error is returned if the Modify RPC cannot be established or there is an error
 // response to the initial messages that are sent on the connection.
 func (c *Client) Connect(ctx context.Context) error {
-	if c.state.SessParams != nil {
-		c.Q(&spb.ModifyRequest{
-			Params: c.state.SessParams,
-		})
-	}
-
-	if c.state.ElectionID != nil {
-		c.Q(&spb.ModifyRequest{
-			ElectionId: c.state.ElectionID,
-		})
-	}
 
 	stream, err := c.c.Modify(ctx)
 	if err != nil {
@@ -505,17 +494,30 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 // StartSending toggles the client to begin sending messages that are in the send
 // queue (enqued by Q) to the connection established by Connect.
 func (c *Client) StartSending() {
+	c.qs.sending.Store(true)
 	c.awaiting.RLock()
 	defer c.awaiting.RUnlock()
+
+	if c.state.SessParams != nil {
+		c.Q(&spb.ModifyRequest{
+			Params: c.state.SessParams,
+		})
+	}
+
+	if c.state.ElectionID != nil {
+		c.Q(&spb.ModifyRequest{
+			ElectionId: c.state.ElectionID,
+		})
+	}
+
 	// take the initial set of messages that were enqueued and queue them.
 	c.qs.sendMu.Lock()
 	defer c.qs.sendMu.Unlock()
 	for _, m := range c.qs.sendq {
 		log.V(2).Infof("sending %s to modify channel", m)
-		c.qs.modifyCh <- m
+		c.Q(m)
 	}
 	c.qs.sendq = []*spb.ModifyRequest{}
-	c.qs.sending.Store(true)
 }
 
 // handleModifyRequest performs any required post-processing after having sent a

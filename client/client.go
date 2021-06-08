@@ -55,7 +55,8 @@ type Client struct {
 	// GoRoutine.
 	readErr []error
 
-	running sync.WaitGroup
+	isRunning *atomic.Bool
+	runCh     chan struct{}
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -82,7 +83,9 @@ type Opt interface {
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...Opt) (*Client, error) {
 	c := &Client{
-		shut: atomic.NewBool(false),
+		shut:      atomic.NewBool(false),
+		isRunning: atomic.NewBool(false),
+		runCh:     make(chan struct{}),
 	}
 
 	s, err := handleParams(opts...)
@@ -236,12 +239,33 @@ func (c *Client) Connect(ctx context.Context) error {
 	// Modify this code to do this (make these just be default
 	// handler functions, they could still be inline).
 
-	rec := func(in *spb.ModifyResponse) {
+	rec := func(in *spb.ModifyResponse, err error) bool {
 		log.V(2).Infof("received message on Modify stream: %s", in)
+		c.isRunning.Store(true)
+		defer func() {
+			c.isRunning.Store(false)
+			select {
+			case c.runCh <- struct{}{}:
+			default:
+			}
+		}()
+		if err == io.EOF {
+			// reading is done, so write should shut down too.
+			c.shut.Store(true)
+			return true
+		}
+		if err != nil {
+			log.Errorf("got error receiving message, %v", err)
+			c.addReadErr(err)
+			return true
+		}
 		if err := c.handleModifyResponse(in); err != nil {
 			log.Errorf("got error processing message received from server, %v", err)
 			c.addReadErr(err)
+			return true
 		}
+
+		return false
 	}
 
 	go func() {
@@ -250,43 +274,32 @@ func (c *Client) Connect(ctx context.Context) error {
 				log.V(2).Infof("shutting down recv goroutine")
 				return
 			}
-			m, err := stream.Recv()
-			if err == io.EOF {
-				// reading is done, so write should shut down too.
-				c.shut.Store(true)
+			if done := rec(stream.Recv()); done {
 				return
 			}
-			if err != nil {
-				log.Errorf("got error receiving message, %v", err)
-				c.addReadErr(err)
-				return
-			}
-			c.running.Add(1)
-			go func() {
-				rec(m)
-				c.running.Done()
-			}()
 		}
 	}()
 
 	is := func(m *spb.ModifyRequest) {
-		// mark that we're in process of processing a send, we defer the clearing of this flag
-		// so that we don't need to remember it before every return.
+		c.isRunning.Store(true)
+		defer func() {
+			c.isRunning.Store(false)
+			select {
+			case c.runCh <- struct{}{}:
+			default:
+			}
+		}()
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
 			c.addSendErr(err)
 			return
 		}
-		c.running.Add(1)
-		go func() {
-			if err := c.handleModifyRequest(m); err != nil {
-				log.Errorf("got error processing message that was to be sent, %v", err)
-				c.addSendErr(err)
-				return
-			}
-			c.running.Done()
-		}()
 
+		if err := c.handleModifyRequest(m); err != nil {
+			log.Errorf("got error processing message that was to be sent, %v", err)
+			c.addSendErr(err)
+			return
+		}
 		log.V(2).Infof("sent Modify message %s", m)
 	}
 
@@ -509,13 +522,11 @@ func (c *Client) StartSending() {
 	c.qs.sendMu.Lock()
 	defer c.qs.sendMu.Unlock()
 
-	c.running.Add(1)
 	for _, m := range c.qs.sendq {
 		log.V(2).Infof("sending %s to modify channel", m)
 		c.qs.modifyCh <- m
 	}
 	c.qs.sendq = []*spb.ModifyRequest{}
-	c.running.Done()
 }
 
 // handleModifyRequest performs any required post-processing after having sent a
@@ -590,20 +601,20 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 
 // isConverged indicates whether the client is converged.
 func (c *Client) isConverged() bool {
-	// check that nothing is running at the time of the check - this ensures
-	// that no task is waiting to send after having pre-processed the queue
-	// and no task is waiting to update the queue after having processed a
-	// receive message.
-	c.running.Wait()
+	// we need to check here that no-one is doing an operation that we might care about
+	// impacting convergence. this is:
+	//  - sending a message
+	//	- post-processing a sent message
+	//	- reading a message
+	//	- post-procesing a read message
+	if c.isRunning.Load() {
+		<-c.runCh
+	}
 
 	c.qs.sendMu.RLock()
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
-	// acquire the results mutex, just to ensure that no-one is writing there
-	// right now.
-	c.qs.resultMu.Lock()
-	defer c.qs.resultMu.Unlock()
 
 	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }

@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -645,10 +646,12 @@ func TestConverged(t *testing.T) {
 		desc     string
 		inClient *Client
 		want     bool
+		unlock   bool
 	}{{
 		desc: "converged - uninitialised",
 		inClient: &Client{
-			qs: &clientQs{},
+			qs:        &clientQs{},
+			isRunning: atomic.NewBool(false),
 		},
 		want: true,
 	}, {
@@ -657,6 +660,7 @@ func TestConverged(t *testing.T) {
 			qs: &clientQs{
 				pendq: &pendingQueue{},
 			},
+			isRunning: atomic.NewBool(false),
 		},
 		want: true,
 	}, {
@@ -665,6 +669,7 @@ func TestConverged(t *testing.T) {
 			qs: &clientQs{
 				sendq: []*spb.ModifyRequest{{}},
 			},
+			isRunning: atomic.NewBool(false),
 		},
 	}, {
 		desc: "not converged - pending queue, ops",
@@ -676,6 +681,7 @@ func TestConverged(t *testing.T) {
 					},
 				},
 			},
+			isRunning: atomic.NewBool(false),
 		},
 	}, {
 		desc: "not converged - pending queue, election",
@@ -685,6 +691,7 @@ func TestConverged(t *testing.T) {
 					Election: &ElectionReqDetails{},
 				},
 			},
+			isRunning: atomic.NewBool(false),
 		},
 	}, {
 		desc: "not converged - pending queue, params",
@@ -694,11 +701,28 @@ func TestConverged(t *testing.T) {
 					SessionParams: &SessionParamReqDetails{},
 				},
 			},
+			isRunning: atomic.NewBool(false),
 		},
+	}, {
+		desc: "not converged - running",
+		inClient: &Client{
+			qs:        &clientQs{},
+			isRunning: atomic.NewBool(true),
+			runCh:     make(chan struct{}),
+		},
+		want:   true,
+		unlock: true,
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
+			if tt.unlock {
+				go func() {
+					time.Sleep(10 * time.Millisecond)
+					tt.inClient.isRunning.Store(false)
+					tt.inClient.runCh <- struct{}{}
+				}()
+			}
 			if got, want := tt.inClient.isConverged(), tt.want; got != want {
 				t.Fatalf("did not get expected converged status, got: %v, want: %v", got, want)
 			}

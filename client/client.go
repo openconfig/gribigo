@@ -293,7 +293,7 @@ func (c *Client) Connect(ctx context.Context) error {
 			c.addSendErr(err)
 			return
 		}
-		fmt.Printf("sending %s\n", m)
+		fmt.Printf("sending %s (conv: %v)\n", m, c.isConverged())
 
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)

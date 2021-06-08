@@ -263,8 +263,8 @@ func (c *Client) Connect(ctx context.Context) error {
 			}
 			c.running.Add(1)
 			go func() {
-				defer c.running.Done()
 				rec(m)
+				c.running.Done()
 			}()
 		}
 	}()
@@ -272,7 +272,6 @@ func (c *Client) Connect(ctx context.Context) error {
 	is := func(m *spb.ModifyRequest) {
 		// mark that we're in process of processing a send, we defer the clearing of this flag
 		// so that we don't need to remember it before every return.
-		fmt.Printf("acquiring send lock @ 274\n")
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
 			c.addSendErr(err)
@@ -494,6 +493,7 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 		defer c.qs.sendMu.Unlock()
 		log.V(2).Infof("appended %s to sending queue", m)
 		c.qs.sendq = append(c.qs.sendq, m)
+		fmt.Printf("sendq is %v\n", c.qs.sendq)
 		return
 	}
 	log.V(2).Infof("sending %s directly to queue", m)
@@ -508,11 +508,14 @@ func (c *Client) StartSending() {
 	// take the initial set of messages that were enqueued and queue them.
 	c.qs.sendMu.Lock()
 	defer c.qs.sendMu.Unlock()
+
+	c.running.Add(1)
 	for _, m := range c.qs.sendq {
 		log.V(2).Infof("sending %s to modify channel", m)
 		c.qs.modifyCh <- m
 	}
 	c.qs.sendq = []*spb.ModifyRequest{}
+	c.running.Done()
 }
 
 // handleModifyRequest performs any required post-processing after having sent a
@@ -587,6 +590,10 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 
 // isConverged indicates whether the client is converged.
 func (c *Client) isConverged() bool {
+	// check that nothing is running at the time of the check - this ensures
+	// that no task is waiting to send after having pre-processed the queue
+	// and no task is waiting to update the queue after having processed a
+	// receive message.
 	c.running.Wait()
 
 	c.qs.sendMu.RLock()

@@ -271,21 +271,22 @@ func (c *Client) Connect(ctx context.Context) error {
 		}
 	}()
 
-	is := func(m *spb.ModifyRequest) {
+	is := func(m *spb.ModifyRequest) bool {
 		c.awaiting.RLock()
 		defer c.awaiting.RUnlock()
-		if err := stream.Send(m); err != nil {
-			log.Errorf("got error sending message, %v", err)
-			c.addSendErr(err)
-			return
-		}
-
 		if err := c.handleModifyRequest(m); err != nil {
 			log.Errorf("got error processing message that was to be sent, %v", err)
 			c.addSendErr(err)
-			return
+			return true
+		}
+
+		if err := stream.Send(m); err != nil {
+			log.Errorf("got error sending message, %v", err)
+			c.addSendErr(err)
+			return true
 		}
 		log.V(2).Infof("sent Modify message %s", m)
+		return false
 	}
 
 	go func() {
@@ -296,7 +297,9 @@ func (c *Client) Connect(ctx context.Context) error {
 			}
 
 			// read from the channel
-			is(<-c.qs.modifyCh)
+			if done := is(<-c.qs.modifyCh); done {
+				return
+			}
 		}
 	}()
 
@@ -502,18 +505,17 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 // StartSending toggles the client to begin sending messages that are in the send
 // queue (enqued by Q) to the connection established by Connect.
 func (c *Client) StartSending() {
-	c.qs.sending.Store(true)
 	c.awaiting.RLock()
 	defer c.awaiting.RUnlock()
 	// take the initial set of messages that were enqueued and queue them.
 	c.qs.sendMu.Lock()
 	defer c.qs.sendMu.Unlock()
-
 	for _, m := range c.qs.sendq {
 		log.V(2).Infof("sending %s to modify channel", m)
 		c.qs.modifyCh <- m
 	}
 	c.qs.sendq = []*spb.ModifyRequest{}
+	c.qs.sending.Store(true)
 }
 
 // handleModifyRequest performs any required post-processing after having sent a

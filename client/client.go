@@ -543,9 +543,7 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 	}
 
 	if m.Params != nil {
-		fmt.Printf("updating the session parameters, converged? %v\n", c.isConverged())
 		c.pendingSessionParams(m.Params)
-		fmt.Printf("updated the sessionParameters, converged? %v\n", c.isConverged())
 	}
 
 	return nil
@@ -578,6 +576,7 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	}
 
 	if m.ElectionId != nil {
+		fmt.Printf("setting election ID to nil for %s, converged? %v", m, c.isConverged())
 		er := c.clearPendingElection()
 		er.CurrentServerElectionID = m.ElectionId
 		// This is an update from the server in response to an updated master election ID.
@@ -585,6 +584,7 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	}
 
 	if m.SessionParamsResult != nil {
+		fmt.Printf("setting session params to nil for %s, converged? %v", m, c.isConverged())
 		sr := c.clearPendingSessionParams()
 		sr.SessionParameters = m.SessionParamsResult
 		c.addResult(sr)
@@ -605,11 +605,6 @@ func (c *Client) isConverged() bool {
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
-
-	// we don't really need this mutex, but we should check whether anyone is
-	// trying to write to the results queue.
-	c.qs.resultMu.RLock()
-	defer c.qs.resultMu.RUnlock()
 
 	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }

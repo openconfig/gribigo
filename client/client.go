@@ -67,8 +67,6 @@ type Client struct {
 	recvInProgress *atomic.Uint64
 
 	resInProgress *atomic.Uint64
-
-	globalLock sync.Mutex
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -267,31 +265,26 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 			m, err := stream.Recv()
-			c.globalLock.Lock()
+
 			c.recvInProgress.Add(1)
 			if err == io.EOF {
 				// reading is done, so write should shut down too.
 				c.shut.Store(true)
-				c.globalLock.Unlock()
 				return
 			}
 			if err != nil {
 				log.Errorf("got error receiving message, %v", err)
 				c.addReadErr(err)
-				c.globalLock.Unlock()
 				return
 			}
 			rec(m)
 			c.recvInProgress.Sub(1)
-			c.globalLock.Unlock()
 		}
 	}()
 
 	is := func(m *spb.ModifyRequest) {
 		// mark that we're in process of processing a send, we defer the clearing of this flag
 		// so that we don't need to remember it before every return.
-		c.globalLock.Lock()
-		defer c.globalLock.Unlock()
 		c.sendInProgress.Add(1)
 		defer c.sendInProgress.Sub(1)
 		if err := stream.Send(m); err != nil {
@@ -537,6 +530,7 @@ func (c *Client) StartSending() {
 // a specified ID.
 func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 	// Add any pending operations to the pending queue.
+
 	for _, o := range m.Operation {
 		if err := c.addPendingOp(o); err != nil {
 			return err
@@ -559,6 +553,9 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 // ensures that pending transactions are dequeued into the results queue. An error
 // is returned if the post processing is not possible.
 func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
+	c.resInProgress.Inc()
+	defer c.resInProgress.Dec()
+
 	if m == nil {
 		return errors.New("invalid nil modify response returned")
 	}

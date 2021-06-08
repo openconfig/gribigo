@@ -289,9 +289,12 @@ func (c *Client) Connect(ctx context.Context) error {
 		c.sendInProgress.Add(1)
 		defer c.sendInProgress.Sub(1)
 		if err := c.handleModifyRequest(m); err != nil {
-			log.Errorf("got error processing message that was sent, %v", err)
+			log.Errorf("got error processing message that was to be sent, %v", err)
 			c.addSendErr(err)
+			return
 		}
+		fmt.Printf("sending %s\n", m)
+
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
 			c.addSendErr(err)

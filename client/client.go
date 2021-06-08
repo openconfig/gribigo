@@ -263,11 +263,11 @@ func (c *Client) Connect(ctx context.Context) error {
 	is := func(m *spb.ModifyRequest) bool {
 		c.awaiting.RLock()
 		defer c.awaiting.RUnlock()
-		if err := c.handleModifyRequest(m); err != nil {
-			log.Errorf("got error processing message that was to be sent, %v", err)
-			c.addSendErr(err)
-			return true
-		}
+		//if err := c.handleModifyRequest(m); err != nil {
+		//	log.Errorf("got error processing message that was to be sent, %v", err)
+		//	c.addSendErr(err)
+		//	return true
+		//}
 
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
@@ -478,6 +478,12 @@ func (o *OpResult) String() string {
 
 // Q enqueues a ModifyRequest to be sent to the target.
 func (c *Client) Q(m *spb.ModifyRequest) {
+
+	if err := c.handleModifyRequest(m); err != nil {
+		log.Errorf("got error processing message that was to be sent, %v", err)
+		c.addSendErr(err)
+	}
+
 	if !c.qs.sending.Load() {
 		c.qs.sendMu.Lock()
 		defer c.qs.sendMu.Unlock()

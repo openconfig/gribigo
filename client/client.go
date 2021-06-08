@@ -573,9 +573,6 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 		return fmt.Errorf("invalid returned message, ElectionID, Result, and SessionParametersResult are mutually exclusive, got: %s", m)
 	}
 
-	c.resInProgress.Inc()
-	defer c.resInProgress.Dec()
-
 	if m.ElectionId != nil {
 		er := c.clearPendingElection()
 		er.CurrentServerElectionID = m.ElectionId
@@ -749,6 +746,7 @@ func (c *Client) Pending() ([]PendingRequest, error) {
 // Results returns the set of ModifyResponses that have been received from the
 // target.
 func (c *Client) Results() ([]*OpResult, error) {
+	fmt.Printf("note, pending? %v", c.isConverged())
 	if c.qs == nil {
 		return nil, errors.New("invalid (nil) queues in client")
 	}

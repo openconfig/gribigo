@@ -55,8 +55,7 @@ type Client struct {
 	// GoRoutine.
 	readErr []error
 
-	isRunning *atomic.Bool
-	runCh     chan struct{}
+	awaiting sync.RWMutex
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -83,9 +82,7 @@ type Opt interface {
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...Opt) (*Client, error) {
 	c := &Client{
-		shut:      atomic.NewBool(false),
-		isRunning: atomic.NewBool(false),
-		runCh:     make(chan struct{}),
+		shut: atomic.NewBool(false),
 	}
 
 	s, err := handleParams(opts...)
@@ -241,14 +238,8 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	rec := func(in *spb.ModifyResponse, err error) bool {
 		log.V(2).Infof("received message on Modify stream: %s", in)
-		c.isRunning.Store(true)
-		defer func() {
-			c.isRunning.Store(false)
-			select {
-			case c.runCh <- struct{}{}:
-			default:
-			}
-		}()
+		c.awaiting.RLock()
+		defer c.awaiting.RUnlock()
 		if err == io.EOF {
 			// reading is done, so write should shut down too.
 			c.shut.Store(true)
@@ -281,14 +272,8 @@ func (c *Client) Connect(ctx context.Context) error {
 	}()
 
 	is := func(m *spb.ModifyRequest) {
-		c.isRunning.Store(true)
-		defer func() {
-			c.isRunning.Store(false)
-			select {
-			case c.runCh <- struct{}{}:
-			default:
-			}
-		}()
+		c.awaiting.RLock()
+		defer c.awaiting.RUnlock()
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
 			c.addSendErr(err)
@@ -518,6 +503,8 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 // queue (enqued by Q) to the connection established by Connect.
 func (c *Client) StartSending() {
 	c.qs.sending.Store(true)
+	c.awaiting.RLock()
+	defer c.awaiting.RUnlock()
 	// take the initial set of messages that were enqueued and queue them.
 	c.qs.sendMu.Lock()
 	defer c.qs.sendMu.Unlock()
@@ -607,9 +594,6 @@ func (c *Client) isConverged() bool {
 	//	- post-processing a sent message
 	//	- reading a message
 	//	- post-procesing a read message
-	if c.isRunning.Load() {
-		<-c.runCh
-	}
 
 	c.qs.sendMu.RLock()
 	defer c.qs.sendMu.RUnlock()
@@ -829,11 +813,13 @@ func (c *ClientErr) Error() string { return fmt.Sprintf("errors: send: %v, recv:
 // channel. The function blocks until such time as the client returns.
 func (c *Client) AwaitConverged() error {
 	for {
+		c.awaiting.Lock()
 		if sendE, recvE := c.hasErrors(); len(sendE) != 0 || len(recvE) != 0 {
 			return &ClientErr{Send: sendE, Recv: recvE}
 		}
 		if c.isConverged() {
 			return nil
 		}
+		c.awaiting.Unlock()
 	}
 }

@@ -488,6 +488,8 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 	}
 	log.V(2).Infof("sending %s directly to queue", m)
 
+	c.awaiting.RLock()
+	defer c.awaiting.RUnlock()
 	c.qs.modifyCh <- m
 }
 
@@ -495,8 +497,6 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 // queue (enqued by Q) to the connection established by Connect.
 func (c *Client) StartSending() {
 	c.qs.sending.Store(true)
-	c.awaiting.RLock()
-	defer c.awaiting.RUnlock()
 
 	if c.state.SessParams != nil {
 		c.Q(&spb.ModifyRequest{

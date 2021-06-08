@@ -528,7 +528,6 @@ func (c *Client) StartSending() {
 // that pending transactions are enqueued into the pending queue where they have
 // a specified ID.
 func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
-	fmt.Printf("handling %s\n", m)
 	// Add any pending operations to the pending queue.
 	for _, o := range m.Operation {
 		if err := c.addPendingOp(o); err != nil {
@@ -590,7 +589,6 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 // isConverged indicates whether the client is converged.
 func (c *Client) isConverged() bool {
 	if c.sendInProgress.Load() != 0 || c.recvInProgress.Load() != 0 {
-		fmt.Printf("returning false because something is in progress\n")
 		return false
 	}
 
@@ -598,7 +596,6 @@ func (c *Client) isConverged() bool {
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
-	fmt.Printf("returning %v because of queue lengths, send: %d, pend: %d --> %+v\n", len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0, len(c.qs.sendq), c.qs.pendq.Len(), c.qs.pendq)
 	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }
 
@@ -645,7 +642,6 @@ func (c *Client) clearPendingElection() *OpResult {
 	c.qs.pendMu.Lock()
 	defer c.qs.pendMu.Unlock()
 	e := c.qs.pendq.Election
-	fmt.Printf("found pending election %+v\n", e)
 	if e == nil {
 		return &OpResult{
 			Timestamp:   unixTS(),
@@ -655,7 +651,6 @@ func (c *Client) clearPendingElection() *OpResult {
 
 	n := unixTS()
 	c.qs.pendq.Election = nil
-	fmt.Printf("set election to nil\n")
 	return &OpResult{
 		Timestamp: n,
 		Latency:   n - e.Timestamp,

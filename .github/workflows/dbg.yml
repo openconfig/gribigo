@@ -33,9 +33,3 @@ jobs:
 
     - name: Test
       run: go test -v ./compliance/...
-
-    - name: Race Test
-      run: |
-          for i in `find . -type d -mindepth 1 -maxdepth 1 | egrep -v ".git|.github|fluent|doc"`; do
-            go test -race ./$i
-          done

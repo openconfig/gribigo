@@ -489,7 +489,6 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 		defer c.qs.sendMu.Unlock()
 		log.V(2).Infof("appended %s to sending queue", m)
 		c.qs.sendq = append(c.qs.sendq, m)
-		fmt.Printf("sendq is %v\n", c.qs.sendq)
 		return
 	}
 	log.V(2).Infof("sending %s directly to queue", m)
@@ -554,8 +553,6 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 // ensures that pending transactions are dequeued into the results queue. An error
 // is returned if the post processing is not possible.
 func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
-	fmt.Printf("handling %s\n", m)
-
 	if m == nil {
 		return errors.New("invalid nil modify response returned")
 	}

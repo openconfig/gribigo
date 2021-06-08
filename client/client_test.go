@@ -415,11 +415,8 @@ func TestHandleModifyResponse(t *testing.T) {
 	}{{
 		desc: "invalid combination of fields populated",
 		inClient: &Client{
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 			qs: &clientQs{
-				sending:   &atomic.Bool{},
-				converged: &atomic.Bool{},
+				sending: &atomic.Bool{},
 			},
 		},
 		inResponse: &spb.ModifyResponse{
@@ -438,11 +435,8 @@ func TestHandleModifyResponse(t *testing.T) {
 						Timestamp: 2,
 					},
 				},
-				sending:   &atomic.Bool{},
-				converged: &atomic.Bool{},
+				sending: &atomic.Bool{},
 			},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 		},
 		inResponse: &spb.ModifyResponse{
 			ElectionId: &spb.Uint128{High: 0, Low: 42},
@@ -456,24 +450,18 @@ func TestHandleModifyResponse(t *testing.T) {
 		desc: "invalid ModifyResponse",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq:     &pendingQueue{},
-				sending:   &atomic.Bool{},
-				converged: &atomic.Bool{},
+				pendq:   &pendingQueue{},
+				sending: &atomic.Bool{},
 			},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 		},
 		wantErr: true,
 	}, {
 		desc: "no populated election ID",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq:     &pendingQueue{},
-				sending:   &atomic.Bool{},
-				converged: &atomic.Bool{},
+				pendq:   &pendingQueue{},
+				sending: &atomic.Bool{},
 			},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 		},
 		inResponse: &spb.ModifyResponse{
 			ElectionId: &spb.Uint128{Low: 1},
@@ -492,11 +480,8 @@ func TestHandleModifyResponse(t *testing.T) {
 						Timestamp: 20,
 					},
 				},
-				sending:   &atomic.Bool{},
-				converged: &atomic.Bool{},
+				sending: &atomic.Bool{},
 			},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 		},
 		inResponse: &spb.ModifyResponse{
 			SessionParamsResult: &spb.SessionParametersResult{
@@ -514,12 +499,9 @@ func TestHandleModifyResponse(t *testing.T) {
 		desc: "session parameters received but not pending",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq:     &pendingQueue{},
-				sending:   &atomic.Bool{},
-				converged: &atomic.Bool{},
+				pendq:   &pendingQueue{},
+				sending: &atomic.Bool{},
 			},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 		},
 		inResponse: &spb.ModifyResponse{
 			SessionParamsResult: &spb.SessionParametersResult{
@@ -598,8 +580,7 @@ func TestHandleModifyRequest(t *testing.T) {
 						128: {},
 					},
 				},
-				sending:   &atomic.Bool{},
-				converged: &atomic.Bool{},
+				sending: &atomic.Bool{},
 			},
 		},
 		wantPending: &pendingQueue{
@@ -612,9 +593,8 @@ func TestHandleModifyRequest(t *testing.T) {
 		desc: "election ID update",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq:     &pendingQueue{},
-				sending:   &atomic.Bool{},
-				converged: &atomic.Bool{},
+				pendq:   &pendingQueue{},
+				sending: &atomic.Bool{},
 			},
 		},
 		inRequest: &spb.ModifyRequest{ElectionId: &spb.Uint128{Low: 1}},
@@ -628,9 +608,8 @@ func TestHandleModifyRequest(t *testing.T) {
 		desc: "session params update",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq:     &pendingQueue{},
-				sending:   &atomic.Bool{},
-				converged: &atomic.Bool{},
+				pendq:   &pendingQueue{},
+				sending: &atomic.Bool{},
 			},
 		},
 		inRequest: &spb.ModifyRequest{
@@ -669,9 +648,7 @@ func TestConverged(t *testing.T) {
 	}{{
 		desc: "converged - uninitialised",
 		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
+			qs: &clientQs{},
 		},
 		want: true,
 	}, {
@@ -680,8 +657,6 @@ func TestConverged(t *testing.T) {
 			qs: &clientQs{
 				pendq: &pendingQueue{},
 			},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 		},
 		want: true,
 	}, {
@@ -690,8 +665,6 @@ func TestConverged(t *testing.T) {
 			qs: &clientQs{
 				sendq: []*spb.ModifyRequest{{}},
 			},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 		},
 	}, {
 		desc: "not converged - pending queue, ops",
@@ -703,8 +676,6 @@ func TestConverged(t *testing.T) {
 					},
 				},
 			},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 		},
 	}, {
 		desc: "not converged - pending queue, election",
@@ -714,8 +685,6 @@ func TestConverged(t *testing.T) {
 					Election: &ElectionReqDetails{},
 				},
 			},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 		},
 	}, {
 		desc: "not converged - pending queue, params",
@@ -725,36 +694,11 @@ func TestConverged(t *testing.T) {
 					SessionParams: &SessionParamReqDetails{},
 				},
 			},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: &atomic.Bool{},
 		},
 	}, {
-		desc: "not converged, sending in progress",
+		desc: "not converged - running",
 		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: atomic.NewBool(true),
-			recvInProgress: &atomic.Bool{},
-		},
-	}, {
-		desc: "not converged, receive in progress",
-		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: &atomic.Bool{},
-			recvInProgress: atomic.NewBool(true),
-		},
-	}, {
-		desc: "converged, explicitly set values",
-		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: atomic.NewBool(true),
-			recvInProgress: atomic.NewBool(true),
-		},
-	}, {
-		desc: "not converged, explicitly set values",
-		inClient: &Client{
-			qs:             &clientQs{},
-			sendInProgress: atomic.NewBool(false),
-			recvInProgress: atomic.NewBool(false),
+			qs: &clientQs{},
 		},
 		want: true,
 	}}

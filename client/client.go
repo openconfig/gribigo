@@ -55,16 +55,7 @@ type Client struct {
 	// GoRoutine.
 	readErr []error
 
-	// sendInProgress is an atomically updated boolean that is used to
-	// indicate that the process of sending a message is in progress. We use it
-	// to ensure that between sending a message to the server, and post-processing
-	// of the ModifyRequest (to record its details in the queue), we do not
-	// report that the client is converged.
-	sendInProgress *atomic.Bool
-	// recvinProgress is an atomically updated boolean that is used to indicate
-	// that the process of receiving a message is in progress. It is used in
-	// a similar manner to the sendInProgress atomic bool.
-	recvInProgress *atomic.Bool
+	awaiting sync.RWMutex
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -91,9 +82,7 @@ type Opt interface {
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...Opt) (*Client, error) {
 	c := &Client{
-		shut:           atomic.NewBool(false),
-		sendInProgress: atomic.NewBool(false),
-		recvInProgress: atomic.NewBool(false),
+		shut: atomic.NewBool(false),
 	}
 
 	s, err := handleParams(opts...)
@@ -112,8 +101,7 @@ func New(opts ...Opt) (*Client, error) {
 		modifyCh: make(chan *spb.ModifyRequest),
 		resultq:  []*OpResult{},
 
-		sending:   atomic.NewBool(false),
-		converged: atomic.NewBool(false),
+		sending: atomic.NewBool(false),
 	}
 
 	return c, nil
@@ -224,17 +212,6 @@ func (persistEntries) isClientOpt() {}
 // An error is returned if the Modify RPC cannot be established or there is an error
 // response to the initial messages that are sent on the connection.
 func (c *Client) Connect(ctx context.Context) error {
-	if c.state.SessParams != nil {
-		c.Q(&spb.ModifyRequest{
-			Params: c.state.SessParams,
-		})
-	}
-
-	if c.state.ElectionID != nil {
-		c.Q(&spb.ModifyRequest{
-			ElectionId: c.state.ElectionID,
-		})
-	}
 
 	stream, err := c.c.Modify(ctx)
 	if err != nil {
@@ -248,16 +225,27 @@ func (c *Client) Connect(ctx context.Context) error {
 	// Modify this code to do this (make these just be default
 	// handler functions, they could still be inline).
 
-	rec := func(in *spb.ModifyResponse) {
-		// mark that we're in process of processing a recv, we defer the clearing of this flag
-		// so that we don't need to remember it before every return.
-		c.recvInProgress.Store(true)
-		defer c.recvInProgress.Store(false)
+	rec := func(in *spb.ModifyResponse, err error) bool {
 		log.V(2).Infof("received message on Modify stream: %s", in)
+		c.awaiting.RLock()
+		defer c.awaiting.RUnlock()
+		if err == io.EOF {
+			// reading is done, so write should shut down too.
+			c.shut.Store(true)
+			return true
+		}
+		if err != nil {
+			log.Errorf("got error receiving message, %v", err)
+			c.addReadErr(err)
+			return true
+		}
 		if err := c.handleModifyResponse(in); err != nil {
 			log.Errorf("got error processing message received from server, %v", err)
 			c.addReadErr(err)
+			return true
 		}
+
+		return false
 	}
 
 	go func() {
@@ -266,43 +254,28 @@ func (c *Client) Connect(ctx context.Context) error {
 				log.V(2).Infof("shutting down recv goroutine")
 				return
 			}
-			m, err := stream.Recv()
-			// Mark that we're receiving as close as possible to reading the message. If
-			// we do not do this then we have some cycles within which isConverged will
-			// return true. We don't worry about setting it back, as rec() resets this
-			// back to false once the processing is actually done.
-			c.recvInProgress.Store(true)
-			if err == io.EOF {
-				// reading is done, so write should shut down too.
-				c.shut.Store(true)
+			if done := rec(stream.Recv()); done {
 				return
 			}
-			if err != nil {
-				log.Errorf("got error receiving message, %v", err)
-				c.addReadErr(err)
-				return
-			}
-			rec(m)
 		}
 	}()
 
-	is := func(m *spb.ModifyRequest) {
-		// mark that we're in process of processing a send, we defer the clearing of this flag
-		// so that we don't need to remember it before every return.
-		c.sendInProgress.Store(true)
-		defer c.sendInProgress.Store(false)
+	is := func(m *spb.ModifyRequest) bool {
+		c.awaiting.RLock()
+		defer c.awaiting.RUnlock()
+		//if err := c.handleModifyRequest(m); err != nil {
+		//	log.Errorf("got error processing message that was to be sent, %v", err)
+		//	c.addSendErr(err)
+		//	return true
+		//}
+
 		if err := stream.Send(m); err != nil {
 			log.Errorf("got error sending message, %v", err)
 			c.addSendErr(err)
-			return
+			return true
 		}
 		log.V(2).Infof("sent Modify message %s", m)
-
-		if err := c.handleModifyRequest(m); err != nil {
-			log.Errorf("got error processing message that was sent, %v", err)
-			c.addSendErr(err)
-		}
-
+		return false
 	}
 
 	go func() {
@@ -313,7 +286,9 @@ func (c *Client) Connect(ctx context.Context) error {
 			}
 
 			// read from the channel
-			is(<-c.qs.modifyCh)
+			if done := is(<-c.qs.modifyCh); done {
+				return
+			}
 		}
 	}()
 
@@ -359,15 +334,6 @@ type clientQs struct {
 	// sending indicates whether the client will empty the sendq. By default,
 	// messages are queued into the sendq and not sent to the target.
 	sending *atomic.Bool
-
-	// converged is a bool that indicates that the client is converged.
-	// Converged is defined as there being:
-	//  - no entries in the send queue
-	//	- zero entries in the pending queue
-	// this means that in some cases a client /may/ have requests on the wire
-	// that have not been responded to (e.g., updated election IDs) if they do
-	// not create entries in the pending queue.
-	converged *atomic.Bool
 }
 
 // pendingQueue provides a queue type that determines the set of pending
@@ -430,6 +396,7 @@ func (p *pendingQueue) Len() int {
 	if p.Election != nil {
 		i++
 	}
+
 	return i + len(p.Ops)
 }
 
@@ -511,29 +478,50 @@ func (o *OpResult) String() string {
 
 // Q enqueues a ModifyRequest to be sent to the target.
 func (c *Client) Q(m *spb.ModifyRequest) {
+
+	if err := c.handleModifyRequest(m); err != nil {
+		log.Errorf("got error processing message that was to be sent, %v", err)
+		c.addSendErr(err)
+	}
+
 	if !c.qs.sending.Load() {
 		c.qs.sendMu.Lock()
 		defer c.qs.sendMu.Unlock()
 		log.V(2).Infof("appended %s to sending queue", m)
 		c.qs.sendq = append(c.qs.sendq, m)
+		fmt.Printf("sendq is %v\n", c.qs.sendq)
 		return
 	}
 	log.V(2).Infof("sending %s directly to queue", m)
 
+	c.awaiting.RLock()
+	defer c.awaiting.RUnlock()
 	c.qs.modifyCh <- m
-
 }
 
 // StartSending toggles the client to begin sending messages that are in the send
 // queue (enqued by Q) to the connection established by Connect.
 func (c *Client) StartSending() {
 	c.qs.sending.Store(true)
+
+	if c.state.SessParams != nil {
+		c.Q(&spb.ModifyRequest{
+			Params: c.state.SessParams,
+		})
+	}
+
+	if c.state.ElectionID != nil {
+		c.Q(&spb.ModifyRequest{
+			ElectionId: c.state.ElectionID,
+		})
+	}
+
 	// take the initial set of messages that were enqueued and queue them.
 	c.qs.sendMu.Lock()
 	defer c.qs.sendMu.Unlock()
 	for _, m := range c.qs.sendq {
 		log.V(2).Infof("sending %s to modify channel", m)
-		c.qs.modifyCh <- m
+		c.Q(m)
 	}
 	c.qs.sendq = []*spb.ModifyRequest{}
 }
@@ -558,10 +546,6 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 		c.pendingSessionParams(m.Params)
 	}
 
-	// every time we send a modify request, we are not converged, so rewrite
-	// converged to say no.
-	c.qs.converged.Store(false)
-
 	return nil
 }
 
@@ -570,6 +554,8 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 // ensures that pending transactions are dequeued into the results queue. An error
 // is returned if the post processing is not possible.
 func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
+	fmt.Printf("handling %s\n", m)
+
 	if m == nil {
 		return errors.New("invalid nil modify response returned")
 	}
@@ -587,50 +573,44 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 		return fmt.Errorf("invalid returned message, ElectionID, Result, and SessionParametersResult are mutually exclusive, got: %s", m)
 	}
 
+	// At this point we know we will have something to add to the results, so ensure that we
+	// hold the results lock. This also stops the client from converging.
+	c.qs.resultMu.Lock()
+	defer c.qs.resultMu.Unlock()
+
 	if m.ElectionId != nil {
 		er := c.clearPendingElection()
 		er.CurrentServerElectionID = m.ElectionId
 		// This is an update from the server in response to an updated master election ID.
-		c.addResult(er)
-		return nil
+		c.qs.resultq = append(c.qs.resultq, er)
 	}
 
 	if m.SessionParamsResult != nil {
 		sr := c.clearPendingSessionParams()
 		sr.SessionParameters = m.SessionParamsResult
-		c.addResult(sr)
+		c.qs.resultq = append(c.qs.resultq, sr)
 	}
 
 	// TODO(robjs): add handling of received operations.
-
-	// write whether the client is converged each time we receive a message.
-	c.qs.converged.Store(c.isConverged())
 
 	return nil
 }
 
 // isConverged indicates whether the client is converged.
 func (c *Client) isConverged() bool {
-	if c.sendInProgress.Load() || c.recvInProgress.Load() {
-		return false
-	}
-
-	if len(c.qs.modifyCh) != 0 {
-		return false
-	}
+	// we need to check here that no-one is doing an operation that we might care about
+	// impacting convergence. this is:
+	//  - sending a message
+	//	- post-processing a sent message
+	//	- reading a message
+	//	- post-procesing a read message
 
 	c.qs.sendMu.RLock()
 	defer c.qs.sendMu.RUnlock()
 	c.qs.pendMu.RLock()
 	defer c.qs.pendMu.RUnlock()
-	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
-}
 
-// addResult adds the operation o to the result queue of the client.
-func (c *Client) addResult(o *OpResult) {
-	c.qs.resultMu.Lock()
-	defer c.qs.resultMu.Unlock()
-	c.qs.resultq = append(c.qs.resultq, o)
+	return len(c.qs.sendq) == 0 && c.qs.pendq.Len() == 0
 }
 
 // addPendingOp adds the operation specified by op to the pending transaction queue
@@ -843,11 +823,13 @@ func (c *ClientErr) Error() string { return fmt.Sprintf("errors: send: %v, recv:
 // channel. The function blocks until such time as the client returns.
 func (c *Client) AwaitConverged() error {
 	for {
+		c.awaiting.Lock()
 		if sendE, recvE := c.hasErrors(); len(sendE) != 0 || len(recvE) != 0 {
 			return &ClientErr{Send: sendE, Recv: recvE}
 		}
 		if c.isConverged() {
 			return nil
 		}
+		c.awaiting.Unlock()
 	}
 }

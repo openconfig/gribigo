@@ -52,7 +52,7 @@ func TestAddIPv4(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			r := New()
+			r := newRIBHolder()
 			if err := r.AddIPv4(tt.inIPv4); (err != nil) != tt.wantErr {
 				t.Fatalf("got unexpected error adding to entry, got: %v, wantErr? %v", err, tt.wantErr)
 			}
@@ -68,7 +68,6 @@ func TestAddIPv4(t *testing.T) {
 }
 
 func TestDeleteIPv4Entry(t *testing.T) {
-
 	type entry struct {
 		prefix   string
 		metadata []byte
@@ -94,17 +93,17 @@ func TestDeleteIPv4Entry(t *testing.T) {
 
 	tests := []struct {
 		desc        string
-		inRIB       *RIB
+		inRIB       *ribHolder
 		inEntry     *aftpb.Afts_Ipv4EntryKey
 		wantErr     bool
-		wantPostRIB *RIB
+		wantPostRIB *ribHolder
 	}{{
 		desc:    "nil input",
-		inRIB:   &RIB{},
+		inRIB:   &ribHolder{},
 		wantErr: true,
 	}, {
 		desc: "delete entry, no payload",
-		inRIB: &RIB{
+		inRIB: &ribHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32"},
 			}),
@@ -112,12 +111,12 @@ func TestDeleteIPv4Entry(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
 		},
-		wantPostRIB: &RIB{
+		wantPostRIB: &ribHolder{
 			r: ribEntries([]*entry{}),
 		},
 	}, {
 		desc: "delete entry, matching payload",
-		inRIB: &RIB{
+		inRIB: &ribHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
 			}),
@@ -128,12 +127,12 @@ func TestDeleteIPv4Entry(t *testing.T) {
 				Metadata: &wpb.BytesValue{Value: []byte{1, 2, 3, 4}},
 			},
 		},
-		wantPostRIB: &RIB{
+		wantPostRIB: &ribHolder{
 			r: ribEntries([]*entry{}),
 		},
 	}, {
 		desc: "delete entry, mismatched payload",
-		inRIB: &RIB{
+		inRIB: &ribHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
 			}),
@@ -145,7 +144,7 @@ func TestDeleteIPv4Entry(t *testing.T) {
 			},
 		},
 		wantErr: true,
-		wantPostRIB: &RIB{
+		wantPostRIB: &ribHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
 			}),

@@ -20,17 +20,37 @@ import (
 )
 
 type RIB struct {
-	// r is the OpenConfig AFT representation that is used to represent a RIB.
-	r *aft.RIB
+	// niRIB is a map of OpenConfig AFTs that are used to represent the RIBs of a network element.
+	// The key of the map is the name of the network instance to which the RIBs belong.
+	niRIB map[string]*ribHolder
 
+	// defaultName is the name assigned to the default network instance.
+	defaultName string
 	// TODO(robjs): we need locking to be implemented for the RIB.
 
 }
 
-// New returns a new RIB.
-func New() *RIB {
+// ribHolder is a container for a set of RIBs.
+type ribHolder struct {
+	r *aft.RIB
+}
+
+// New returns a new RIB with the default network instance created with name dn.
+func New(dn string) *RIB {
 	return &RIB{
-		r: &aft.RIB{},
+		niRIB: map[string]*ribHolder{
+			dn: newRIBHolder(),
+		},
+		defaultName: dn,
+	}
+}
+
+// newRIBHolder returns a new RIB holder for a single network instance.
+func newRIBHolder() *ribHolder {
+	return &ribHolder{
+		r: &aft.RIB{
+			Afts: &aft.Afts{},
+		},
 	}
 }
 
@@ -77,7 +97,7 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 
 // AddIPv4 adds the IPv4 entry described by e to the RIB. It returns an error
 // if the entry cannot be added.
-func (r *RIB) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+func (r *ribHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	// This is a hack, since ygot does not know that the field that we
 	// have provided is a list entry, then it doesn't do the right thing. So
 	// we just give it the root so that it knows.
@@ -99,7 +119,7 @@ func (r *RIB) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 // no payload the prefix is removed if it is found in the set of entries. If the payload
 // of the entry is specified it is checked for equality, and removed only if the entries
 // match.
-func (r *RIB) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+func (r *ribHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	if e == nil {
 		return errors.New("nil entry provided")
 	}

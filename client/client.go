@@ -230,10 +230,10 @@ func (c *Client) Connect(ctx context.Context) error {
 	// Modify this code to do this (make these just be default
 	// handler functions, they could still be inline).
 
-	// res takes a received modify response and error, and returns
-	// a bool indicating that the loop within whcih it is called should
+	// respHandler takes a received modify response and error, and returns
+	// a bool indicating that the loop within which it is called should
 	// exit.
-	rec := func(in *spb.ModifyResponse, err error) bool {
+	respHandler := func(in *spb.ModifyResponse, err error) bool {
 		log.V(2).Infof("received message on Modify stream: %s", in)
 		c.awaiting.RLock()
 		defer c.awaiting.RUnlock()
@@ -268,9 +268,9 @@ func (c *Client) Connect(ctx context.Context) error {
 		}
 	}()
 
-	// is handles an input modify request and returns a bool when
+	// reqHandler handles an input modify request and returns a bool when
 	// the loop within which it is called should exit.
-	is := func(m *spb.ModifyRequest) bool {
+	reqHandler := func(m *spb.ModifyRequest) bool {
 		c.awaiting.RLock()
 		defer c.awaiting.RUnlock()
 		if err := stream.Send(m); err != nil {
@@ -482,7 +482,6 @@ func (o *OpResult) String() string {
 
 // Q enqueues a ModifyRequest to be sent to the target.
 func (c *Client) Q(m *spb.ModifyRequest) {
-
 	if err := c.handleModifyRequest(m); err != nil {
 		log.Errorf("got error processing message that was to be sent, %v", err)
 		c.addSendErr(err)
@@ -497,6 +496,12 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 	}
 	log.V(2).Infof("sending %s directly to queue", m)
 
+	c.q(m)
+}
+
+// q is the internal implementation of queue that writes the ModifyRequest to
+// the channel to be sent.
+func (c *Client) q(m *spb.ModifyRequest) {
 	c.awaiting.RLock()
 	defer c.awaiting.RUnlock()
 	c.qs.modifyCh <- m

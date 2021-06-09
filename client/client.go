@@ -599,6 +599,10 @@ func (c *Client) addResult(o *OpResult) {
 // on the client. This queue stores the operations that have been sent to the server
 // but have not yet been reported on. It returns an error if the pending transaction
 // cannot be added.
+//
+// TODO(robjs): if there is a pending operation for the same key (IPv4 prefix, NHG, NH)
+// then we need to ensure that we correctly coalesce these values. This means that we need
+// to keep some map of all the requests that corresponded to the same key.
 func (c *Client) addPendingOp(op *spb.AFTOperation) error {
 	c.qs.pendMu.Lock()
 	defer c.qs.pendMu.Unlock()

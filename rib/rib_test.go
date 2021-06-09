@@ -7,21 +7,35 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/ygot/ygot"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
 
-func TestAddIPv4(t *testing.T) {
+type ribType int64
+
+const (
+	_ ribType = iota
+	ipv4
+	nhg
+	nh
+)
+
+func TestAdd(t *testing.T) {
 	tests := []struct {
-		desc    string
-		inIPv4  *aftpb.Afts_Ipv4EntryKey
-		wantRIB *aft.RIB
-		wantErr bool
+		desc        string
+		inRIBHolder *ribHolder
+		inType      ribType
+		inEntry     proto.Message
+		wantRIB     *aft.RIB
+		wantErr     bool
 	}{{
-		desc: "prefix only",
-		inIPv4: &aftpb.Afts_Ipv4EntryKey{
+		desc:        "ipv4 prefix only",
+		inRIBHolder: newRIBHolder(),
+		inType:      ipv4,
+		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix:    "1.0.0.0/24",
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
 		},
@@ -35,26 +49,187 @@ func TestAddIPv4(t *testing.T) {
 			},
 		},
 	}, {
-		desc:    "nil update",
-		inIPv4:  nil,
-		wantErr: true,
+		desc:        "ipv4 prefix and attributes",
+		inRIBHolder: newRIBHolder(),
+		inType:      ipv4,
+		inEntry: &aftpb.Afts_Ipv4EntryKey{
+			Prefix: "1.0.0.0/24",
+			Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+				Metadata: &wpb.BytesValue{Value: []byte{1}},
+			},
+		},
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+					"1.0.0.0/24": {
+						Prefix:   ygot.String("1.0.0.0/24"),
+						Metadata: aft.Binary{1},
+					},
+				},
+			},
+		},
 	}, {
-		desc:    "nil IPv4 prefix value",
-		inIPv4:  &aftpb.Afts_Ipv4EntryKey{},
-		wantErr: true,
+		desc:        "nil update",
+		inRIBHolder: newRIBHolder(),
+		inType:      ipv4,
+		inEntry:     nil,
+		wantErr:     true,
 	}, {
-		desc: "nil IPv4 value",
-		inIPv4: &aftpb.Afts_Ipv4EntryKey{
+		desc:        "nil IPv4 prefix value",
+		inRIBHolder: newRIBHolder(),
+		inType:      ipv4,
+		inEntry:     &aftpb.Afts_Ipv4EntryKey{},
+		wantErr:     true,
+	}, {
+		desc:        "nil IPv4 value",
+		inRIBHolder: newRIBHolder(),
+		inType:      ipv4,
+		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "8.8.8.8/32",
 		},
 		wantErr: true,
+	}, {
+		desc: "implicit ipv4 replace",
+		inRIBHolder: func() *ribHolder {
+			r := newRIBHolder()
+			if err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+				Prefix: "8.8.8.8/32",
+				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+					Metadata: &wpb.BytesValue{Value: []byte{42}},
+				},
+			}); err != nil {
+				panic(err)
+			}
+			return r
+		}(),
+		inType: ipv4,
+		inEntry: &aftpb.Afts_Ipv4EntryKey{
+			Prefix: "8.8.8.8/32",
+			Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+				Metadata: &wpb.BytesValue{Value: []byte{84}},
+			},
+		},
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+					"8.8.8.8/32": {
+						Prefix:   ygot.String("8.8.8.8/32"),
+						Metadata: aft.Binary{84},
+					},
+				},
+			},
+		},
+	}, {
+		desc:        "nhg ID only",
+		inRIBHolder: newRIBHolder(),
+		inType:      nhg,
+		inEntry: &aftpb.Afts_NextHopGroupKey{
+			Id:           1,
+			NextHopGroup: &aftpb.Afts_NextHopGroup{},
+		},
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
+					1: {
+						Id: ygot.Uint64(1),
+					},
+				},
+			},
+		},
+	}, {
+		desc:        "nhg id and attributes",
+		inRIBHolder: newRIBHolder(),
+		inType:      nhg,
+		inEntry: &aftpb.Afts_NextHopGroupKey{
+			Id: 1,
+			NextHopGroup: &aftpb.Afts_NextHopGroup{
+				NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+						Weight: &wpb.UintValue{Value: 1},
+					},
+				}},
+			},
+		},
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
+					1: {
+						Id: ygot.Uint64(1),
+						NextHop: map[uint64]*aft.Afts_NextHopGroup_NextHop{
+							1: {
+								Index:  ygot.Uint64(1),
+								Weight: ygot.Uint64(1),
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc:        "nh ID only",
+		inRIBHolder: newRIBHolder(),
+		inType:      nh,
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index:   1,
+			NextHop: &aftpb.Afts_NextHop{},
+		},
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {
+						Index: ygot.Uint64(1),
+					},
+				},
+			},
+		},
+	}, {
+		desc:        "nh id and attributes",
+		inRIBHolder: newRIBHolder(),
+		inType:      nh,
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 1,
+			NextHop: &aftpb.Afts_NextHop{
+				IpAddress: &wpb.StringValue{Value: "8.8.4.4/32"},
+			},
+		},
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {
+						Index:     ygot.Uint64(1),
+						IpAddress: ygot.String("8.8.4.4/32"),
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			r := newRIBHolder()
-			if err := r.AddIPv4(tt.inIPv4); (err != nil) != tt.wantErr {
-				t.Fatalf("got unexpected error adding to entry, got: %v, wantErr? %v", err, tt.wantErr)
+			switch tt.inType {
+			case ipv4:
+				// special case for nil test
+				if tt.inEntry == nil {
+					if err := r.AddIPv4(nil); (err != nil) != tt.wantErr {
+						t.Fatalf("got unexpected error adding IPv4 entry, got: %v, wantErr? %v", err, tt.wantErr)
+					}
+					return
+				}
+				if err := r.AddIPv4(tt.inEntry.(*aftpb.Afts_Ipv4EntryKey)); (err != nil) != tt.wantErr {
+					t.Fatalf("got unexpected error adding IPv4 entry, got: %v, wantErr? %v", err, tt.wantErr)
+				}
+			case nhg:
+				if err := r.AddNextHopGroup(tt.inEntry.(*aftpb.Afts_NextHopGroupKey)); (err != nil) != tt.wantErr {
+					t.Fatalf("got unexpected error adding NHG entry, got: %v, wantErr? %v", err, tt.wantErr)
+				}
+			case nh:
+				if err := r.AddNextHop(tt.inEntry.(*aftpb.Afts_NextHopKey)); (err != nil) != tt.wantErr {
+					t.Fatalf("got unexpected error adding NH entry, got: %v, wantErr? %v", err, tt.wantErr)
+				}
+			default:
+				t.Fatalf("unsupported test type in Add, %v", tt.inType)
 			}
 			diffN, err := ygot.Diff(r.r, tt.wantRIB)
 			if err != nil {

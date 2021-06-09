@@ -92,6 +92,13 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 		}
 	}
 
+	if err := nr.Afts.Validate(&ytypes.LeafrefOptions{
+		IgnoreMissingData: true,
+		Log:               false,
+	}); err != nil {
+		return nil, fmt.Errorf("invalid entry provided, %v", err)
+	}
+
 	return nr, nil
 }
 

@@ -55,7 +55,7 @@ func TestAdd(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.0.0.0/24",
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-				Metadata: &wpb.BytesValue{Value: []byte{1}},
+				Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			},
 		},
 		wantRIB: &aft.RIB{
@@ -63,7 +63,7 @@ func TestAdd(t *testing.T) {
 				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
 					"1.0.0.0/24": {
 						Prefix:   ygot.String("1.0.0.0/24"),
-						Metadata: aft.Binary{1},
+						Metadata: aft.Binary{0, 1, 2, 3, 4, 5, 6, 7},
 					},
 				},
 			},
@@ -95,7 +95,7 @@ func TestAdd(t *testing.T) {
 			if err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 				Prefix: "8.8.8.8/32",
 				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-					Metadata: &wpb.BytesValue{Value: []byte{42}},
+					Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 				},
 			}); err != nil {
 				panic(err)
@@ -106,7 +106,7 @@ func TestAdd(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "8.8.8.8/32",
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-				Metadata: &wpb.BytesValue{Value: []byte{84}},
+				Metadata: &wpb.BytesValue{Value: []byte{10, 11, 12, 13, 14, 15, 16, 17}},
 			},
 		},
 		wantRIB: &aft.RIB{
@@ -114,11 +114,20 @@ func TestAdd(t *testing.T) {
 				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
 					"8.8.8.8/32": {
 						Prefix:   ygot.String("8.8.8.8/32"),
-						Metadata: aft.Binary{84},
+						Metadata: aft.Binary{10, 11, 12, 13, 14, 15, 16, 17},
 					},
 				},
 			},
 		},
+	}, {
+		desc:        "ipv4 replace with invalid data",
+		inRIBHolder: newRIBHolder(),
+		inType:      ipv4,
+		inEntry: &aftpb.Afts_Ipv4EntryKey{
+			Prefix:    "NOT AN IPV$ PREFIX",
+			Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+		},
+		wantErr: true,
 	}, {
 		desc:        "nhg ID only",
 		inRIBHolder: newRIBHolder(),
@@ -190,7 +199,7 @@ func TestAdd(t *testing.T) {
 		inEntry: &aftpb.Afts_NextHopKey{
 			Index: 1,
 			NextHop: &aftpb.Afts_NextHop{
-				IpAddress: &wpb.StringValue{Value: "8.8.4.4/32"},
+				IpAddress: &wpb.StringValue{Value: "8.8.4.4"},
 			},
 		},
 		wantRIB: &aft.RIB{
@@ -198,7 +207,7 @@ func TestAdd(t *testing.T) {
 				NextHop: map[uint64]*aft.Afts_NextHop{
 					1: {
 						Index:     ygot.Uint64(1),
-						IpAddress: ygot.String("8.8.4.4/32"),
+						IpAddress: ygot.String("8.8.4.4"),
 					},
 				},
 			},
@@ -293,13 +302,13 @@ func TestDeleteIPv4Entry(t *testing.T) {
 		desc: "delete entry, matching payload",
 		inRIB: &ribHolder{
 			r: ribEntries([]*entry{
-				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
+				{prefix: "1.1.1.1/32", metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			}),
 		},
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-				Metadata: &wpb.BytesValue{Value: []byte{1, 2, 3, 4}},
+				Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			},
 		},
 		wantPostRIB: &ribHolder{

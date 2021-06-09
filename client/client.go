@@ -262,7 +262,7 @@ func (c *Client) Connect(ctx context.Context) error {
 				log.V(2).Infof("shutting down recv goroutine")
 				return
 			}
-			if done := rec(stream.Recv()); done {
+			if done := respHandler(stream.Recv()); done {
 				return
 			}
 		}
@@ -290,7 +290,7 @@ func (c *Client) Connect(ctx context.Context) error {
 			}
 
 			// read from the channel
-			if done := is(<-c.qs.modifyCh); done {
+			if done := reqHandler(<-c.qs.modifyCh); done {
 				return
 			}
 		}

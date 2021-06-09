@@ -26,13 +26,19 @@ type RIB struct {
 
 	// defaultName is the name assigned to the default network instance.
 	defaultName string
-	// TODO(robjs): we need locking to be implemented for the RIB.
 
+	// TODO(robjs): we need locking to be implemented for the RIB.
+	// TODO(robjs): reference count NHGs and NHs across all AFTs to ensure that we
+	// don't allow entries to be deleted that are in use.
 }
 
 // ribHolder is a container for a set of RIBs.
 type ribHolder struct {
 	r *aft.RIB
+
+	// TODO(robjs): flag as to whether we should run any semantic validations
+	// as we add to the RIB. We probably want to allow invalid entries to be
+	// implemented.
 }
 
 // New returns a new RIB with the default network instance created with name dn.
@@ -92,6 +98,7 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 		}
 	}
 
+	// We validate against the schema, but not semantically within gRIBI.
 	if err := nr.Afts.Validate(&ytypes.LeafrefOptions{
 		IgnoreMissingData: true,
 		Log:               false,
@@ -135,7 +142,7 @@ func (r *ribHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 		return status.Newf(codes.NotFound, "cannot find IPv4Entry to delete, %s", e.Prefix).Err()
 	}
 
-	// This is an optional check, today some vendors do not implement it and return true
+	// This is an optional check, today some servers do not implement it and return true
 	// even if the load does not match. Compliance tests should note this.
 	if e.GetIpv4Entry() != nil {
 		existingEntryProto, err := concreteIPv4Proto(ribE)

@@ -7,6 +7,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -135,7 +136,16 @@ func TestQ(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot create client, %v", err)
 			}
-			c.qs.sending = tt.inSending
+			if tt.inSending {
+				c.qs.sending = atomic.NewBool(tt.inSending)
+				// avoid test deadlock by emptying the queue if we're sending.
+				go func() {
+					for {
+						<-c.qs.modifyCh
+					}
+				}()
+			}
+
 			for _, r := range tt.inReqs {
 				c.Q(r)
 			}
@@ -395,6 +405,7 @@ func TestStatus(t *testing.T) {
 
 func TestHandleModifyResponse(t *testing.T) {
 	unixTS = func() int64 { return 42 }
+
 	tests := []struct {
 		desc        string
 		inClient    *Client
@@ -402,8 +413,12 @@ func TestHandleModifyResponse(t *testing.T) {
 		wantResults []*OpResult
 		wantErr     bool
 	}{{
-		desc:     "invalid combination of fields populated",
-		inClient: &Client{},
+		desc: "invalid combination of fields populated",
+		inClient: &Client{
+			qs: &clientQs{
+				sending: &atomic.Bool{},
+			},
+		},
 		inResponse: &spb.ModifyResponse{
 			Result: []*spb.AFTResult{{
 				Id: 42,
@@ -420,6 +435,7 @@ func TestHandleModifyResponse(t *testing.T) {
 						Timestamp: 2,
 					},
 				},
+				sending: &atomic.Bool{},
 			},
 		},
 		inResponse: &spb.ModifyResponse{
@@ -434,7 +450,8 @@ func TestHandleModifyResponse(t *testing.T) {
 		desc: "invalid ModifyResponse",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: &pendingQueue{},
+				pendq:   &pendingQueue{},
+				sending: &atomic.Bool{},
 			},
 		},
 		wantErr: true,
@@ -442,7 +459,8 @@ func TestHandleModifyResponse(t *testing.T) {
 		desc: "no populated election ID",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: &pendingQueue{},
+				pendq:   &pendingQueue{},
+				sending: &atomic.Bool{},
 			},
 		},
 		inResponse: &spb.ModifyResponse{
@@ -462,6 +480,7 @@ func TestHandleModifyResponse(t *testing.T) {
 						Timestamp: 20,
 					},
 				},
+				sending: &atomic.Bool{},
 			},
 		},
 		inResponse: &spb.ModifyResponse{
@@ -480,7 +499,8 @@ func TestHandleModifyResponse(t *testing.T) {
 		desc: "session parameters received but not pending",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: &pendingQueue{},
+				pendq:   &pendingQueue{},
+				sending: &atomic.Bool{},
 			},
 		},
 		inResponse: &spb.ModifyResponse{
@@ -560,6 +580,7 @@ func TestHandleModifyRequest(t *testing.T) {
 						128: {},
 					},
 				},
+				sending: &atomic.Bool{},
 			},
 		},
 		wantPending: &pendingQueue{
@@ -572,7 +593,8 @@ func TestHandleModifyRequest(t *testing.T) {
 		desc: "election ID update",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: &pendingQueue{},
+				pendq:   &pendingQueue{},
+				sending: &atomic.Bool{},
 			},
 		},
 		inRequest: &spb.ModifyRequest{ElectionId: &spb.Uint128{Low: 1}},
@@ -586,7 +608,8 @@ func TestHandleModifyRequest(t *testing.T) {
 		desc: "session params update",
 		inClient: &Client{
 			qs: &clientQs{
-				pendq: &pendingQueue{},
+				pendq:   &pendingQueue{},
+				sending: &atomic.Bool{},
 			},
 		},
 		inRequest: &spb.ModifyRequest{
@@ -672,6 +695,12 @@ func TestConverged(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc: "not converged - running",
+		inClient: &Client{
+			qs: &clientQs{},
+		},
+		want: true,
 	}}
 
 	for _, tt := range tests {

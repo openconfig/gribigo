@@ -33,7 +33,7 @@ func HasSuccessfulSessionParams(res []*client.OpResult) bool {
 	return false
 }
 
-// HasRecvClientErrorWithStatus checks whether the supplied ClientErr ce containa  status with
+// HasRecvClientErrorWithStatus checks whether the supplied ClientErr ce contains a status with
 // the code and details set to the values supplied in want.
 func HasRecvClientErrorWithStatus(ce *client.ClientErr, want *status.Status) bool {
 	for _, e := range ce.Recv {

@@ -98,6 +98,10 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 // AddIPv4 adds the IPv4 entry described by e to the RIB. It returns an error
 // if the entry cannot be added.
 func (r *ribHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+	if e == nil {
+		return errors.New("nil IPv4 Entry provided")
+	}
+
 	// This is a hack, since ygot does not know that the field that we
 	// have provided is a list entry, then it doesn't do the right thing. So
 	// we just give it the root so that it knows.

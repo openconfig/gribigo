@@ -167,6 +167,9 @@ func (r *ribHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 // AddNextHopGroup adds a NextHopGroup e to the ribHolder receiver. It returns an error
 // if the group cannot be added.
 func (r *ribHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
+	if e == nil {
+		return errors.New("nil NextHopGroup provided")
+	}
 	nr, err := candidateRIB(&aftpb.Afts{
 		NextHopGroup: []*aftpb.Afts_NextHopGroupKey{e},
 	})
@@ -184,6 +187,9 @@ func (r *ribHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 // AddNextHop adds a new NextHop e to the ribHolder receiver. It returns an error if
 // the group cannot be added.
 func (r *ribHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
+	if e == nil {
+		return errors.New("nil NextHop provided")
+	}
 	nr, err := candidateRIB(&aftpb.Afts{
 		NextHop: []*aftpb.Afts_NextHopKey{e},
 	})

@@ -9,6 +9,8 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/client"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
@@ -148,9 +150,14 @@ func (g *gRIBIClient) StartSending(ctx context.Context, t testing.TB) {
 }
 
 // Await waits until the underlying gRIBI client has completed its work to return -
-// complete is defined as both the send and pending queue being empty.
-func (g *gRIBIClient) Await(ctx context.Context, t testing.TB) {
-	g.c.AwaitConverged()
+// complete is defined as both the send and pending queue being empty, or an error
+// being hit by the client. It returns an error in the case that there were errors
+// reported.
+func (g *gRIBIClient) Await(ctx context.Context, t testing.TB) error {
+	if err := g.c.AwaitConverged(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Results returns the transaction results from the client. If the client is not converged
@@ -162,4 +169,76 @@ func (g *gRIBIClient) Results(t testing.TB) []*client.OpResult {
 		t.Fatalf("did not get valid results, %v", err)
 	}
 	return r
+}
+
+// ModifyErrorWithReason returns a error response to the Modify RPC with the specified error
+// code and details.
+func ModifyErrorWithReason(t testing.TB, code codes.Code, det *spb.ModifyRPCErrorDetails) *status.Status {
+	s := status.New(code, "")
+	var err error
+	if s, err = s.WithDetails(det); err != nil {
+		t.Fatalf("cannot build error message, %v", err)
+	}
+	return s
+}
+
+// modifyError is a type that can be used to build a gRIBI Modify error
+type modifyError struct {
+	reason spb.ModifyRPCErrorDetails_Reason
+	code   codes.Code
+}
+
+func ModifyError() *modifyError {
+	return &modifyError{}
+}
+
+// ModifyErrReason is a type used to express reasons for errors within the Modify RPC.
+type ModifyErrReason int64
+
+const (
+	_ ModifyErrReason = iota
+	// Unsupported parameters indicates that the server does not support the client parameters.
+	UnsupportedParameters
+	// ModifyParamsNotAllowed indicates that the client tried to modify the parameters after they
+	// were set.
+	ModifyParamsNotAllowed
+	// ParamsDiffereFromOtherClients indicates that the parameters specified are inconsistent
+	// with other clients that are connected to the server.
+	ParamsDifferFromOtherClients
+	// ElectionIDNotAllowed indicates that a client tried to send an election ID in a context
+	// within which it was not allowed.
+	ElectionIDNotAllowed
+)
+
+func (m *modifyError) WithReason(r ModifyErrReason) *modifyError {
+	switch r {
+	case UnsupportedParameters:
+		m.reason = spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS
+	case ModifyParamsNotAllowed:
+		m.reason = spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED
+	case ParamsDifferFromOtherClients:
+		m.reason = spb.ModifyRPCErrorDetails_PARAMS_DIFFER_FROM_OTHER_CLIENTS
+	case ElectionIDNotAllowed:
+		m.reason = spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY
+	}
+	return m
+}
+
+// WithCode specifies the well known code that is expected in the error.
+func (m *modifyError) WithCode(c codes.Code) *modifyError {
+	m.code = c
+	return m
+}
+
+// AsStatus returns the modifyError as a status.Status.
+func (m *modifyError) AsStatus(t testing.TB) *status.Status {
+	s := status.New(m.code, "")
+	var err error
+	s, err = s.WithDetails(&spb.ModifyRPCErrorDetails{
+		Reason: m.reason,
+	})
+	if err != nil {
+		t.Fatalf("cannot build error, %v", err)
+	}
+	return s
 }

@@ -229,6 +229,9 @@ func (r *ribHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 		return fmt.Errorf("invalid NextHopGroup, %v", err)
 	}
 
+	// Handle implicit replace.
+	r.r.GetAfts().DeleteNextHop(e.GetId())
+
 	if err := ygot.MergeStructInto(r.r, nr); err != nil {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
 	}
@@ -254,6 +257,9 @@ func (r *ribHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
 	if err != nil {
 		return fmt.Errorf("invalid NextHopGroup, %v", err)
 	}
+
+	// Handle implicit replace.
+	r.r.GetAfts().DeleteNextHopGroup(e.GetIndex())
 
 	if err := ygot.MergeStructInto(r.r, nr); err != nil {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)

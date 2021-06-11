@@ -31,6 +31,7 @@ generator -path=gribi -output_file=oc.go \
     -exclude_modules=openconfig-interfaces,ietf-interfaces \
     -generate_getters \
     -generate_leaf_getters \
+    -generate_delete \
     gribi/v1/yang/gribi-aft.yang
 
 git clone -b v0.4 https://github.com/mbrukman/autogen.git

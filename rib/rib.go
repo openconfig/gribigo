@@ -19,6 +19,7 @@ import (
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 )
 
+// RIB is a struct that stores a representation of a RIB for a network device.
 type RIB struct {
 	// niRIB is a map of OpenConfig AFTs that are used to represent the RIBs of a network element.
 	// The key of the map is the name of the network instance to which the RIBs belong.
@@ -32,28 +33,60 @@ type RIB struct {
 	// don't allow entries to be deleted that are in use.
 }
 
+type OpType int64
+
+const (
+	_ OpType = iota
+	// ADD indicates that the operation called was an Add.
+	ADD
+	// DELETE indicates that the operation called was a Delete.
+	DELETE
+	// MODIFY indicates that the operation called was a Modify.
+	MODIFY
+)
+
 // ribHolder is a container for a set of RIBs.
 type ribHolder struct {
+	// name is the name that is used for this network instance by the system.
+	name string
+
+	// r is the RIB within the network instance as the OpenConfig AFT model.
 	r *aft.RIB
 
 	// TODO(robjs): flag as to whether we should run any semantic validations
 	// as we add to the RIB. We probably want to allow invalid entries to be
 	// implemented.
+
+	// postChangeHook is a function that is called after each of the operations
+	// within the RIB completes, it takes arguments of the
+	//   - name of the network instance
+	// 	 - operation type (as an OpType enumerated value)
+	//	 - the changed entry as a ygot.GoStruct.
+	postChangeHook func(OpType, string, ygot.GoStruct)
 }
 
 // New returns a new RIB with the default network instance created with name dn.
 func New(dn string) *RIB {
 	return &RIB{
 		niRIB: map[string]*ribHolder{
-			dn: newRIBHolder(),
+			dn: newRIBHolder(dn),
 		},
 		defaultName: dn,
 	}
 }
 
+// SetHook assigns the supplied hook to all network instance RIBs within
+// the RIB structure.
+func (r *RIB) SetHook(fn func(OpType, string, ygot.GoStruct)) {
+	for _, nir := range r.niRIB {
+		nir.postChangeHook = fn
+	}
+}
+
 // newRIBHolder returns a new RIB holder for a single network instance.
-func newRIBHolder() *ribHolder {
+func newRIBHolder(name string) *ribHolder {
 	return &ribHolder{
+		name: name,
 		r: &aft.RIB{
 			Afts: &aft.Afts{},
 		},
@@ -126,8 +159,21 @@ func (r *ribHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 		return fmt.Errorf("invalid IPv4Entry, %v", err)
 	}
 
+	// MergeStructInto doesn't completely replace a list entry if it finds a missing key,
+	// so will append the two entries together.
+	r.r.GetAfts().DeleteIpv4Entry(e.GetPrefix())
+
 	if err := ygot.MergeStructInto(r.r, nr); err != nil {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	}
+
+	// We expect that there is just a single entry here since we are
+	// being called based on a single entry, but we loop since we don't
+	// know the key.
+	if r.postChangeHook != nil {
+		for _, ip4 := range nr.Afts.Ipv4Entry {
+			r.postChangeHook(ADD, r.name, ip4)
+		}
 	}
 
 	return nil
@@ -159,7 +205,13 @@ func (r *ribHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 		}
 	}
 
+	de := r.r.Afts.Ipv4Entry[e.GetPrefix()]
+
 	delete(r.r.Afts.Ipv4Entry, e.GetPrefix())
+
+	if r.postChangeHook != nil {
+		r.postChangeHook(DELETE, r.name, de)
+	}
 
 	return nil
 }
@@ -181,6 +233,12 @@ func (r *ribHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
 	}
 
+	if r.postChangeHook != nil {
+		for _, nhg := range nr.Afts.NextHopGroup {
+			r.postChangeHook(ADD, r.name, nhg)
+		}
+	}
+
 	return nil
 }
 
@@ -199,6 +257,12 @@ func (r *ribHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
 
 	if err := ygot.MergeStructInto(r.r, nr); err != nil {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	}
+
+	if r.postChangeHook != nil {
+		for _, nh := range nr.Afts.NextHop {
+			r.postChangeHook(ADD, r.name, nh)
+		}
 	}
 
 	return nil
@@ -243,7 +307,7 @@ func protoFromGoStruct(s ygot.GoStruct, prefix *gpb.Path, pb proto.Message) erro
 		}
 	}
 
-	if err := protomap.ProtoFromPaths(pb, vals, prefix, protomap.IgnoreExtraPaths()); err != nil {
+	if err := protomap.ProtoFromPaths(pb, vals, protomap.ProtobufMessagePrefix(prefix), protomap.IgnoreExtraPaths()); err != nil {
 		return fmt.Errorf("cannot unmarshal gNMI paths, %v", err)
 	}
 

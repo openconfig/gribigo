@@ -30,15 +30,22 @@ func periodic(period time.Duration, fn func()) {
 	}
 }
 
-func New(ctx context.Context, port int, sendMeta bool) (*Collector, string, error) {
+// New returns a new collector that listens on the specified port, supporting a single
+// downstream target named hostname. sendMeta controls whether the metadata *other*
+// than meta/sync and meta/connected is sent by the collector.
+//
+// New returns the new collector, the address it is listening on in the form hostname:port
+// or any errors encounted whilst setting it up.
+func New(ctx context.Context, port int, hostname string, sendMeta bool) (*Collector, string, error) {
 	c := &Collector{
 		addr: fmt.Sprintf("localhost:%d", port),
 		inCh: make(chan *gpb.SubscribeResponse),
+		name: hostname,
 	}
 
 	srv := grpc.NewServer()
-	c.cache = cache.New([]string{"local"})
-	t := c.cache.GetTarget("local")
+	c.cache = cache.New([]string{hostname})
+	t := c.cache.GetTarget(hostname)
 
 	if sendMeta {
 		go periodic(metadataUpdatePeriod, c.cache.UpdateMetadata)
@@ -78,12 +85,15 @@ func New(ctx context.Context, port int, sendMeta bool) (*Collector, string, erro
 	return c, lis.Addr().String(), nil
 }
 
+// Stop halts the running collector.
 func (c *Collector) Stop() {
 	c.stopFn()
 }
 
+// handleUpdate handles an input gNMI SubscribeResponse that is received by
+// the target.
 func (c *Collector) handleUpdate(resp *gpb.SubscribeResponse) error {
-	t := c.cache.GetTarget("local")
+	t := c.cache.GetTarget(c.name)
 	switch v := resp.Response.(type) {
 	case *gpb.SubscribeResponse_Update:
 		t.GnmiUpdate(v.Update)
@@ -101,6 +111,7 @@ func (c *Collector) handleUpdate(resp *gpb.SubscribeResponse) error {
 // RPC, and acts as a cache for exactly one target.
 type Collector struct {
 	cache  *cache.Cache
+	name   string
 	addr   string
 	inCh   chan *gpb.SubscribeResponse
 	stopFn func()

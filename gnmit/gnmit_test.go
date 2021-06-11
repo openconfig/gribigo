@@ -126,7 +126,7 @@ func toUpd(r *gpb.SubscribeResponse) []*upd {
 func TestBasic(t *testing.T) {
 	t.Run("create server with ONCE", func(t *testing.T) {
 		ctx := context.Background()
-		c, addr, err := New(ctx, 0, false)
+		c, addr, err := New(ctx, 0, "local", false)
 		if err != nil {
 			t.Fatalf("cannot start server, got err: %v", err)
 		}
@@ -198,6 +198,8 @@ func TestBasic(t *testing.T) {
 
 		<-clientCtx.Done()
 
+		c.Stop()
+
 		if sendErr != nil {
 			t.Errorf("got unexpected send error, %v", sendErr)
 		}
@@ -220,7 +222,7 @@ func TestBasic(t *testing.T) {
 
 	t.Run("create server with STREAM", func(t *testing.T) {
 		ctx := context.Background()
-		c, addr, err := New(ctx, 0, false)
+		c, addr, err := New(ctx, 0, "local", false)
 		if err != nil {
 			t.Fatalf("cannot start server, got err: %v", err)
 		}
@@ -319,6 +321,7 @@ func TestBasic(t *testing.T) {
 		}()
 
 		<-clientCtx.Done()
+		c.Stop()
 
 		if sendErr != nil {
 			t.Errorf("got unexpected send error, %v", sendErr)

@@ -26,13 +26,19 @@ type RIB struct {
 
 	// defaultName is the name assigned to the default network instance.
 	defaultName string
-	// TODO(robjs): we need locking to be implemented for the RIB.
 
+	// TODO(robjs): we need locking to be implemented for the RIB.
+	// TODO(robjs): reference count NHGs and NHs across all AFTs to ensure that we
+	// don't allow entries to be deleted that are in use.
 }
 
 // ribHolder is a container for a set of RIBs.
 type ribHolder struct {
 	r *aft.RIB
+
+	// TODO(robjs): flag as to whether we should run any semantic validations
+	// as we add to the RIB. We probably want to allow invalid entries to be
+	// implemented.
 }
 
 // New returns a new RIB with the default network instance created with name dn.
@@ -92,6 +98,14 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 		}
 	}
 
+	// We validate against the schema, but not semantically within gRIBI.
+	if err := nr.Afts.Validate(&ytypes.LeafrefOptions{
+		IgnoreMissingData: true,
+		Log:               false,
+	}); err != nil {
+		return nil, fmt.Errorf("invalid entry provided, %v", err)
+	}
+
 	return nr, nil
 }
 
@@ -132,6 +146,8 @@ func (r *ribHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 		return status.Newf(codes.NotFound, "cannot find IPv4Entry to delete, %s", e.Prefix).Err()
 	}
 
+	// This is an optional check, today some servers do not implement it and return true
+	// even if the load does not match. Compliance tests should note this.
 	if e.GetIpv4Entry() != nil {
 		existingEntryProto, err := concreteIPv4Proto(ribE)
 		if err != nil {
@@ -144,6 +160,46 @@ func (r *ribHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	}
 
 	delete(r.r.Afts.Ipv4Entry, e.GetPrefix())
+
+	return nil
+}
+
+// AddNextHopGroup adds a NextHopGroup e to the ribHolder receiver. It returns an error
+// if the group cannot be added.
+func (r *ribHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
+	if e == nil {
+		return errors.New("nil NextHopGroup provided")
+	}
+	nr, err := candidateRIB(&aftpb.Afts{
+		NextHopGroup: []*aftpb.Afts_NextHopGroupKey{e},
+	})
+	if err != nil {
+		return fmt.Errorf("invalid NextHopGroup, %v", err)
+	}
+
+	if err := ygot.MergeStructInto(r.r, nr); err != nil {
+		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	}
+
+	return nil
+}
+
+// AddNextHop adds a new NextHop e to the ribHolder receiver. It returns an error if
+// the group cannot be added.
+func (r *ribHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
+	if e == nil {
+		return errors.New("nil NextHop provided")
+	}
+	nr, err := candidateRIB(&aftpb.Afts{
+		NextHop: []*aftpb.Afts_NextHopKey{e},
+	})
+	if err != nil {
+		return fmt.Errorf("invalid NextHopGroup, %v", err)
+	}
+
+	if err := ygot.MergeStructInto(r.r, nr); err != nil {
+		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	}
 
 	return nil
 }

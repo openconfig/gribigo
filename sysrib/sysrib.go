@@ -16,7 +16,7 @@ import (
 )
 
 // SysRIB is a RIB data structure that can be used to resolve routing entries to their egress interfaces.
-// Currently it supports only IPv4 entrioes.
+// Currently it supports only IPv4 entries.
 type SysRIB struct {
 	// NI is the list of network instances (aka VRFs)
 	NI        map[string]*NIRIB
@@ -172,22 +172,23 @@ func connectedRoutesFromConfig(cfg *oc.Device) (map[string]*niConnected, error) 
 	// of a subinterface, that points to the set of connected routes that are configured on the
 	// interface.
 	intfRoute := map[string]map[uint32][]*Route{}
-	for _, intf := range cfg.Interface {
+	for intName, intf := range cfg.Interface {
 		intfRoute[intf.GetName()] = map[uint32][]*Route{}
-		for _, subintf := range intf.Subinterface {
+		for subIntIdx, subintf := range intf.Subinterface {
 			if subintf.GetIpv4() != nil {
 				for _, a := range subintf.GetIpv4().Address {
 					_, cidr, err := net.ParseCIDR(fmt.Sprintf("%s/%d", a.GetIp(), a.GetPrefixLength()))
 					if err != nil {
 						return nil, fmt.Errorf("invalid IPv4 prefix on interface %s, subinterface %d, %s/%d", intf.GetName(), subintf.GetIndex(), a.GetIp(), a.GetPrefixLength())
 					}
-					intfRoute[intf.GetName()][subintf.GetIndex()] = append(intfRoute[intf.GetName()][subintf.GetIndex()], &Route{
+					rt := &Route{
 						Prefix: cidr.String(),
 						Connected: &Interface{
 							Name:         intf.GetName(),
 							Subinterface: subintf.GetIndex(),
 						},
-					})
+					}
+					intfRoute[intName][subIntIdx] = append(intfRoute[intName][subIntIdx], rt)
 					if matched[intf.GetName()] == nil {
 						matched[intf.GetName()] = map[uint32]bool{}
 					}

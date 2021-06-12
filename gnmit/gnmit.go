@@ -1,3 +1,6 @@
+// Package gnmit is a single-target gNMI collector implementation that can be
+// used as an on-device/fake device implementation. It supports the Subscribe RPC
+// using the libraries from openconfig/gnmi.
 package gnmit
 
 import (
@@ -14,8 +17,12 @@ import (
 )
 
 var (
+	// metadataUpdatePeriod is the period of time after which the metadata for the collector
+	// is updated to the client.
 	metadataUpdatePeriod = time.Duration(30 * time.Second)
-	sizeUpdatePeriod     = time.Duration(30 * time.Second)
+	// sizeUpdatePeriod is the period of time after which the storage size information for
+	// the collector is updated to the client.
+	sizeUpdatePeriod = time.Duration(30 * time.Second)
 )
 
 // periodic runs the function fn every period.
@@ -38,7 +45,6 @@ func periodic(period time.Duration, fn func()) {
 // or any errors encounted whilst setting it up.
 func New(ctx context.Context, port int, hostname string, sendMeta bool) (*Collector, string, error) {
 	c := &Collector{
-		addr: fmt.Sprintf("localhost:%d", port),
 		inCh: make(chan *gpb.SubscribeResponse),
 		name: hostname,
 	}
@@ -110,10 +116,12 @@ func (c *Collector) handleUpdate(resp *gpb.SubscribeResponse) error {
 // Collector is a basic gNMI target that supports only the Subscribe
 // RPC, and acts as a cache for exactly one target.
 type Collector struct {
-	cache  *cache.Cache
-	name   string
-	addr   string
-	inCh   chan *gpb.SubscribeResponse
+	cache *cache.Cache
+	// name is the hostname of the client.
+	name string
+	// inCh is a channel use to write new SubscribeResponses to the client.
+	inCh chan *gpb.SubscribeResponse
+	// stopFn is the function used to stop the server.
 	stopFn func()
 }
 

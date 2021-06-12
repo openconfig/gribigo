@@ -1,0 +1,58 @@
+module ocrt-deviations {
+  prefix "ocrt-dev";
+  namespace "http://openconfig.net/gribigo/ocrt-deviations";
+
+  import openconfig-network-instance { prefix oc-ni; }
+  
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:protocols" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:fdb" {
+    deviate not-supported;
+  }
+    
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:encapsulation" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:inter-instance-policies" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:table-connections" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:route-limits" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:tables" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:connection-points" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:mpls" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:segment-routing" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:vlans" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:afts" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:policy-forwarding" {
+    deviate not-supported;
+  }
+}

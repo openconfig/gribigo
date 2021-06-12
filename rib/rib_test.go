@@ -1,15 +1,19 @@
 package rib
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openconfig/gribigo/aft"
+	"github.com/openconfig/ygot/testutil"
 	"github.com/openconfig/ygot/ygot"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	gpb "github.com/openconfig/gnmi/proto/gnmi"
+	"github.com/openconfig/gnmi/value"
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
@@ -33,7 +37,7 @@ func TestAdd(t *testing.T) {
 		wantErr     bool
 	}{{
 		desc:        "ipv4 prefix only",
-		inRIBHolder: newRIBHolder(),
+		inRIBHolder: newRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix:    "1.0.0.0/24",
@@ -50,7 +54,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "ipv4 prefix and attributes",
-		inRIBHolder: newRIBHolder(),
+		inRIBHolder: newRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.0.0.0/24",
@@ -70,19 +74,19 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nil update",
-		inRIBHolder: newRIBHolder(),
+		inRIBHolder: newRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry:     nil,
 		wantErr:     true,
 	}, {
 		desc:        "nil IPv4 prefix value",
-		inRIBHolder: newRIBHolder(),
+		inRIBHolder: newRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry:     &aftpb.Afts_Ipv4EntryKey{},
 		wantErr:     true,
 	}, {
 		desc:        "nil IPv4 value",
-		inRIBHolder: newRIBHolder(),
+		inRIBHolder: newRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "8.8.8.8/32",
@@ -91,7 +95,7 @@ func TestAdd(t *testing.T) {
 	}, {
 		desc: "implicit ipv4 replace",
 		inRIBHolder: func() *ribHolder {
-			r := newRIBHolder()
+			r := newRIBHolder("DEFAULT")
 			if err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 				Prefix: "8.8.8.8/32",
 				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
@@ -121,7 +125,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "ipv4 replace with invalid data",
-		inRIBHolder: newRIBHolder(),
+		inRIBHolder: newRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix:    "NOT AN IPV$ PREFIX",
@@ -130,7 +134,7 @@ func TestAdd(t *testing.T) {
 		wantErr: true,
 	}, {
 		desc:        "nhg ID only",
-		inRIBHolder: newRIBHolder(),
+		inRIBHolder: newRIBHolder("DEFAULT"),
 		inType:      nhg,
 		inEntry: &aftpb.Afts_NextHopGroupKey{
 			Id:           1,
@@ -147,7 +151,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nhg id and attributes",
-		inRIBHolder: newRIBHolder(),
+		inRIBHolder: newRIBHolder("DEFAULT"),
 		inType:      nhg,
 		inEntry: &aftpb.Afts_NextHopGroupKey{
 			Id: 1,
@@ -177,7 +181,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nh ID only",
-		inRIBHolder: newRIBHolder(),
+		inRIBHolder: newRIBHolder("DEFAULT"),
 		inType:      nh,
 		inEntry: &aftpb.Afts_NextHopKey{
 			Index:   1,
@@ -194,7 +198,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nh id and attributes",
-		inRIBHolder: newRIBHolder(),
+		inRIBHolder: newRIBHolder("DEFAULT"),
 		inType:      nh,
 		inEntry: &aftpb.Afts_NextHopKey{
 			Index: 1,
@@ -216,7 +220,7 @@ func TestAdd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			r := newRIBHolder()
+			r := tt.inRIBHolder
 			switch tt.inType {
 			case ipv4:
 				// special case for nil test
@@ -383,6 +387,316 @@ func TestConcreteIPv4Proto(t *testing.T) {
 			}
 			if diff := cmp.Diff(got, tt.want, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
 				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+type hookMode int64
+
+const (
+	STORE hookMode = iota
+	GNMI
+)
+
+func mustPath(s string) *gpb.Path {
+	p, err := ygot.StringToStructuredPath(s)
+	if err != nil {
+		panic(fmt.Sprintf("cannot convert path %s, %v", s, err))
+	}
+	return p
+}
+
+func mustTypedValue(i interface{}) *gpb.TypedValue {
+	tv, err := value.FromScalar(i)
+	if err != nil {
+		panic(fmt.Sprintf("cannot convert value %v, %v", i, err))
+	}
+	return tv
+}
+
+func TestHooks(t *testing.T) {
+	type op struct {
+		Do  OpType
+		TS  int64
+		NH  uint64
+		NHG uint64
+		IP4 string
+	}
+
+	tests := []struct {
+		desc    string
+		inOps   []*op
+		storeFn bool
+		gnmiFn  bool
+		want    []interface{}
+	}{{
+		desc: "store add hooks",
+		inOps: []*op{{
+			Do:  ADD,
+			IP4: "8.8.8.8/32",
+		}, {
+			Do:  ADD,
+			NHG: 42,
+		}, {
+			Do: ADD,
+			NH: 84,
+		}},
+		storeFn: true,
+		want: []interface{}{
+			&op{Do: ADD, TS: 0, IP4: "8.8.8.8/32"},
+			&op{Do: ADD, TS: 1, NHG: 42},
+			&op{Do: ADD, TS: 2, NH: 84},
+		},
+	}, {
+		desc: "store delete hooks",
+		inOps: []*op{{
+			Do:  DELETE,
+			IP4: "8.8.8.8/32",
+		}, {
+			Do:  DELETE,
+			IP4: "1.1.1.1/32",
+		}},
+		storeFn: true,
+		want: []interface{}{
+			&op{Do: DELETE, TS: 0, IP4: "8.8.8.8/32"},
+			&op{Do: DELETE, TS: 1, IP4: "1.1.1.1/32"},
+		},
+	}, {
+		desc: "store add and delete",
+		inOps: []*op{{
+			Do:  ADD,
+			IP4: "1.1.1.1/32",
+		}, {
+			Do:  DELETE,
+			IP4: "2.2.2.2/32",
+		}},
+		want: []interface{}{
+			&op{Do: DELETE, TS: 0, IP4: "1.1.1.1/32"},
+			&op{Do: DELETE, TS: 1, IP4: "2.2.2.2/32"},
+		},
+	}, {
+		desc: "gnmi add and delete",
+		inOps: []*op{{
+			Do:  ADD,
+			IP4: "1.2.3.4/32",
+		}, {
+			Do:  DELETE,
+			IP4: "4.5.6.7/32",
+		}},
+		gnmiFn: true,
+		want: []interface{}{
+			&gpb.Notification{
+				Timestamp: 42,
+				Atomic:    true,
+				Prefix:    mustPath("/network-instances/network-instance[name=DEFAULT]/afts/ipv4-unicast/ipv4-entry[prefix=1.2.3.4/32]"),
+				Update: []*gpb.Update{{
+					Path: mustPath("/prefix"),
+					Val:  mustTypedValue("1.2.3.4/32"),
+				}, {
+					Path: mustPath("state/prefix"),
+					Val:  mustTypedValue("1.2.3.4/32"),
+				}},
+			},
+			&gpb.Notification{
+				Timestamp: 42,
+				Atomic:    true,
+				Delete: []*gpb.Path{
+					mustPath("/network-instances/network-instance[name=DEFAULT]/afts/ipv4-unicast/ipv4-entry[prefix=4.5.6.7/32]"),
+				},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got := []interface{}{}
+
+			tsFn := func() int64 {
+				return int64(len(got))
+			}
+			store := func(o OpType, _ string, gs ygot.GoStruct) {
+				switch t := gs.(type) {
+				case *aft.Afts_Ipv4Entry:
+					got = append(got, &op{Do: o, TS: tsFn(), IP4: t.GetPrefix()})
+				case *aft.Afts_NextHopGroup:
+					got = append(got, &op{Do: o, TS: tsFn(), NHG: t.GetId()})
+				case *aft.Afts_NextHop:
+					got = append(got, &op{Do: o, TS: tsFn(), NH: t.GetIndex()})
+				}
+			}
+
+			gnmiNoti := func(o OpType, ni string, gs ygot.GoStruct) {
+				if o == DELETE {
+					switch t := gs.(type) {
+					case *aft.Afts_Ipv4Entry:
+						got = append(got, &gpb.Notification{
+							Delete: []*gpb.Path{
+								mustPath(fmt.Sprintf("/network-instances/network-instance[name=%s]/afts/ipv4-unicast/ipv4-entry[prefix=%s]", ni, t.GetPrefix())),
+							},
+							Timestamp: 42,
+							Atomic:    true,
+						})
+					case *aft.Afts_NextHop:
+						got = append(got, &gpb.Notification{
+							Delete: []*gpb.Path{
+								mustPath(fmt.Sprintf("/network-instances/network-instance[name=%s]/afts/next-hop-groups/next-hop-group[id=%d]", ni, t.GetIndex())),
+							},
+							Timestamp: 42,
+							Atomic:    true,
+						})
+					case *aft.Afts_NextHopGroup:
+						got = append(got, &gpb.Notification{
+							Delete: []*gpb.Path{
+								mustPath(fmt.Sprintf("/network-instances/network-instance[name=%s]/afts/next-hops/next-hop[index=%d]", ni, t.GetId())),
+							},
+							Timestamp: 42,
+							Atomic:    true,
+						})
+					}
+					return
+				}
+
+				// Technically you could just diff to the existing entry, but atomic indicates that you're going to update all of these
+				// paths at the same time every time, so just go with that so that we trade bandwidth for CPU cycles. This is probably
+				// the right thing to do w.r.t latency of update.
+				var ns []*gpb.Notification
+				var err error
+				switch t := gs.(type) {
+				case *aft.Afts_Ipv4Entry:
+					ns, err = ygot.TogNMINotifications(gs, 42, ygot.GNMINotificationsConfig{
+						UsePathElem:    true,
+						PathElemPrefix: mustPath(fmt.Sprintf("/network-instances/network-instance[name=%s]/afts/ipv4-unicast/ipv4-entry[prefix=%s]", ni, t.GetPrefix())).Elem,
+					})
+				case *aft.Afts_NextHopGroup:
+					ns, err = ygot.TogNMINotifications(gs, 42, ygot.GNMINotificationsConfig{
+						UsePathElem:    true,
+						PathElemPrefix: mustPath(fmt.Sprintf("/network-instances/network-instance[name=%s]/afts/nexthop-groups/nexthop-group[id=%d]", ni, t.GetId())).Elem,
+					})
+				case *aft.Afts_NextHop:
+					ns, err = ygot.TogNMINotifications(gs, 42, ygot.GNMINotificationsConfig{
+						UsePathElem:    true,
+						PathElemPrefix: mustPath(fmt.Sprintf("/network-instances/network-instance[name=%s]/afts/nexthops/nexthop[index=%d]", ni, t.GetIndex())).Elem,
+					})
+				}
+				if err != nil {
+					t.Fatalf("cannot generate notifications, %v", err)
+				}
+				if len(ns) != 1 {
+					t.Fatalf("wrong number of notifications, got: %d, want: 1", len(ns))
+				}
+				ns[0].Atomic = true
+				got = append(got, ns[0])
+			}
+
+			r := New("DEFAULT")
+
+			// do setup before we start, we can't delete or modify entries
+			// that don't exist, so remove them.
+			for _, o := range tt.inOps {
+				switch {
+				case o.IP4 != "":
+					switch o.Do {
+					case MODIFY, DELETE:
+						if err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+							Prefix:    o.IP4,
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+						}); err != nil {
+							t.Fatalf("cannot pre-add IPv4 entry %s: %v", o.IP4, err)
+						}
+					}
+				case o.NHG != 0:
+					switch o.Do {
+					case MODIFY, DELETE:
+						if err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+							Id:           o.NHG,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{},
+						}); err != nil {
+							t.Fatalf("cannot add NHG entry %d, %v", o.NHG, err)
+						}
+					}
+				case o.NH != 0:
+					switch o.Do {
+					case MODIFY, DELETE:
+						if err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
+							Index:   o.NH,
+							NextHop: &aftpb.Afts_NextHop{},
+						}); err != nil {
+							t.Fatalf("cannot add NH entry %d, %v", o.NH, err)
+						}
+					}
+				}
+			}
+
+			if tt.storeFn {
+				r.SetHook(store)
+			}
+
+			if tt.gnmiFn {
+				r.SetHook(gnmiNoti)
+			}
+
+			for _, o := range tt.inOps {
+				switch {
+				case o.IP4 != "":
+					switch o.Do {
+					case ADD:
+						if err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+							Prefix:    o.IP4,
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+						}); err != nil {
+							t.Fatalf("cannot add IPv4 entry %s: %v", o.IP4, err)
+						}
+					case DELETE:
+						if err := r.niRIB[r.defaultName].DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
+							Prefix: o.IP4,
+						}); err != nil {
+							t.Fatalf("cannote delete IPv4 entry %s: %v", o.IP4, err)
+						}
+					}
+				case o.NHG != 0:
+					switch o.Do {
+					case ADD:
+						if err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+							Id:           o.NHG,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{},
+						}); err != nil {
+							t.Fatalf("cannot add NHG entry %d, %v", o.NHG, err)
+						}
+					}
+				case o.NH != 0:
+					switch o.Do {
+					case ADD:
+						if err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
+							Index:   o.NH,
+							NextHop: &aftpb.Afts_NextHop{},
+						}); err != nil {
+							t.Fatalf("cannot add NH entry %d, %v", o.NH, err)
+						}
+					}
+				}
+			}
+
+			if tt.storeFn {
+				if diff := cmp.Diff(got, tt.want, cmpopts.IgnoreUnexported(op{})); diff != "" {
+					t.Fatalf("did not get expected queue, diff(-got,+want):\n%s", diff)
+				}
+			}
+
+			if tt.gnmiFn {
+				gotN := []*gpb.Notification{}
+				for _, n := range got {
+					gotN = append(gotN, n.(*gpb.Notification))
+				}
+
+				wantN := []*gpb.Notification{}
+				for _, n := range tt.want {
+					wantN = append(wantN, n.(*gpb.Notification))
+				}
+
+				if !testutil.NotificationSetEqual(gotN, wantN) {
+					t.Fatalf("did not get expected notifications, diff(-got,+want):\n%s", cmp.Diff(gotN, wantN, protocmp.Transform()))
+				}
 			}
 		})
 	}

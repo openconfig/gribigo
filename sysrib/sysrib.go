@@ -152,7 +152,7 @@ type niConnected struct {
 	Rts []*Route
 }
 
-// routesFromConfig returns the set of 'connected' routes from the input configuration supplied.
+// connectedRoutesFromConfig returns the set of 'connected' routes from the input configuration supplied.
 // Connected routes are defined to be those that are directly configured as a subnet to which the
 // system is attached.
 //

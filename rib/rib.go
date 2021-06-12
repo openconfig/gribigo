@@ -33,6 +33,8 @@ type RIB struct {
 	// don't allow entries to be deleted that are in use.
 }
 
+// OpType indicates the type of operation that was performed in contexts where it
+// is not available, such as callbacks to user-provided functions.
 type OpType int64
 
 const (

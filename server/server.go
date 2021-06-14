@@ -113,49 +113,77 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		return err
 	}
 
-	// Store whether this is the first message on the channel, some options - like the session
-	// parameters can only be set as the first message.
-	var gotmsg bool
-	for {
-		in, err := ms.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return status.Errorf(codes.Unknown, "error reading message from client, %v", err)
-		}
-		log.V(2).Infof("received message %s on Modify channel", in)
-
-		var res *spb.ModifyResponse
-		switch {
-		case in.Params != nil:
-			var err error
-			if res, err = s.checkParams(cid, in.Params, gotmsg); err != nil {
-				// Invalid parameters is a fatal error, so we take down the Modify RPC.
-				return err
+	resultChan := make(chan *spb.ModifyResponse)
+	errCh := make(chan error)
+	go func() {
+		// Store whether this is the first message on the Modify RPC, some options - like the session
+		// parameters can only be set as the first message.
+		var gotmsg bool
+		for {
+			in, err := ms.Recv()
+			if err == io.EOF {
+				return
 			}
-			if err := s.updateParams(cid, in.Params); err != nil {
-				// Not being able to update parameters is a fatal error, so we take down
-				// the Modify RPC.
-				return err
-			}
-		case in.ElectionId != nil:
-			var err error
-			res, err = s.runElection(cid, in.ElectionId)
 			if err != nil {
-				return err
+				errCh <- status.Errorf(codes.Unknown, "error reading message from client, %v", err)
 			}
-		default:
-			return status.Errorf(codes.Unimplemented, "unimplemented handling of message %s", in)
-		}
+			log.V(2).Infof("received message %s on Modify channel", in)
 
-		// update that we have received at least one message.
-		gotmsg = true
-		if err := ms.Send(res); err != nil {
-			return status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
-		}
+			var res *spb.ModifyResponse
+			switch {
+			case in.Params != nil:
+				var err error
+				if res, err = s.checkParams(cid, in.Params, gotmsg); err != nil {
+					// Invalid parameters is a fatal error, so we take down the Modify RPC.
+					errCh <- err
+					return
+				}
+				if err := s.updateParams(cid, in.Params); err != nil {
+					// Not being able to update parameters is a fatal error, so we take down
+					// the Modify RPC.
+					errCh <- err
+					return
+				}
+			case in.ElectionId != nil:
+				var err error
+				res, err = s.runElection(cid, in.ElectionId)
+				if err != nil {
+					errCh <- err
+					return
+				}
+			case in.Operation != nil:
+				var err error
+				res, err = s.doModify(cid, in.Operation)
+				if err != nil {
+					errCh <- err
+					return
+				}
+			default:
+				errCh <- status.Errorf(codes.Unimplemented, "unimplemented handling of message %s", in)
+				return
+			}
 
-	}
+			gotmsg = true
+			// write the results to result channel.
+			resultChan <- res
+		}
+	}()
+
+	go func() {
+		// TODO(robjs): need to create a queue structure on the server side so that
+		// we can asynchronously handle any messages. The Recv() loop needs to be in
+		// a goroutine empyting a channel, as does the send goroutine.
+		for {
+			res := <-resultChan
+			// update that we have received at least one message.
+			if err := ms.Send(res); err != nil {
+				errCh <- status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
+				return
+			}
+		}
+	}()
+
+	return <-errCh
 }
 
 // newClient creates a new client context within the server using the specified string
@@ -385,4 +413,14 @@ func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyRespons
 	return &spb.ModifyResponse{
 		ElectionId: s.curElecID,
 	}, nil
+}
+
+// doModify implements a modify operation for a specific input set of AFTOperation
+// messages.
+func (s *Server) doModify(clientID string, ops []*spb.AFTOperation) (*spb.ModifyResponse, error) {
+	// TODO(robjs): Check whether the client has specified parameters, if they are not supported
+	// then we need to return an error. The default parameters are not supported by
+	// this server.
+
+	return nil, status.New(codes.Unimplemented, "modify with operations is not implemented").Err()
 }

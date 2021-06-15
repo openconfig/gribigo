@@ -168,6 +168,10 @@ func (d *Device) GRIBIAddr() string {
 	return d.gribiAddr
 }
 
+func (d *Device) GNMIAddr() string {
+	return d.gnmiAddr
+}
+
 func gnmiNoti(t rib.OpType, ts int64, ni string, e ygot.GoStruct) (*gpb.Notification, error) {
 	var ns []*gpb.Notification
 	var err error

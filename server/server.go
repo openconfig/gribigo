@@ -222,9 +222,6 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 	}()
 
 	go func() {
-		// TODO(robjs): need to create a queue structure on the server side so that
-		// we can asynchronously handle any messages. The Recv() loop needs to be in
-		// a goroutine empyting a channel, as does the send goroutine.
 		for {
 			res := <-resultChan
 			// update that we have received at least one message.

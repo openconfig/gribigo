@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/ygot/ygot"
@@ -331,6 +332,26 @@ func TestBasic(t *testing.T) {
 			t.Errorf("got unexpected recv error, %v", recvErr)
 		}
 
+		// the semantics of what we need to see here are:
+		//  - we need at least one /hello before SYNC
+		//  - we need to see all the updates that we expect.
+		seenVal := map[string]bool{}
+		meta := 0
+		for _, s := range got {
+			if s.T == SYNC {
+				if len(seenVal) < 1 || meta != 2 { // seen hello, meta/sync, meta/connected
+					t.Fatalf("did not get expected set of updates from client before sync, got: %d %s, want: 3 values, sync", len(got), got)
+				}
+			}
+			switch s.T {
+			case VAL:
+				seenVal[s.Path] = true
+			case METACONNECTED, METASYNC:
+				meta++
+			}
+		}
+
+		// now we can check whether we got all updates ignoring order.
 		if diff := cmp.Diff(got, []*upd{{
 			T: METACONNECTED,
 		}, {
@@ -362,7 +383,21 @@ func TestBasic(t *testing.T) {
 			TS:   46,
 			Path: "/hello",
 			Val:  "mars",
-		}}); diff != "" {
+		}}, cmpopts.SortSlices(func(a, b *upd) bool {
+			if a.T != b.T {
+				return a.T < b.T
+			}
+			if a.TS != b.TS {
+				return a.TS < b.TS
+			}
+			if a.Path != b.Path {
+				return a.Path < b.Path
+			}
+			if a.Val != b.Val {
+				return fmt.Sprintf("%v", a.Val) < fmt.Sprintf("%v", b.Val)
+			}
+			return true
+		})); diff != "" {
 			t.Fatalf("did not get expected updates, diff(-got,+want)\n:%s", diff)
 		}
 

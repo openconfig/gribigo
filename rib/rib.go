@@ -4,6 +4,7 @@ package rib
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/goyang/pkg/yang"
@@ -19,11 +20,19 @@ import (
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 )
 
+// RIBHookFn is a function that is used as a hook following a change. It takes:
+//  - an OpType deterining whether an add, remove, or modify operation was sent.
+//  - a string indicating the name of the network instance
+//  - a ygot.GoStruct containing the entry that has been changed.
+type RIBHookFn func(OpType, string, ygot.GoStruct)
+
 // RIB is a struct that stores a representation of a RIB for a network device.
 type RIB struct {
+	// nrMu protects the niRIB map.
+	nrMu sync.RWMutex
 	// niRIB is a map of OpenConfig AFTs that are used to represent the RIBs of a network element.
 	// The key of the map is the name of the network instance to which the RIBs belong.
-	niRIB map[string]*ribHolder
+	niRIB map[string]*RIBHolder
 
 	// defaultName is the name assigned to the default network instance.
 	defaultName string
@@ -47,8 +56,8 @@ const (
 	MODIFY
 )
 
-// ribHolder is a container for a set of RIBs.
-type ribHolder struct {
+// RIBHolder is a container for a set of RIBs.
+type RIBHolder struct {
 	// name is the name that is used for this network instance by the system.
 	name string
 
@@ -64,13 +73,13 @@ type ribHolder struct {
 	//   - name of the network instance
 	// 	 - operation type (as an OpType enumerated value)
 	//	 - the changed entry as a ygot.GoStruct.
-	postChangeHook func(OpType, string, ygot.GoStruct)
+	postChangeHook RIBHookFn
 }
 
 // New returns a new RIB with the default network instance created with name dn.
 func New(dn string) *RIB {
 	return &RIB{
-		niRIB: map[string]*ribHolder{
+		niRIB: map[string]*RIBHolder{
 			dn: newRIBHolder(dn),
 		},
 		defaultName: dn,
@@ -79,15 +88,22 @@ func New(dn string) *RIB {
 
 // SetHook assigns the supplied hook to all network instance RIBs within
 // the RIB structure.
-func (r *RIB) SetHook(fn func(OpType, string, ygot.GoStruct)) {
+func (r *RIB) SetHook(fn RIBHookFn) {
 	for _, nir := range r.niRIB {
 		nir.postChangeHook = fn
 	}
 }
 
+// NI returns the RIB for the network instance with name s.
+func (r *RIB) NI(s string) *RIBHolder {
+	r.nrMu.RLock()
+	defer r.nrMu.RUnlock()
+	return r.niRIB[s]
+}
+
 // newRIBHolder returns a new RIB holder for a single network instance.
-func newRIBHolder(name string) *ribHolder {
-	return &ribHolder{
+func newRIBHolder(name string) *RIBHolder {
+	return &RIBHolder{
 		name: name,
 		r: &aft.RIB{
 			Afts: &aft.Afts{},
@@ -146,7 +162,7 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 
 // AddIPv4 adds the IPv4 entry described by e to the RIB. It returns an error
 // if the entry cannot be added.
-func (r *ribHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	if e == nil {
 		return errors.New("nil IPv4 Entry provided")
 	}
@@ -185,7 +201,7 @@ func (r *ribHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 // no payload the prefix is removed if it is found in the set of entries. If the payload
 // of the entry is specified it is checked for equality, and removed only if the entries
 // match.
-func (r *ribHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	if e == nil {
 		return errors.New("nil entry provided")
 	}
@@ -218,9 +234,9 @@ func (r *ribHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	return nil
 }
 
-// AddNextHopGroup adds a NextHopGroup e to the ribHolder receiver. It returns an error
+// AddNextHopGroup adds a NextHopGroup e to the RIBHolder receiver. It returns an error
 // if the group cannot be added.
-func (r *ribHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
+func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 	if e == nil {
 		return errors.New("nil NextHopGroup provided")
 	}
@@ -247,9 +263,9 @@ func (r *ribHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 	return nil
 }
 
-// AddNextHop adds a new NextHop e to the ribHolder receiver. It returns an error if
+// AddNextHop adds a new NextHop e to the RIBHolder receiver. It returns an error if
 // the group cannot be added.
-func (r *ribHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
+func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
 	if e == nil {
 		return errors.New("nil NextHop provided")
 	}

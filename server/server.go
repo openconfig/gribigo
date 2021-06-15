@@ -9,10 +9,17 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
+	"github.com/openconfig/gribigo/rib"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
+)
+
+const (
+	// DefaultNIName specifies the name of the default network instance on the system.
+	DefaultNIName = "DEFAULT"
 )
 
 // Server implements the gRIBI service.
@@ -41,6 +48,10 @@ type Server struct {
 	curElecID *spb.Uint128
 	// curMaster stores the current master's UUID.
 	curMaster string
+
+	// masterRIB is the single gRIBI RIB that is used for a server that runs with
+	// a single elected master, where a single RIB is written to by all clients.
+	masterRIB *rib.RIB
 }
 
 // clientState stores information that relates to a specific client
@@ -97,10 +108,48 @@ func (cp *clientParams) Equal(n *clientParams) bool {
 	return cp.Persist == n.Persist && cp.FIBAck == n.FIBAck && cp.ExpectElecID == n.ExpectElecID
 }
 
+// ServerOpt is an option that can be provided to the gRIBI Server.
+type ServerOpt interface {
+	isServerOpt()
+}
+
+// WithRIBHook specifies that the server should be created with a function which is called
+// after every RIB change event.
+func WithRIBHook(r rib.RIBHookFn) *ribHook {
+	return &ribHook{fn: r}
+}
+
+// ribHook stores a function that is to be called on the RIB hook.
+type ribHook struct {
+	fn rib.RIBHookFn
+}
+
+// isServerOpt implements the ServerOpt interface.
+func (*ribHook) isServerOpt() {}
+
+// hasRIBHook returns the WithRIBHook function from the supplied ServerOpt slice,
+// or nil if one does not exist.
+func hasRIBHook(opts []ServerOpt) rib.RIBHookFn {
+	for _, o := range opts {
+		if v, ok := o.(*ribHook); ok {
+			return v.fn
+		}
+	}
+	return nil
+}
+
 // New creates a new gRIBI server.
-func New() *Server {
+func New(opts ...ServerOpt) *Server {
+	r := rib.New(DefaultNIName)
+	if f := hasRIBHook(opts); f != nil {
+		r.SetHook(f)
+	}
+
 	return &Server{
 		cs: map[string]*clientState{},
+		// TODO(robjs): when we implement support for ALL_PRIMARY then we might not
+		// want to create a new RIB by default.
+		masterRIB: r,
 	}
 }
 
@@ -113,49 +162,80 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		return err
 	}
 
-	// Store whether this is the first message on the channel, some options - like the session
-	// parameters can only be set as the first message.
-	var gotmsg bool
-	for {
-		in, err := ms.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return status.Errorf(codes.Unknown, "error reading message from client, %v", err)
-		}
-		log.V(2).Infof("received message %s on Modify channel", in)
-
-		var res *spb.ModifyResponse
-		switch {
-		case in.Params != nil:
-			var err error
-			if res, err = s.checkParams(cid, in.Params, gotmsg); err != nil {
-				// Invalid parameters is a fatal error, so we take down the Modify RPC.
-				return err
+	resultChan := make(chan *spb.ModifyResponse)
+	errCh := make(chan error)
+	go func() {
+		// Store whether this is the first message on the Modify RPC, some options - like the session
+		// parameters can only be set as the first message.
+		var gotmsg bool
+		for {
+			in, err := ms.Recv()
+			if err == io.EOF {
+				return
 			}
-			if err := s.updateParams(cid, in.Params); err != nil {
-				// Not being able to update parameters is a fatal error, so we take down
-				// the Modify RPC.
-				return err
-			}
-		case in.ElectionId != nil:
-			var err error
-			res, err = s.runElection(cid, in.ElectionId)
 			if err != nil {
-				return err
+				errCh <- status.Errorf(codes.Unknown, "error reading message from client, %v", err)
 			}
-		default:
-			return status.Errorf(codes.Unimplemented, "unimplemented handling of message %s", in)
-		}
+			log.V(2).Infof("received message %s on Modify channel", in)
 
-		// update that we have received at least one message.
-		gotmsg = true
-		if err := ms.Send(res); err != nil {
-			return status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
-		}
+			var (
+				res       *spb.ModifyResponse
+				skipWrite bool
+			)
 
-	}
+			switch {
+			case in.Params != nil:
+				var err error
+				if res, err = s.checkParams(cid, in.Params, gotmsg); err != nil {
+					// Invalid parameters is a fatal error, so we take down the Modify RPC.
+					errCh <- err
+					return
+				}
+				if err := s.updateParams(cid, in.Params); err != nil {
+					// Not being able to update parameters is a fatal error, so we take down
+					// the Modify RPC.
+					errCh <- err
+					return
+				}
+			case in.ElectionId != nil:
+				var err error
+				res, err = s.runElection(cid, in.ElectionId)
+				if err != nil {
+					errCh <- err
+					return
+				}
+			case in.Operation != nil:
+
+				s.doModify(cid, in.Operation, resultChan, errCh)
+				skipWrite = true
+			default:
+				errCh <- status.Errorf(codes.Unimplemented, "unimplemented handling of message %s", in)
+				return
+			}
+
+			gotmsg = true
+			// write the results to result channel.
+			if !skipWrite {
+				resultChan <- res
+			}
+		}
+	}()
+
+	go func() {
+		// TODO(robjs): need to create a queue structure on the server side so that
+		// we can asynchronously handle any messages. The Recv() loop needs to be in
+		// a goroutine empyting a channel, as does the send goroutine.
+		for {
+			res := <-resultChan
+			// update that we have received at least one message.
+			if err := ms.Send(res); err != nil {
+				errCh <- status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
+				return
+			}
+		}
+	}()
+
+	return <-errCh
 }
 
 // newClient creates a new client context within the server using the specified string
@@ -344,6 +424,15 @@ func isNewMaster(cand, exist *spb.Uint128) (bool, bool, error) {
 	return false, false, nil
 }
 
+// getClientState returns the client state for the client with the specified id, along with
+// whether the client was found.
+func (s *Server) getClientState(id string) (*clientState, bool) {
+	s.csMu.RLock()
+	defer s.csMu.RUnlock()
+	cs, ok := s.cs[id]
+	return cs, ok
+}
+
 // getClientStateCopy returns a copy of the state for the client with the specified ID, since
 // the state of a client is immutable after the initial creation, we never allow a client to
 // get a copy of the pointer so that they could change this. It returns a copy of the clientState
@@ -385,4 +474,102 @@ func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyRespons
 	return &spb.ModifyResponse{
 		ElectionId: s.curElecID,
 	}, nil
+}
+
+// doModify implements a modify operation for a specific input set of AFTOperation
+// messages for the client with the specified id. It writes the result to the supplied
+// ModifyResponse channel when successful, or writes the error to the supplied errCh.
+func (s *Server) doModify(id string, ops []*spb.AFTOperation, resCh chan *spb.ModifyResponse, errCh chan error) {
+	cs, ok := s.getClientState(id)
+	switch {
+	case !ok:
+		errCh <- status.Newf(codes.Internal, "operation received for unknown client, %s", id).Err()
+	case cs.params == nil || !cs.params.ExpectElecID || !cs.params.Persist:
+		// these are parameters that we do not support.
+		errCh <- addModifyErrDetailsOrReturn(
+			status.New(codes.Unimplemented, "unsupported default parameters for client"),
+			&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+			})
+	}
+
+	var wg sync.WaitGroup
+	for _, o := range ops {
+		switch o.Op {
+		case spb.AFTOperation_ADD:
+			ni := o.GetNetworkInstance()
+			if ni == "" {
+				ni = DefaultNIName
+			}
+			r := s.masterRIB.NI(ni)
+			wg.Add(1)
+			go func() {
+				addEntry(r, o, s.curElecID, cs.params.FIBAck, resCh, errCh)
+				wg.Done()
+			}()
+		default:
+			errCh <- addModifyErrDetailsOrReturn(
+				status.Newf(codes.Unimplemented, "error processing operation %s, unsupported", o.Op),
+				&spb.ModifyRPCErrorDetails{
+					Reason: spb.ModifyRPCErrorDetails_UNKNOWN,
+				},
+			)
+		}
+	}
+	wg.Wait()
+
+	return
+}
+
+// FIXME(robjs): add test coverage for this function.
+//
+// addEntry adds the specified entry op to the RIB, r. The server's current election ID is specicied by elecID,
+// and the client's requested ACK mode by fibACK. Results are written to the results (resCh) or error (errCh)
+// channel.
+func addEntry(r *rib.RIBHolder, op *spb.AFTOperation, electID *spb.Uint128, fibACK bool, resCh chan *spb.ModifyResponse, errCh chan error) {
+	// check whether the election ID is the current one.
+	if op.ElectionId == nil {
+		// this is an error since we only support election IDs.
+		errCh <- addModifyErrDetailsOrReturn(
+			status.Newf(codes.FailedPrecondition, "no specified election ID when it was required"),
+			&spb.ModifyRPCErrorDetails{
+				// TODO(robjs): we probably need to define what happens here, no specified error code.
+			})
+		return
+	}
+	currentID := uint128.New(electID.Low, electID.High)
+	thisID := uint128.New(op.ElectionId.Low, op.ElectionId.High)
+	switch {
+	case thisID.Cmp(currentID) > 0:
+		// this value is greater than the known master ID. Return an error.
+		errCh <- status.Newf(codes.FailedPrecondition, "specified election ID was greater than existing election, %s > %s", thisID, currentID).Err()
+		return
+	case thisID.Cmp(currentID) < 0:
+		// this value is less as the current master ID, ignore this transaction.
+		// note that since we don't respond here, the client at the other side
+		// is just going to have a pending transaction forever.
+		//
+		// TODO(robjs): should we respond and say "this was OK, but we ignored it?"
+		return
+	}
+
+	result := &spb.AFTResult{Id: op.Id}
+	switch t := op.GetEntry().(type) {
+	case *spb.AFTOperation_Ipv4:
+		err := r.AddIPv4(t.Ipv4)
+		switch {
+		case err != nil:
+			result.Status = spb.AFTResult_FAILED
+		case fibACK:
+			result.Status = spb.AFTResult_FIB_PROGRAMMED
+		default:
+			result.Status = spb.AFTResult_RIB_PROGRAMMED
+		}
+	default:
+		errCh <- status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
+	}
+
+	resCh <- &spb.ModifyResponse{
+		Result: []*spb.AFTResult{result},
+	}
 }

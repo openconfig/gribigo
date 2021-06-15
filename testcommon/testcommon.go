@@ -23,7 +23,7 @@ func Server() (func(), string) {
 	}
 
 	s := grpc.NewServer()
-	spb.RegisterGRIBIServer(s, server.New())
+	spb.RegisterGRIBIServer(s, server.New(nil))
 	log.Infof("new server listening at %s", l.Addr().String())
 	return func() {
 		if err := s.Serve(l); err != nil {

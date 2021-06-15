@@ -68,14 +68,6 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
 	var cancel func()
 	ctx, cancel = context.WithCancel(ctx)
 	d := &Device{}
-	if err := d.startgRIBI(ctx, optGRIBIPort(opts)); err != nil {
-		cancel()
-		return nil, nil, fmt.Errorf("cannot start gRIBI server, %v", err)
-	}
-	if err := d.startgNMI(ctx, optGNMIPort(opts)); err != nil {
-		cancel()
-		return nil, nil, fmt.Errorf("cannot start gNMI server, %v", err)
-	}
 
 	d.gRIBIRIB = rib.New(defaultNIName)
 	sr, err := sysrib.NewSysRIBFromJSON(optDeviceCfg(opts))
@@ -89,9 +81,19 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
 		_, _, _ = o, ni, data
 		// write gNMI notifications
 		go d.gnmiSrv.TargetUpdate(&gpb.SubscribeResponse{})
-		// manage within the system RIB
+		// TODO manage within the system RIB
+
 	}
 	d.gRIBIRIB.SetHook(pch)
+
+	if err := d.startgRIBI(ctx, optGRIBIPort(opts), d.gRIBIRIB); err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("cannot start gRIBI server, %v", err)
+	}
+	if err := d.startgNMI(ctx, optGNMIPort(opts)); err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("cannot start gNMI server, %v", err)
+	}
 
 	return d, cancel, nil
 }
@@ -121,14 +123,14 @@ func optDeviceCfg(opt []DevOpt) []byte {
 	return nil
 }
 
-func (d *Device) startgRIBI(ctx context.Context, port int) error {
+func (d *Device) startgRIBI(ctx context.Context, port int, ribMgr server.RIBManager) error {
 	l, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
 	if err != nil {
 		return fmt.Errorf("cannot create gRIBI server, %v", err)
 	}
 
 	s := grpc.NewServer()
-	ts := server.New()
+	ts := server.New(ribMgr)
 	spb.RegisterGRIBIServer(s, ts)
 	d.gribiAddr = l.Addr().String()
 	d.gribiSrv = ts

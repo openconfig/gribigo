@@ -9,11 +9,11 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
-	"github.com/openconfig/gribigo/rib"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"lukechampine.com/uint128"
 
+	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
@@ -21,6 +21,31 @@ const (
 	// DefaultNIName specifies the name of the default network instance on the system.
 	DefaultNIName = "DEFAULT"
 )
+
+type RIBManager interface {
+	RIBForNI(string) NIRIB
+}
+
+type NIRIB interface {
+	AddIPv4(*aftpb.Afts_Ipv4EntryKey) error
+}
+
+// ServerOpt is an option that can be provided to the gRIBI Server.
+type ServerOpt interface {
+	isServerOpt()
+}
+
+// WithRIBHandler returns a RIBHandler interface to be used within the gRIBI
+// implementation.
+func WithRIBManager(r RIBManager) *ribManager {
+	return &ribManager{impl: r}
+}
+
+type ribManager struct {
+	impl RIBManager
+}
+
+func (*ribManager) isServerOpt() {}
 
 // Server implements the gRIBI service.
 type Server struct {
@@ -51,7 +76,7 @@ type Server struct {
 
 	// masterRIB is the single gRIBI RIB that is used for a server that runs with
 	// a single elected master, where a single RIB is written to by all clients.
-	masterRIB *rib.RIB
+	masterRIB RIBManager
 }
 
 // clientState stores information that relates to a specific client
@@ -108,49 +133,23 @@ func (cp *clientParams) Equal(n *clientParams) bool {
 	return cp.Persist == n.Persist && cp.FIBAck == n.FIBAck && cp.ExpectElecID == n.ExpectElecID
 }
 
-// ServerOpt is an option that can be provided to the gRIBI Server.
-type ServerOpt interface {
-	isServerOpt()
-}
-
-// WithRIBHook specifies that the server should be created with a function which is called
-// after every RIB change event.
-func WithRIBHook(r rib.RIBHookFn) *ribHook {
-	return &ribHook{fn: r}
-}
-
-// ribHook stores a function that is to be called on the RIB hook.
-type ribHook struct {
-	fn rib.RIBHookFn
-}
-
-// isServerOpt implements the ServerOpt interface.
-func (*ribHook) isServerOpt() {}
-
-// hasRIBHook returns the WithRIBHook function from the supplied ServerOpt slice,
-// or nil if one does not exist.
-func hasRIBHook(opts []ServerOpt) rib.RIBHookFn {
-	for _, o := range opts {
-		if v, ok := o.(*ribHook); ok {
-			return v.fn
-		}
-	}
-	return nil
-}
-
 // New creates a new gRIBI server.
-func New(opts ...ServerOpt) *Server {
-	r := rib.New(DefaultNIName)
-	if f := hasRIBHook(opts); f != nil {
-		r.SetHook(f)
-	}
-
+func New(opt ...ServerOpt) *Server {
 	return &Server{
 		cs: map[string]*clientState{},
 		// TODO(robjs): when we implement support for ALL_PRIMARY then we might not
 		// want to create a new RIB by default.
-		masterRIB: r,
+		masterRIB: hasRIBManager(opt),
 	}
+}
+
+func hasRIBManager(opt []ServerOpt) RIBManager {
+	for _, o := range opt {
+		if v, ok := o.(*ribManager); ok {
+			return v.impl
+		}
+	}
+	return nil
 }
 
 // Modify implements the gRIBI Modify RPC.
@@ -501,10 +500,14 @@ func (s *Server) doModify(id string, ops []*spb.AFTOperation, resCh chan *spb.Mo
 			if ni == "" {
 				ni = DefaultNIName
 			}
-			r := s.masterRIB.NI(ni)
+			var rib NIRIB
+			if s.masterRIB != nil {
+				rib = s.masterRIB.RIBForNI(ni)
+			}
+
 			wg.Add(1)
 			go func() {
-				addEntry(r, o, s.curElecID, cs.params.FIBAck, resCh, errCh)
+				addEntry(rib, o, s.curElecID, cs.params.FIBAck, resCh, errCh)
 				wg.Done()
 			}()
 		default:
@@ -517,8 +520,6 @@ func (s *Server) doModify(id string, ops []*spb.AFTOperation, resCh chan *spb.Mo
 		}
 	}
 	wg.Wait()
-
-	return
 }
 
 // FIXME(robjs): add test coverage for this function.
@@ -526,7 +527,7 @@ func (s *Server) doModify(id string, ops []*spb.AFTOperation, resCh chan *spb.Mo
 // addEntry adds the specified entry op to the RIB, r. The server's current election ID is specicied by elecID,
 // and the client's requested ACK mode by fibACK. Results are written to the results (resCh) or error (errCh)
 // channel.
-func addEntry(r *rib.RIBHolder, op *spb.AFTOperation, electID *spb.Uint128, fibACK bool, resCh chan *spb.ModifyResponse, errCh chan error) {
+func addEntry(r NIRIB, op *spb.AFTOperation, electID *spb.Uint128, fibACK bool, resCh chan *spb.ModifyResponse, errCh chan error) {
 	// check whether the election ID is the current one.
 	if op.ElectionId == nil {
 		// this is an error since we only support election IDs.
@@ -550,6 +551,17 @@ func addEntry(r *rib.RIBHolder, op *spb.AFTOperation, electID *spb.Uint128, fibA
 		// is just going to have a pending transaction forever.
 		//
 		// TODO(robjs): should we respond and say "this was OK, but we ignored it?"
+		return
+	}
+
+	if r == nil {
+		// if the RIB was specified to nil, we just return OK for this
+		// transaction.
+		resCh <- &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id: op.Id,
+			}},
+		}
 		return
 	}
 

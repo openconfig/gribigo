@@ -9,6 +9,7 @@ import (
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/goyang/pkg/yang"
 	"github.com/openconfig/gribigo/aft"
+	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/ygot/protomap"
 	"github.com/openconfig/ygot/ygot"
 	"github.com/openconfig/ygot/ytypes"
@@ -95,7 +96,7 @@ func (r *RIB) SetHook(fn RIBHookFn) {
 }
 
 // NI returns the RIB for the network instance with name s.
-func (r *RIB) NI(s string) *RIBHolder {
+func (r *RIB) RIBForNI(s string) server.NIRIB {
 	r.nrMu.RLock()
 	defer r.nrMu.RUnlock()
 	return r.niRIB[s]

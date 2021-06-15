@@ -4,7 +4,9 @@ package fluent
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"testing"
 
 	log "github.com/golang/glog"
@@ -12,7 +14,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
 
 // gRIBIClient stores internal state and arguments related to the gRIBI client
@@ -22,6 +26,12 @@ type gRIBIClient struct {
 	connection *gRIBIConnection
 	// Internal state.
 	c *client.Client
+
+	// opCount is the count of AFTOperations that has been sent by the client,
+	// used to populate the ID of AFTOperation messages automatically.
+	opCount uint64
+	// currentElectionID is the current electionID that the client should use.
+	currentElectionID *spb.Uint128
 }
 
 type gRIBIConnection struct {
@@ -36,18 +46,23 @@ type gRIBIConnection struct {
 	// persist indicates whether the client requests that the server persists
 	// entries after it disconnects.
 	persist bool
+
+	// parent is a pointer to the parent of the gRIBIConnection.
+	parent *gRIBIClient
 }
 
 // NewClient returns a new gRIBI client instance, and is an entrypoint to this
 // package.
 func NewClient() *gRIBIClient {
-	return &gRIBIClient{}
+	return &gRIBIClient{
+		opCount: 1,
+	}
 }
 
 // Connection allows any parameters relating to gRIBI connections to be set through
 // the gRIBI fluent API.
 func (g *gRIBIClient) Connection() *gRIBIConnection {
-	c := &gRIBIConnection{}
+	c := &gRIBIConnection{parent: g}
 	g.connection = c
 	return c
 }
@@ -91,10 +106,13 @@ func (g *gRIBIConnection) WithRedundancyMode(m RedundancyMode) *gRIBIConnection 
 // connection. It is not sent until a Modify RPC has been opened to the client. The
 // arguments specify the high and low 64-bit integers that from the uint128.
 func (g *gRIBIConnection) WithInitialElectionID(low, high uint64) *gRIBIConnection {
-	g.electionID = &spb.Uint128{
+	eid := &spb.Uint128{
 		Low:  low,
 		High: high,
 	}
+	g.electionID = eid
+	// also set the current election ID for subsequent operations.
+	g.parent.currentElectionID = eid
 	return g
 }
 
@@ -171,23 +189,128 @@ func (g *gRIBIClient) Results(t testing.TB) []*client.OpResult {
 	return r
 }
 
-// ModifyErrorWithReason returns a error response to the Modify RPC with the specified error
-// code and details.
-func ModifyErrorWithReason(t testing.TB, code codes.Code, det *spb.ModifyRPCErrorDetails) *status.Status {
-	s := status.New(code, "")
-	var err error
-	if s, err = s.WithDetails(det); err != nil {
-		t.Fatalf("cannot build error message, %v", err)
+// TODO(robjs): add an UpdateElectionID method such that we can set the election ID
+// after it has initially been created.
+
+// Modify wraps methods that trigger operations within the gRIBI Modify RPC.
+func (g *gRIBIClient) Modify() *gRIBIModify {
+	return &gRIBIModify{parent: g}
+}
+
+// gRIBIModify provides a wrapper for methods associated with the gRIBI Modify RPC.
+type gRIBIModify struct {
+	// parent is a pointer to the parent of the gRIBI modify.
+	parent *gRIBIClient
+}
+
+// AddEntry creates an operation adding a new entry to the server.
+func (g *gRIBIModify) AddEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIModify {
+	m, err := g.entriesToModifyRequest(spb.AFTOperation_ADD, entries)
+	if err != nil {
+		t.Fatalf("cannot build modify request: %v", err)
 	}
-	return s
+	g.parent.c.Q(m)
+	return g
 }
 
-// modifyError is a type that can be used to build a gRIBI Modify error
+// entriesToModifyRequest creates a ModifyRequest from a set of input entries.
+func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entries []gRIBIEntry) (*spb.ModifyRequest, error) {
+	m := &spb.ModifyRequest{}
+	for _, e := range entries {
+		ep, err := e.proto()
+		if err != nil {
+			return nil, fmt.Errorf("cannot build entry protobuf, got err: %v", err)
+		}
+		ep.Op = op
+
+		// ID was unset, so use the library maintained count. Note, that clients
+		// should not use both explictly and manually specified IDs. To this end
+		// initially we do not allow this API to be used for anything other than
+		// automatically set values.
+		if ep.Id != 0 {
+			return nil, fmt.Errorf("cannot use explicitly set operation IDs for a message, got: %d, want: 0", ep.Id)
+		}
+
+		ep.Id = g.parent.opCount
+		g.parent.opCount++
+
+		if g.parent == nil {
+			return nil, errors.New("invalid nil parent")
+		}
+
+		// If the election ID wasn't explicitly set then write the current one
+		// to the message if this is a client that requires it.
+		if g.parent.connection != nil && g.parent.connection.redundMode == ElectedPrimaryClient && ep.ElectionId == nil {
+			ep.ElectionId = g.parent.currentElectionID
+		}
+
+		m.Operation = append(m.Operation, ep)
+	}
+	return m, nil
+}
+
+// gRIBIEntry is an entry implemented for all types that can be returned
+// as a gRIBI entry.
+type gRIBIEntry interface {
+	// proto returns the specified entry as an AFTOperation protobuf.
+	proto() (*spb.AFTOperation, error)
+}
+
+type ipv4Entry struct {
+	// pb is the gRIBI IPv4Entry that is being composed.
+	pb *aftpb.Afts_Ipv4EntryKey
+	// ni is the network instance to which the IPv4Entry is applied.
+	ni string
+}
+
+// IPv4Entry returns a new gRIBI IPv4Entry builder.
+func IPv4Entry() *ipv4Entry {
+	return &ipv4Entry{
+		pb: &aftpb.Afts_Ipv4EntryKey{
+			Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+		},
+	}
+}
+
+// WithPrefix sets the prefix of the IPv4Entry to the specified value, which
+// must be a valid IPv4 prefix in the form prefix/mask.
+func (i *ipv4Entry) WithPrefix(p string) *ipv4Entry {
+	i.pb.Prefix = p
+	return i
+}
+
+// WithNetworkInstance specifies the network instance to which the IPv4Entry
+// is being applied.
+func (i *ipv4Entry) WithNetworkInstance(n string) *ipv4Entry {
+	i.ni = n
+	return i
+}
+
+// WithNextHopGroup specifies the next-hop group that the IPv4Entry points to.
+func (i *ipv4Entry) WithNextHopGroup(u uint64) *ipv4Entry {
+	i.pb.Ipv4Entry.NextHopGroup = &wpb.UintValue{Value: u}
+	return i
+}
+
+// proto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// and ElectionID are explicitly not populated such that they can be populated by
+// the function (e.g., AddEntry) to which they are an argument.
+func (i *ipv4Entry) proto() (*spb.AFTOperation, error) {
+	return &spb.AFTOperation{
+		NetworkInstance: i.ni,
+		Entry: &spb.AFTOperation_Ipv4{
+			Ipv4: i.pb,
+		},
+	}, nil
+}
+
+// modifyError is a type that can be used to build a gRIBI Modify error.
 type modifyError struct {
-	reason spb.ModifyRPCErrorDetails_Reason
-	code   codes.Code
+	Reason spb.ModifyRPCErrorDetails_Reason
+	Code   codes.Code
 }
 
+// ModifyError allows a gRIBI ModifyError to be constructed.
 func ModifyError() *modifyError {
 	return &modifyError{}
 }
@@ -210,32 +333,32 @@ const (
 	ElectionIDNotAllowed
 )
 
+var reasonMap = map[ModifyErrReason]spb.ModifyRPCErrorDetails_Reason{
+	UnsupportedParameters:        spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+	ModifyParamsNotAllowed:       spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED,
+	ParamsDifferFromOtherClients: spb.ModifyRPCErrorDetails_PARAMS_DIFFER_FROM_OTHER_CLIENTS,
+	ElectionIDNotAllowed:         spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY,
+}
+
+// WithReason specifies the reason for the modify error from the enumeration
+// in the protobuf.
 func (m *modifyError) WithReason(r ModifyErrReason) *modifyError {
-	switch r {
-	case UnsupportedParameters:
-		m.reason = spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS
-	case ModifyParamsNotAllowed:
-		m.reason = spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED
-	case ParamsDifferFromOtherClients:
-		m.reason = spb.ModifyRPCErrorDetails_PARAMS_DIFFER_FROM_OTHER_CLIENTS
-	case ElectionIDNotAllowed:
-		m.reason = spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY
-	}
+	m.Reason = reasonMap[r]
 	return m
 }
 
 // WithCode specifies the well known code that is expected in the error.
 func (m *modifyError) WithCode(c codes.Code) *modifyError {
-	m.code = c
+	m.Code = c
 	return m
 }
 
 // AsStatus returns the modifyError as a status.Status.
 func (m *modifyError) AsStatus(t testing.TB) *status.Status {
-	s := status.New(m.code, "")
+	s := status.New(m.Code, "")
 	var err error
 	s, err = s.WithDetails(&spb.ModifyRPCErrorDetails{
-		Reason: m.reason,
+		Reason: m.Reason,
 	})
 	if err != nil {
 		t.Fatalf("cannot build error, %v", err)

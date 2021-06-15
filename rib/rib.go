@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/goyang/pkg/yang"
@@ -21,11 +22,14 @@ import (
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 )
 
+var unixTS = time.Now().UnixNano
+
 // RIBHookFn is a function that is used as a hook following a change. It takes:
 //  - an OpType deterining whether an add, remove, or modify operation was sent.
+//  - the timestamp in nanoseconds since the unix epoch that a function was performed.
 //  - a string indicating the name of the network instance
 //  - a ygot.GoStruct containing the entry that has been changed.
-type RIBHookFn func(OpType, string, ygot.GoStruct)
+type RIBHookFn func(OpType, int64, string, ygot.GoStruct)
 
 // RIB is a struct that stores a representation of a RIB for a network device.
 type RIB struct {
@@ -191,7 +195,7 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	// know the key.
 	if r.postChangeHook != nil {
 		for _, ip4 := range nr.Afts.Ipv4Entry {
-			r.postChangeHook(ADD, r.name, ip4)
+			r.postChangeHook(ADD, unixTS(), r.name, ip4)
 		}
 	}
 
@@ -229,7 +233,7 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	delete(r.r.Afts.Ipv4Entry, e.GetPrefix())
 
 	if r.postChangeHook != nil {
-		r.postChangeHook(DELETE, r.name, de)
+		r.postChangeHook(DELETE, unixTS(), r.name, de)
 	}
 
 	return nil
@@ -257,7 +261,7 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 
 	if r.postChangeHook != nil {
 		for _, nhg := range nr.Afts.NextHopGroup {
-			r.postChangeHook(ADD, r.name, nhg)
+			r.postChangeHook(ADD, unixTS(), r.name, nhg)
 		}
 	}
 
@@ -286,7 +290,7 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
 
 	if r.postChangeHook != nil {
 		for _, nh := range nr.Afts.NextHop {
-			r.postChangeHook(ADD, r.name, nh)
+			r.postChangeHook(ADD, unixTS(), r.name, nh)
 		}
 	}
 

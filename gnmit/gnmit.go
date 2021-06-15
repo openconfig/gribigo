@@ -102,6 +102,7 @@ func (c *Collector) handleUpdate(resp *gpb.SubscribeResponse) error {
 	t := c.cache.GetTarget(c.name)
 	switch v := resp.Response.(type) {
 	case *gpb.SubscribeResponse_Update:
+		fmt.Printf("sending %s\n", v.Update)
 		t.GnmiUpdate(v.Update)
 	case *gpb.SubscribeResponse_SyncResponse:
 		t.Sync()

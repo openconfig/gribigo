@@ -571,6 +571,7 @@ func addEntry(r NIRIB, op *spb.AFTOperation, electID *spb.Uint128, fibACK bool, 
 		err := r.AddIPv4(t.Ipv4)
 		switch {
 		case err != nil:
+			log.Infof("failed to program with %v,  << %s >>", err, t.Ipv4.Prefix)
 			result.Status = spb.AFTResult_FAILED
 		case fibACK:
 			result.Status = spb.AFTResult_FIB_PROGRAMMED

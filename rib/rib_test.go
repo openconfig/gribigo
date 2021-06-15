@@ -515,7 +515,7 @@ func TestHooks(t *testing.T) {
 			tsFn := func() int64 {
 				return int64(len(got))
 			}
-			store := func(o OpType, _ string, gs ygot.GoStruct) {
+			store := func(o OpType, _ int64, _ string, gs ygot.GoStruct) {
 				switch t := gs.(type) {
 				case *aft.Afts_Ipv4Entry:
 					got = append(got, &op{Do: o, TS: tsFn(), IP4: t.GetPrefix()})
@@ -526,7 +526,7 @@ func TestHooks(t *testing.T) {
 				}
 			}
 
-			gnmiNoti := func(o OpType, ni string, gs ygot.GoStruct) {
+			gnmiNoti := func(o OpType, _ int64, ni string, gs ygot.GoStruct) {
 				if o == DELETE {
 					switch t := gs.(type) {
 					case *aft.Afts_Ipv4Entry:

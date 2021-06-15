@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 
+	log "github.com/golang/glog"
+	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/gribigo/gnmit"
 	"github.com/openconfig/gribigo/rib"
 	"github.com/openconfig/gribigo/server"
@@ -70,18 +72,32 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
 	d := &Device{}
 
 	d.gRIBIRIB = rib.New(defaultNIName)
-	sr, err := sysrib.NewSysRIBFromJSON(optDeviceCfg(opts))
-	if err != nil {
-		cancel()
-		return nil, nil, fmt.Errorf("cannot build system RIB, %v", err)
+	if jcfg := optDeviceCfg(opts); jcfg != nil {
+		sr, err := sysrib.NewSysRIBFromJSON(jcfg)
+		if err != nil {
+			cancel()
+			return nil, nil, fmt.Errorf("cannot build system RIB, %v", err)
+		}
+		d.sysRIB = sr
 	}
-	d.sysRIB = sr
 
-	pch := func(o rib.OpType, ni string, data ygot.GoStruct) {
+	pch := func(o rib.OpType, ts int64, ni string, data ygot.GoStruct) {
+		fmt.Printf("hook called with %v on ni %s\n", o, ni)
 		_, _, _ = o, ni, data
 		// write gNMI notifications
-		go d.gnmiSrv.TargetUpdate(&gpb.SubscribeResponse{})
-		// TODO manage within the system RIB
+		n, err := gnmiNoti(o, ts, ni, data)
+		switch {
+		case err != nil:
+			log.Errorf("invalid notifications, %v", err)
+		default:
+			go d.gnmiSrv.TargetUpdate(&gpb.SubscribeResponse{
+				Response: &gpb.SubscribeResponse_Update{
+					Update: n,
+				},
+			})
+		}
+		// TODO(robjs): add to the system RIB here - we need to plumb
+		// an error back to say that the FIB was not programmed.
 
 	}
 	d.gRIBIRIB.SetHook(pch)
@@ -130,7 +146,7 @@ func (d *Device) startgRIBI(ctx context.Context, port int, ribMgr server.RIBMana
 	}
 
 	s := grpc.NewServer()
-	ts := server.New(ribMgr)
+	ts := server.New(server.WithRIBManager(ribMgr))
 	spb.RegisterGRIBIServer(s, ts)
 	d.gribiAddr = l.Addr().String()
 	d.gribiSrv = ts
@@ -146,4 +162,76 @@ func (d *Device) startgNMI(ctx context.Context, port int) error {
 	d.gnmiAddr = addr
 	d.gnmiSrv = c
 	return nil
+}
+
+func (d *Device) GRIBIAddr() string {
+	return d.gribiAddr
+}
+
+func gnmiNoti(t rib.OpType, ts int64, ni string, e ygot.GoStruct) (*gpb.Notification, error) {
+	var ns []*gpb.Notification
+	var err error
+	switch t := e.(type) {
+	case *aft.Afts_Ipv4Entry:
+		pfx := []*gpb.PathElem{{
+			Name: "network-instances",
+		}, {
+			Name: "network-instance",
+			Key:  map[string]string{"name": ni},
+		}, {
+			Name: "afts",
+		}, {
+			Name: "ipv4-unicast",
+		}, {
+			Name: "ipv4-entry",
+			Key:  map[string]string{"prefix": t.GetPrefix()},
+		}}
+		ns, err = ygot.TogNMINotifications(e, ts, ygot.GNMINotificationsConfig{
+			UsePathElem:    true,
+			PathElemPrefix: pfx,
+		})
+	case *aft.Afts_NextHopGroup:
+		pfx := []*gpb.PathElem{{
+			Name: "network-instances",
+		}, {
+			Name: "network-instance",
+			Key:  map[string]string{"name": ni},
+		}, {
+			Name: "afts",
+		}, {
+			Name: "next-hop-groups",
+		}, {
+			Name: "next-hop-group",
+			Key:  map[string]string{"id": fmt.Sprintf("%d", t.GetId())},
+		}}
+		ns, err = ygot.TogNMINotifications(e, ts, ygot.GNMINotificationsConfig{
+			UsePathElem:    true,
+			PathElemPrefix: pfx,
+		})
+	case *aft.Afts_NextHop:
+		pfx := []*gpb.PathElem{{
+			Name: "network-instances",
+		}, {
+			Name: "network-instance",
+			Key:  map[string]string{"name": ni},
+		}, {
+			Name: "afts",
+		}, {
+			Name: "next-hops",
+		}, {
+			Name: "next-hop",
+			Key:  map[string]string{"index": fmt.Sprintf("%d", t.GetIndex())},
+		}}
+		ns, err = ygot.TogNMINotifications(e, ts, ygot.GNMINotificationsConfig{
+			UsePathElem:    true,
+			PathElemPrefix: pfx,
+		})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cannot generate notifications, %v", err)
+	}
+	ns[0].Atomic = true
+	ns[0].Prefix.Target = "localhost"
+	fmt.Printf("returning %s\n", ns[0])
+	return ns[0], nil
 }

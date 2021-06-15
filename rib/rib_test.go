@@ -30,7 +30,7 @@ const (
 func TestAdd(t *testing.T) {
 	tests := []struct {
 		desc        string
-		inRIBHolder *ribHolder
+		inRIBHolder *RIBHolder
 		inType      ribType
 		inEntry     proto.Message
 		wantRIB     *aft.RIB
@@ -94,7 +94,7 @@ func TestAdd(t *testing.T) {
 		wantErr: true,
 	}, {
 		desc: "implicit ipv4 replace",
-		inRIBHolder: func() *ribHolder {
+		inRIBHolder: func() *RIBHolder {
 			r := newRIBHolder("DEFAULT")
 			if err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 				Prefix: "8.8.8.8/32",
@@ -281,17 +281,17 @@ func TestDeleteIPv4Entry(t *testing.T) {
 
 	tests := []struct {
 		desc        string
-		inRIB       *ribHolder
+		inRIB       *RIBHolder
 		inEntry     *aftpb.Afts_Ipv4EntryKey
 		wantErr     bool
-		wantPostRIB *ribHolder
+		wantPostRIB *RIBHolder
 	}{{
 		desc:    "nil input",
-		inRIB:   &ribHolder{},
+		inRIB:   &RIBHolder{},
 		wantErr: true,
 	}, {
 		desc: "delete entry, no payload",
-		inRIB: &ribHolder{
+		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32"},
 			}),
@@ -299,12 +299,12 @@ func TestDeleteIPv4Entry(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
 		},
-		wantPostRIB: &ribHolder{
+		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
 		},
 	}, {
 		desc: "delete entry, matching payload",
-		inRIB: &ribHolder{
+		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			}),
@@ -315,12 +315,12 @@ func TestDeleteIPv4Entry(t *testing.T) {
 				Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			},
 		},
-		wantPostRIB: &ribHolder{
+		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
 		},
 	}, {
 		desc: "delete entry, mismatched payload",
-		inRIB: &ribHolder{
+		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
 			}),
@@ -332,7 +332,7 @@ func TestDeleteIPv4Entry(t *testing.T) {
 			},
 		},
 		wantErr: true,
-		wantPostRIB: &ribHolder{
+		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
 			}),

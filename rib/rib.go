@@ -98,6 +98,109 @@ func (r *RIB) RIBForNI(s string) (*RIBHolder, bool) {
 	return rh, ok
 }
 
+// canResolve takes an input candidate RIB, which contains only the new entry
+// being added and determines whether it can be resolved against the existing set
+// of RIBs that are stored in r. The specified netInst string is used to
+// determine the current network instance within which this entry is being
+// considered, such that where the assumption is that a reference is resolved within
+// the same network-instance this NI can be used.
+//
+// canResolve returns a boolean indicating whether the entry
+// can be resolved or not.
+//
+// An entry is defined to be resolved if all its external references within the gRIBI
+// RIB can be resolved - particularly (starting from the most specific):
+//
+//   * for a next-hop
+//       - always consider this valid, since all elements can be resolved outside of
+//         gRIBI.
+//   * for a next-hop-group
+//       - all the next-hops within the NHG can be resolved
+//   * for an ipv4-entry
+//       - the next-hop-group can be resolved
+//
+// An error is returned if the candidate RIB contains more than one new type.
+func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
+	caft := candidate.GetAfts()
+	if caft == nil {
+		return false, errors.New("invalid nil candidate AFT")
+	}
+	switch {
+	case len(caft.Ipv6Entry) != 0:
+		return false, fmt.Errorf("IPv6 entries are unsupported, got: %v", caft.Ipv6Entry)
+	case len(caft.LabelEntry) != 0:
+		return false, fmt.Errorf("MPLS label entries are unsupported, got: %v", caft.LabelEntry)
+	case len(caft.MacEntry) != 0:
+		return false, fmt.Errorf("ethernet MAC entries are unsupported, got: %v", caft.MacEntry)
+	case len(caft.PolicyForwardingEntry) != 0:
+		return false, fmt.Errorf("PBR entries are unsupported, got: %v", caft.PolicyForwardingEntry)
+	case (len(caft.Ipv4Entry) + len(caft.NextHopGroup) + len(caft.NextHop)) == 0:
+		return false, errors.New("no entries in specified candidate")
+	case (len(caft.Ipv4Entry) + len(caft.NextHopGroup) + len(caft.NextHop)) > 1:
+		return false, fmt.Errorf("multiple entries are unsupported, got ipv4: %v, next-hop-group: %v, next-hop: %v", caft.Ipv4Entry, caft.NextHopGroup, caft.NextHop)
+	}
+
+	for _, n := range caft.NextHop {
+		if n.GetIndex() == 0 {
+			return false, fmt.Errorf("invalid index zero for next-hop in NI %s", netInst)
+		}
+		// we always resolve next-hop entries because they can be resolved outside of gRIBI.
+		return true, nil
+	}
+
+	// resolve in the default NI if we didn't get asked for a specific NI.
+	if netInst == "" {
+		netInst = r.defaultName
+	}
+	niRIB, ok := r.RIBForNI(netInst)
+	if !ok {
+		return false, fmt.Errorf("invalid network-instance %s", netInst)
+	}
+
+	for _, g := range caft.NextHopGroup {
+		if g.GetId() == 0 {
+			return false, fmt.Errorf("invalid zero-index NHG")
+		}
+		for _, n := range g.NextHop {
+			// Zero is an invalid value for a next-hop index. GetIndex() will also return 0
+			// if the NH index is nil, which is also invalid - so handle them together.
+			if n.GetIndex() == 0 {
+				return false, fmt.Errorf("invalid zero index NH in NHG %d, NI %s", g.GetId(), netInst)
+			}
+			// nexthops are resolved in the same NI as the next-hop-group
+			if _, ok := niRIB.GetNextHop(n.GetIndex()); !ok {
+				// this is not an error - it's just that we can't resolve this seemingly
+				// valid looking NHG at this point.
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+
+	for _, i := range caft.Ipv4Entry {
+		if i.GetNextHopGroup() == 0 {
+			// handle zero index again.
+			return false, fmt.Errorf("invalid zero-index NHG in IPv4Entry %s, NI %s", i.GetPrefix(), netInst)
+		}
+		resolveRIB := niRIB
+		if otherNI := i.GetNextHopGroupNetworkInstance(); otherNI != "" {
+			resolveRIB, ok = r.RIBForNI(otherNI)
+			if !ok {
+				return false, fmt.Errorf("invalid unknown network-instance for IPv4Entry, %s", otherNI)
+			}
+		}
+		if _, ok := resolveRIB.GetNextHopGroup(i.GetNextHopGroup()); !ok {
+			// again, not an error - we just can't resolve this IPv4 entry due to missing NHG right now.
+			return false, nil
+		}
+		return true, nil
+	}
+
+	// We should never reach here since we checked that at least one of the things that we are looping over has
+	// length >1, but return here too.
+	return false, errors.New("no entries in specified candidate")
+}
+
 // NewRIBHolder returns a new RIB holder for a single network instance.
 func NewRIBHolder(name string) *RIBHolder {
 	return &RIBHolder{
@@ -119,6 +222,31 @@ func (r *RIBHolder) IsValid() bool {
 		return false
 	}
 	return true
+}
+
+// GetNextHop gets the next-hop with the specified index from the RIB
+// and returns it. It returns a bool indicating whether the value was
+// found.
+func (r *RIBHolder) GetNextHop(index uint64) (*aft.Afts_NextHop, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n := r.r.GetAfts().GetNextHop(index)
+	if n == nil {
+		return nil, false
+	}
+	return n, true
+}
+
+// GetNextHopGroup gets the next-hop-group with the specified ID from the RIB
+// and returns it. It returns a bool indicating whether the value was found.
+func (r *RIBHolder) GetNextHopGroup(id uint64) (*aft.Afts_NextHopGroup, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n := r.r.GetAfts().GetNextHopGroup(id)
+	if n == nil {
+		return nil, false
+	}
+	return n, true
 }
 
 // rootSchema returns the schema of the root of the AFT YANG tree.

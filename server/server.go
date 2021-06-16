@@ -643,7 +643,7 @@ func addEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, election
 	if err != nil {
 		// this error is fatal for the connection as simply erroneous
 		// entries are just reported as failed.
-		return nil, status.Newf(codes.Internal, "cannot process input operation %s, fatal error", ok).Err()
+		return nil, status.Newf(codes.Internal, "cannot process input operation %s, fatal error", op).Err()
 	}
 	for _, ok := range oks {
 		results = append(results, &spb.AFTResult{

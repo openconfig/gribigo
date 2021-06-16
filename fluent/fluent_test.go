@@ -71,7 +71,7 @@ func TestGRIBIClient(t *testing.T) {
 			c.Start(context.Background(), t)
 			c.Modify().AddEntry(t, NextHopEntry().WithNetworkInstance(server.DefaultNIName).WithIndex(1))
 			c.Modify().AddEntry(t, NextHopGroupEntry().WithNetworkInstance(server.DefaultNIName).WithID(1).AddNextHop(1, 1))
-			c.Modify().AddEntry(t, IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNIName).WithNextHopGroup(42))
+			c.Modify().AddEntry(t, IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNIName).WithNextHopGroup(1))
 			c.StartSending(context.Background(), t)
 			c.Await(context.Background(), t)
 		},

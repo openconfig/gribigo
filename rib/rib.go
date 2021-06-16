@@ -199,8 +199,11 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 
 	// MergeStructInto doesn't completely replace a list entry if it finds a missing key,
 	// so will append the two entries together.
-	r.r.GetAfts().DeleteIpv4Entry(e.GetPrefix())
+	// We don't use Delete itself because it will deadlock (we already hold the lock).
+	delete(r.r.GetAfts().Ipv4Entry, e.GetPrefix())
 
+	// TODO(robjs): consider what happens if this fails -- we may leave the RIB in
+	// an inconsistent state.
 	if err := ygot.MergeStructInto(r.r, nr); err != nil {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
 	}
@@ -210,7 +213,7 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	// know the key.
 	if r.postChangeHook != nil {
 		for _, ip4 := range nr.Afts.Ipv4Entry {
-			go r.postChangeHook(ADD, r.name, ip4)
+			r.postChangeHook(ADD, r.name, ip4)
 		}
 	}
 
@@ -282,7 +285,7 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 	}
 
 	// Handle implicit replace.
-	r.r.GetAfts().DeleteNextHop(e.GetId())
+	delete(r.r.GetAfts().NextHop, e.GetId())
 
 	if err := ygot.MergeStructInto(r.r, nr); err != nil {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
@@ -318,7 +321,7 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
 	}
 
 	// Handle implicit replace.
-	r.r.GetAfts().DeleteNextHopGroup(e.GetIndex())
+	delete(r.r.GetAfts().NextHopGroup, e.GetIndex())
 
 	if err := ygot.MergeStructInto(r.r, nr); err != nil {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)

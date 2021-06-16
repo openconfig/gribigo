@@ -321,6 +321,12 @@ func NextHopEntry() *nextHopEntry {
 	}
 }
 
+// WithIndex specifies the index of the next-hop entry.
+func (n *nextHopEntry) WithIndex(i uint64) *nextHopEntry {
+	n.pb.Index = i
+	return n
+}
+
 // WithNetworkInstance specifies the network instance within which the next-hop
 // is being created.
 func (n *nextHopEntry) WithNetworkInstance(ni string) *nextHopEntry {
@@ -356,6 +362,12 @@ func NextHopGroupEntry() *nextHopGroupEntry {
 			NextHopGroup: &aftpb.Afts_NextHopGroup{},
 		},
 	}
+}
+
+// WithIndex specifies the index of the next-hop entry.
+func (n *nextHopGroupEntry) WithID(i uint64) *nextHopGroupEntry {
+	n.pb.Id = i
+	return n
 }
 
 // WithNetworkInstance specifies the network instance within which the next-hop-group

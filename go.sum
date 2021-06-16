@@ -57,8 +57,6 @@ github.com/openconfig/gribi v0.1.1-0.20210423184541-ce37eb4ba92f h1:8vRtC+y0xh9B
 github.com/openconfig/gribi v0.1.1-0.20210423184541-ce37eb4ba92f/go.mod h1:OoH46A2kV42cIXGyviYmAlGmn6cHjGduyC2+I9d/iVs=
 github.com/openconfig/ygot v0.6.0/go.mod h1:o30svNf7O0xK+R35tlx95odkDmZWS9JyWWQSmIhqwAs=
 github.com/openconfig/ygot v0.10.4/go.mod h1:oCQNdXnv7dWc8scTDgoFkauv1wwplJn5HspHcjlxSAQ=
-github.com/openconfig/ygot v0.10.14 h1:CzMWMx17V9hV1eUtKDh8Qi4iYePAlhimHmSDYSsTpwU=
-github.com/openconfig/ygot v0.10.14/go.mod h1:NDGFcX73PnipISpF8yuDpwrsOAl6vqqK4mNPvscWzXA=
 github.com/openconfig/ygot v0.10.15 h1:150MEjCnCtd6x8WEjLSgsmdC/Emzd5Pp1sIfZAX9QKc=
 github.com/openconfig/ygot v0.10.15/go.mod h1:NDGFcX73PnipISpF8yuDpwrsOAl6vqqK4mNPvscWzXA=
 github.com/pborman/getopt v0.0.0-20190409184431-ee0cd42419d3/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=

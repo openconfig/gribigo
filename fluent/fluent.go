@@ -256,6 +256,7 @@ type gRIBIEntry interface {
 	proto() (*spb.AFTOperation, error)
 }
 
+// ipv4Entry is the internal representation of a gRIBI IPv4Entry.
 type ipv4Entry struct {
 	// pb is the gRIBI IPv4Entry that is being composed.
 	pb *aftpb.Afts_Ipv4EntryKey
@@ -300,6 +301,89 @@ func (i *ipv4Entry) proto() (*spb.AFTOperation, error) {
 		NetworkInstance: i.ni,
 		Entry: &spb.AFTOperation_Ipv4{
 			Ipv4: i.pb,
+		},
+	}, nil
+}
+
+// nextHopEntry is the internal representation of a next-hop Entry in gRIBI.
+type nextHopEntry struct {
+	ni string
+	pb *aftpb.Afts_NextHopKey
+}
+
+// NextHopEntry returns a builder that can be used to build up a NextHop within
+// gRIBI.
+func NextHopEntry() *nextHopEntry {
+	return &nextHopEntry{
+		pb: &aftpb.Afts_NextHopKey{
+			NextHop: &aftpb.Afts_NextHop{},
+		},
+	}
+}
+
+// WithNetworkInstance specifies the network instance within which the next-hop
+// is being created.
+func (n *nextHopEntry) WithNetworkInstance(ni string) *nextHopEntry {
+	n.ni = ni
+	return n
+}
+
+// TODO(robjs): add additional NextHopEntry fields.
+
+// proto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// and ElectionID are explicitly not populated such that they can be populated by
+// the function (e.g., AddEntry) to which they are an argument.
+func (n *nextHopEntry) proto() (*spb.AFTOperation, error) {
+	return &spb.AFTOperation{
+		NetworkInstance: n.ni,
+		Entry: &spb.AFTOperation_NextHop{
+			NextHop: n.pb,
+		},
+	}, nil
+}
+
+// nextHopGroupEntry is the internal representation of a next-hop-group Entry in gRIBI.
+type nextHopGroupEntry struct {
+	ni string
+	pb *aftpb.Afts_NextHopGroupKey
+}
+
+// NextHopGroupEntry returns a builder that can be used to build up a NextHopGroup within
+// gRIBI.
+func NextHopGroupEntry() *nextHopGroupEntry {
+	return &nextHopGroupEntry{
+		pb: &aftpb.Afts_NextHopGroupKey{
+			NextHopGroup: &aftpb.Afts_NextHopGroup{},
+		},
+	}
+}
+
+// WithNetworkInstance specifies the network instance within which the next-hop-group
+// is being created.
+func (n *nextHopGroupEntry) WithNetworkInstance(ni string) *nextHopGroupEntry {
+	n.ni = ni
+	return n
+}
+
+// AddNextHop adds the specified nexthop index to the NextHopGroup with the specified weight.
+func (n *nextHopGroupEntry) AddNextHop(index, weight uint64) *nextHopGroupEntry {
+	n.pb.NextHopGroup.NextHop = append(n.pb.NextHopGroup.NextHop, &aftpb.Afts_NextHopGroup_NextHopKey{
+		Index: index,
+		NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+			Weight: &wpb.UintValue{Value: weight},
+		},
+	})
+	return n
+}
+
+// proto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// and ElectionID are explicitly not populated such that they can be populated by
+// the function (e.g., AddEntry) to which they are an argument.
+func (n *nextHopGroupEntry) proto() (*spb.AFTOperation, error) {
+	return &spb.AFTOperation{
+		NetworkInstance: n.ni,
+		Entry: &spb.AFTOperation_NextHopGroup{
+			NextHopGroup: n.pb,
 		},
 	}, nil
 }

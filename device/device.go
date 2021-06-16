@@ -136,7 +136,6 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
 	}
 
 	ribHookfn := func(o constants.OpType, ts int64, ni string, data ygot.GoStruct) {
-		fmt.Printf("hook called with %v on ni %s\n", o, ni)
 		_, _, _ = o, ni, data
 		// write gNMI notifications
 		n, err := gnmiNoti(o, ts, ni, data)
@@ -150,6 +149,7 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
 				},
 			})
 		}
+
 		// TODO(robjs): add to the system RIB here - we need to plumb
 		// an error back to say that the FIB was not programmed.
 		// This means that we need the server to be aware of the FIB programming
@@ -263,6 +263,9 @@ func (d *Device) GNMIAddr() string {
 }
 
 // gnmiNoti creates a gNMI Notification from a RIB operation.
+// TODO(robjs): It would be nice to see whether we can generate
+// this function automatically from somewhere - or at least make it
+// cleaner. It also needs unit test coverage adding.
 func gnmiNoti(t constants.OpType, ts int64, ni string, e ygot.GoStruct) (*gpb.Notification, error) {
 	var ns []*gpb.Notification
 	var err error
@@ -327,6 +330,5 @@ func gnmiNoti(t constants.OpType, ts int64, ni string, e ygot.GoStruct) (*gpb.No
 	}
 	ns[0].Atomic = true
 	ns[0].Prefix.Target = targetName
-	fmt.Printf("returning %s\n", ns[0])
 	return ns[0], nil
 }

@@ -1,11 +1,12 @@
 package compliance
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/openconfig/gribigo/device"
 	"github.com/openconfig/gribigo/negtest"
-	"github.com/openconfig/gribigo/testcommon"
 )
 
 func TestModifyConnectionParameters(t *testing.T) {
@@ -32,12 +33,15 @@ func TestModifyConnectionParameters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.in.ShortName, func(t *testing.T) {
-			startServer, addr := testcommon.Server()
-			go startServer()
+			d, cancel, err := device.New(context.Background())
+			defer cancel()
+			if err != nil {
+				t.Fatalf("cannot start server, %v", err)
+			}
 
 			if tt.wantFatalMsg != "" {
 				if got := negtest.ExpectFatal(t, func(t testing.TB) {
-					tt.in.Fn(addr, t)
+					tt.in.Fn(d.GRIBIAddr(), t)
 				}); !strings.Contains(got, tt.wantFatalMsg) {
 					t.Fatalf("did not get expected fatal error, got: %s, want: %s", got, tt.wantFatalMsg)
 				}
@@ -46,14 +50,14 @@ func TestModifyConnectionParameters(t *testing.T) {
 
 			if tt.wantErrorMsg != "" {
 				if got := negtest.ExpectError(t, func(t testing.TB) {
-					tt.in.Fn(addr, t)
+					tt.in.Fn(d.GRIBIAddr(), t)
 				}); !strings.Contains(got, tt.wantErrorMsg) {
 					t.Fatalf("did not get expected error, got: %s, want: %s", got, tt.wantErrorMsg)
 				}
 			}
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
-			tt.in.Fn(addr, t)
+			tt.in.Fn(d.GRIBIAddr(), t)
 		})
 	}
 }

@@ -76,8 +76,6 @@ func TestGRIBIClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			//startServer, addr := testcommon.Server()
-			//go startServer()
 			d, cancel, err := device.New(context.Background())
 			defer cancel()
 			if err != nil {

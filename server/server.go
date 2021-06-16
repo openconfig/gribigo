@@ -13,39 +13,14 @@ import (
 	"google.golang.org/grpc/status"
 	"lukechampine.com/uint128"
 
-	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	"github.com/openconfig/gribigo/rib"
 )
 
 const (
 	// DefaultNIName specifies the name of the default network instance on the system.
 	DefaultNIName = "DEFAULT"
 )
-
-type RIBManager interface {
-	RIBForNI(string) NIRIB
-}
-
-type NIRIB interface {
-	AddIPv4(*aftpb.Afts_Ipv4EntryKey) error
-}
-
-// ServerOpt is an option that can be provided to the gRIBI Server.
-type ServerOpt interface {
-	isServerOpt()
-}
-
-// WithRIBHandler returns a RIBHandler interface to be used within the gRIBI
-// implementation.
-func WithRIBManager(r RIBManager) *ribManager {
-	return &ribManager{impl: r}
-}
-
-type ribManager struct {
-	impl RIBManager
-}
-
-func (*ribManager) isServerOpt() {}
 
 // Server implements the gRIBI service.
 type Server struct {
@@ -76,7 +51,7 @@ type Server struct {
 
 	// masterRIB is the single gRIBI RIB that is used for a server that runs with
 	// a single elected master, where a single RIB is written to by all clients.
-	masterRIB RIBManager
+	masterRIB *rib.RIB
 }
 
 // clientState stores information that relates to a specific client
@@ -91,6 +66,10 @@ type clientState struct {
 	// setParams indicates whether the parameters have been explicitly
 	// written.
 	setParams bool
+	// lastElecID stores the last election ID that the client
+	// sent to the server. This is used to validate whether the election
+	// ID in an operation matches the expected election ID.
+	lastElecID *spb.Uint128
 }
 
 // DeepCopy returns a copy of the clientState struct.
@@ -133,23 +112,49 @@ func (cp *clientParams) Equal(n *clientParams) bool {
 	return cp.Persist == n.Persist && cp.FIBAck == n.FIBAck && cp.ExpectElecID == n.ExpectElecID
 }
 
-// New creates a new gRIBI server.
-func New(opt ...ServerOpt) *Server {
-	return &Server{
-		cs: map[string]*clientState{},
-		// TODO(robjs): when we implement support for ALL_PRIMARY then we might not
-		// want to create a new RIB by default.
-		masterRIB: hasRIBManager(opt),
-	}
+// ServerOpt is an interface that is implemented by any options to the gRIBI server.
+type ServerOpt interface {
+	isServerOpt()
 }
 
-func hasRIBManager(opt []ServerOpt) RIBManager {
+// WithRIBHook specifies that the given function that is of type rib.RIBHook function
+// should be executed after each change in the RIB.
+func WithRIBHook(fn rib.RIBHookFn) *ribHook {
+	return &ribHook{fn: fn}
+}
+
+// ribHook is the internal implementation of the WithRIBHook option.
+type ribHook struct {
+	fn rib.RIBHookFn
+}
+
+// isServerOpt implemenets the ServerOpt interface.
+func (*ribHook) isServerOpt() {}
+
+// hasRIBHook extracts the ribHook option from the supplied ServerOpt, returning nil
+// if one is not found. It will return only the first argument if multiple are specified.
+func hasRIBHook(opt []ServerOpt) *ribHook {
 	for _, o := range opt {
-		if v, ok := o.(*ribManager); ok {
-			return v.impl
+		if v, ok := o.(*ribHook); ok {
+			return v
 		}
 	}
 	return nil
+}
+
+// New creates a new gRIBI server.
+func New(opt ...ServerOpt) *Server {
+	s := &Server{
+		cs: map[string]*clientState{},
+		// TODO(robjs): when we implement support for ALL_PRIMARY then we might not
+		// want to create a new RIB by default.
+		masterRIB: rib.New(DefaultNIName),
+	}
+
+	if v := hasRIBHook(opt); v != nil {
+		s.masterRIB.SetHook(v.fn)
+	}
+	return s
 }
 
 // Modify implements the gRIBI Modify RPC.
@@ -204,7 +209,6 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 					return
 				}
 			case in.Operation != nil:
-
 				s.doModify(cid, in.Operation, resultChan, errCh)
 				skipWrite = true
 			default:
@@ -221,9 +225,6 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 	}()
 
 	go func() {
-		// TODO(robjs): need to create a queue structure on the server side so that
-		// we can asynchronously handle any messages. The Recv() loop needs to be in
-		// a goroutine empyting a channel, as does the send goroutine.
 		for {
 			res := <-resultChan
 			// update that we have received at least one message.
@@ -432,6 +433,19 @@ func (s *Server) getClientState(id string) (*clientState, bool) {
 	return cs, ok
 }
 
+// storeClientElectionID stores the latest election ID for a client into the
+// server specified. It returns true if the election ID was stored.
+func (s *Server) storeClientElectionID(id string, elecID *spb.Uint128) bool {
+	s.csMu.Lock()
+	defer s.csMu.Unlock()
+	cs, ok := s.cs[id]
+	if !ok {
+		return false
+	}
+	cs.lastElecID = elecID
+	return true
+}
+
 // getClientStateCopy returns a copy of the state for the client with the specified ID, since
 // the state of a client is immutable after the initial creation, we never allow a client to
 // get a copy of the pointer so that they could change this. It returns a copy of the clientState
@@ -458,6 +472,14 @@ func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyRespons
 		})
 	}
 
+	// At this point, we store the latest election ID that we've seen from this
+	// client, even if it does not win the election. This allows us to check
+	// that the client has the same election ID as it has reported to us in
+	// subsequent transactions.
+	if !s.storeClientElectionID(id, elecID) {
+		return nil, status.Newf(codes.Internal, "cannot store election ID %s for client %s", elecID, id).Err()
+	}
+
 	s.elecMu.RLock()
 	defer s.elecMu.RUnlock()
 	nm, _, err := isNewMaster(elecID, s.curElecID)
@@ -475,22 +497,38 @@ func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyRespons
 	}, nil
 }
 
+// getElection returns the details of the current election on the server.
+func (s *Server) getElection() *electionDetails {
+	s.elecMu.RLock()
+	defer s.elecMu.RUnlock()
+	return &electionDetails{
+		master: s.curMaster,
+		ID:     s.curElecID,
+	}
+}
+
 // doModify implements a modify operation for a specific input set of AFTOperation
-// messages for the client with the specified id. It writes the result to the supplied
+// messages for the client with the specified cid. It writes the result to the supplied
 // ModifyResponse channel when successful, or writes the error to the supplied errCh.
-func (s *Server) doModify(id string, ops []*spb.AFTOperation, resCh chan *spb.ModifyResponse, errCh chan error) {
-	cs, ok := s.getClientState(id)
+func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.ModifyResponse, errCh chan error) {
+	cs, ok := s.getClientState(cid)
 	switch {
 	case !ok:
-		errCh <- status.Newf(codes.Internal, "operation received for unknown client, %s", id).Err()
+		errCh <- status.Newf(codes.Internal, "operation received for unknown client, %s", cid).Err()
+		return
 	case cs.params == nil || !cs.params.ExpectElecID || !cs.params.Persist:
 		// these are parameters that we do not support.
 		errCh <- addModifyErrDetailsOrReturn(
-			status.New(codes.Unimplemented, "unsupported default parameters for client"),
+			status.New(codes.Unimplemented, "unsupported parameters for client"),
 			&spb.ModifyRPCErrorDetails{
 				Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
 			})
+		return
 	}
+
+	elec := s.getElection()
+	elec.clientLatest = cs.lastElecID
+	elec.client = cid
 
 	var wg sync.WaitGroup
 	for _, o := range ops {
@@ -500,16 +538,31 @@ func (s *Server) doModify(id string, ops []*spb.AFTOperation, resCh chan *spb.Mo
 			if ni == "" {
 				ni = DefaultNIName
 			}
-			var rib NIRIB
-			if s.masterRIB != nil {
-				rib = s.masterRIB.RIBForNI(ni)
+			r, ok := s.masterRIB.RIBForNI(ni)
+			if !ok {
+				// this is an unknown network instance, we should not return
+				// an error to the client since we do not want the connection
+				// to be torn down.
+				log.Errorf("rejected operation %s since it is an unknown network-instance, %s", o, ni)
+				resCh <- &spb.ModifyResponse{
+					Result: []*spb.AFTResult{{
+						Id:     o.Id,
+						Status: spb.AFTResult_FAILED,
+					}},
+				}
+				return
 			}
-
 			wg.Add(1)
-			go func() {
-				addEntry(rib, o, s.curElecID, cs.params.FIBAck, resCh, errCh)
+			go func(op *spb.AFTOperation) {
+				res, err := addEntry(r, op, cs.params.FIBAck, elec)
+				switch {
+				case err != nil:
+					errCh <- err
+				default:
+					resCh <- res
+				}
 				wg.Done()
-			}()
+			}(o)
 		default:
 			errCh <- addModifyErrDetailsOrReturn(
 				status.Newf(codes.Unimplemented, "error processing operation %s, unsupported", o.Op),
@@ -522,47 +575,36 @@ func (s *Server) doModify(id string, ops []*spb.AFTOperation, resCh chan *spb.Mo
 	wg.Wait()
 }
 
-// FIXME(robjs): add test coverage for this function.
-//
-// addEntry adds the specified entry op to the RIB, r. The server's current election ID is specicied by elecID,
-// and the client's requested ACK mode by fibACK. Results are written to the results (resCh) or error (errCh)
-// channel.
-func addEntry(r NIRIB, op *spb.AFTOperation, electID *spb.Uint128, fibACK bool, resCh chan *spb.ModifyResponse, errCh chan error) {
-	// check whether the election ID is the current one.
-	if op.ElectionId == nil {
-		// this is an error since we only support election IDs.
-		errCh <- addModifyErrDetailsOrReturn(
-			status.Newf(codes.FailedPrecondition, "no specified election ID when it was required"),
-			&spb.ModifyRPCErrorDetails{
-				// TODO(robjs): we probably need to define what happens here, no specified error code.
-			})
-		return
-	}
-	currentID := uint128.New(electID.Low, electID.High)
-	thisID := uint128.New(op.ElectionId.Low, op.ElectionId.High)
-	switch {
-	case thisID.Cmp(currentID) > 0:
-		// this value is greater than the known master ID. Return an error.
-		errCh <- status.Newf(codes.FailedPrecondition, "specified election ID was greater than existing election, %s > %s", thisID, currentID).Err()
-		return
-	case thisID.Cmp(currentID) < 0:
-		// this value is less as the current master ID, ignore this transaction.
-		// note that since we don't respond here, the client at the other side
-		// is just going to have a pending transaction forever.
-		//
-		// TODO(robjs): should we respond and say "this was OK, but we ignored it?"
-		return
+// electionDetails provides a summary of a single election from the perspective of one client.
+type electionDetails struct {
+	// master is the clientID of the client that is master after the election.
+	master string
+	// electionID is the ID of the latest election.
+	ID *spb.Uint128
+	// client is the ID of the client that the query is being done on behalf of.
+	client string
+	// clientLatest is the latest electionID that the client provided us with.
+	clientLatest *spb.Uint128
+}
+
+// addEntry adds the specified entry op to the RIB, r. The client's requested ACK mode by fibACK. The
+// details of the current election on the server is described in election.
+// The results are returned as a SubscribeResponse and an error which must be a status.Status.
+func addEntry(r *rib.RIBHolder, op *spb.AFTOperation, fibACK bool, election *electionDetails) (*spb.ModifyResponse, error) {
+	if op == nil {
+		return nil, status.Newf(codes.Internal, "invalid nil operation received").Err()
 	}
 
-	if r == nil {
-		// if the RIB was specified to nil, we just return OK for this
-		// transaction.
-		resCh <- &spb.ModifyResponse{
-			Result: []*spb.AFTResult{{
-				Id: op.Id,
-			}},
-		}
-		return
+	if r == nil || !r.IsValid() {
+		return nil, status.Newf(codes.Internal, "invalid RIB state for network instance name: '%s'", op.GetNetworkInstance()).Err()
+	}
+
+	res, ok, err := checkElectionForModify(op.Id, op.ElectionId, election)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return res, err
 	}
 
 	result := &spb.AFTResult{Id: op.Id}
@@ -571,7 +613,7 @@ func addEntry(r NIRIB, op *spb.AFTOperation, electID *spb.Uint128, fibACK bool, 
 		err := r.AddIPv4(t.Ipv4)
 		switch {
 		case err != nil:
-			log.Infof("failed to program with %v,  << %s >>", err, t.Ipv4.Prefix)
+			log.Errorf("adding IPv4 entry failed, reason: %v", err)
 			result.Status = spb.AFTResult_FAILED
 		case fibACK:
 			result.Status = spb.AFTResult_FIB_PROGRAMMED
@@ -579,10 +621,89 @@ func addEntry(r NIRIB, op *spb.AFTOperation, electID *spb.Uint128, fibACK bool, 
 			result.Status = spb.AFTResult_RIB_PROGRAMMED
 		}
 	default:
-		errCh <- status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
+		return nil, status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
 	}
 
-	resCh <- &spb.ModifyResponse{
+	return &spb.ModifyResponse{
 		Result: []*spb.AFTResult{result},
+	}, nil
+}
+
+// checkElectionForModify checks whether the operation with ID opID, and election ID opElecID
+// with the server that has the election context described by election should proceed. It returns
+//  - a ModifyResponse which is to be sent to the client
+//  - a bool determining whether the modify should proceed
+//  - an error that is returned to the client.
+// The bool is set to true in the case that a non-fatal error (e.g., an error whereby the
+// operation is just ignored) is encountered.
+// Any returned error is considered fatal to the Modify RPC and can be sent directly back
+// to the client.
+func checkElectionForModify(opID uint64, opElecID *spb.Uint128, election *electionDetails) (*spb.ModifyResponse, bool, error) {
+	// check whether the election ID is the current one.
+	if opElecID == nil {
+		// this is an error since we only support election IDs.
+		return nil, false, addModifyErrDetailsOrReturn(
+			status.Newf(codes.FailedPrecondition, "no specified election ID when it was required"),
+			&spb.ModifyRPCErrorDetails{
+				// TODO(robjs): we probably need to define what happens here, no specified error code.
+			})
 	}
+
+	switch {
+	case election == nil, election.master == "", election.ID == nil:
+		return nil, false, status.Newf(codes.Internal, "invalid election state in server, details of election: %+v", election).Err()
+	case election.clientLatest == nil:
+		// This client might not have sent us an election ID yet, which means that they are in
+		// the wrong.
+		return nil, false, addModifyErrDetailsOrReturn(
+			status.Newf(codes.FailedPrecondition, "client has not yet specified an election ID"),
+			&spb.ModifyRPCErrorDetails{},
+		)
+	case election.client != election.master:
+		// this client is not the elected master.
+		return &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     opID,
+				Status: spb.AFTResult_FAILED,
+			}},
+		}, false, nil
+	}
+
+	thisID := uint128.New(opElecID.Low, opElecID.High)
+	// check that this client sent us the same ID as we had before.
+	currentClientID := uint128.New(election.clientLatest.Low, election.clientLatest.High)
+	if thisID.Cmp(currentClientID) != 0 {
+		log.Errorf("returning failed to client because operation election ID %s != their latest election ID %s (master is: %s with ID %s)", opElecID, election.clientLatest, election.master, election.ID)
+		return &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     opID,
+				Status: spb.AFTResult_FAILED,
+			}},
+		}, false, nil
+	}
+
+	// This is a belt and braces check -- it's not clear that we need to do it. Since we
+	// checked that the master that is stored in the server is this client. However, we do
+	// an additional check to ensure that the current ID that we are storing is definitely
+	// the same as the one that we just received.
+	currentID := uint128.New(election.ID.Low, election.ID.High)
+	switch {
+	case thisID.Cmp(currentID) > 0:
+		// this value is greater than the known master ID. Return an error
+		return nil, false, status.Newf(codes.FailedPrecondition, "specified election ID was greater than existing election, %s > %s", thisID, currentID).Err()
+	case thisID.Cmp(currentID) < 0:
+		// this value is less as the current master ID, ignore this transaction.
+		// note that since we don't respond here, the client at the other side
+		// is just going to have a pending transaction forever.
+		//
+		// TODO(robjs): should we add an error code here?
+		log.Errorf("returning failed to client because operation election ID %s < the master election ID %s (master: %s)", opElecID, election.ID, election.master)
+		return &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     opID,
+				Status: spb.AFTResult_FAILED,
+			}},
+		}, false, nil
+	}
+	return nil, true, nil
 }

@@ -555,8 +555,8 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 			if ni == "" {
 				ni = DefaultNIName
 			}
-			r, ok := s.masterRIB.RIBForNI(ni)
-			if !ok {
+
+			if _, ok := s.masterRIB.NetworkInstanceRIB(ni); !ok {
 				// this is an unknown network instance, we should not return
 				// an error to the client since we do not want the connection
 				// to be torn down.
@@ -571,7 +571,7 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 			}
 			wg.Add(1)
 			go func(op *spb.AFTOperation) {
-				res, err := addEntry(r, op, cs.params.FIBAck, elec)
+				res, err := addEntry(s.masterRIB, ni, op, cs.params.FIBAck, elec)
 				switch {
 				case err != nil:
 					errCh <- err
@@ -604,15 +604,21 @@ type electionDetails struct {
 	clientLatest *spb.Uint128
 }
 
-// addEntry adds the specified entry op to the RIB, r. The client's requested ACK mode by fibACK. The
+// addEntry adds the specified entry op to the RIB, r, within network instance ni.
+// The client's requested ACK mode by fibACK. The
 // details of the current election on the server is described in election.
 // The results are returned as a SubscribeResponse and an error which must be a status.Status.
-func addEntry(r *rib.RIBHolder, op *spb.AFTOperation, fibACK bool, election *electionDetails) (*spb.ModifyResponse, error) {
+func addEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, election *electionDetails) (*spb.ModifyResponse, error) {
 	if op == nil {
 		return nil, status.Newf(codes.Internal, "invalid nil operation received").Err()
 	}
 
-	if r == nil || !r.IsValid() {
+	if r == nil {
+		return nil, status.New(codes.Internal, "invalid RIB state").Err()
+	}
+
+	niR, ok := r.NetworkInstanceRIB(ni)
+	if !ok || !niR.IsValid() {
 		return nil, status.Newf(codes.Internal, "invalid RIB state for network instance name: '%s'", op.GetNetworkInstance()).Err()
 	}
 
@@ -624,25 +630,39 @@ func addEntry(r *rib.RIBHolder, op *spb.AFTOperation, fibACK bool, election *ele
 		return res, err
 	}
 
-	result := &spb.AFTResult{Id: op.Id}
-	switch t := op.GetEntry().(type) {
-	case *spb.AFTOperation_Ipv4:
-		err := r.AddIPv4(t.Ipv4)
-		switch {
-		case err != nil:
-			log.Errorf("adding IPv4 entry failed, reason: %v", err)
-			result.Status = spb.AFTResult_FAILED
-		case fibACK:
-			result.Status = spb.AFTResult_FIB_PROGRAMMED
-		default:
-			result.Status = spb.AFTResult_RIB_PROGRAMMED
-		}
-	default:
-		return nil, status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
+	results := []*spb.AFTResult{}
+	okACK := spb.AFTResult_RIB_PROGRAMMED
+	// TODO(robjs): today we just say anything that hit
+	// the RIB hit the FIB. We need to add a feedback loop
+	// that checks this.
+	if fibACK {
+		okACK = spb.AFTResult_FIB_PROGRAMMED
+	}
+
+	oks, faileds, err := r.AddEntry(ni, op)
+	if err != nil {
+		// this error is fatal for the connection as simply erroneous
+		// entries are just reported as failed.
+		return nil, status.Newf(codes.Internal, "cannot process input operation %s, fatal error", ok).Err()
+	}
+	for _, ok := range oks {
+		results = append(results, &spb.AFTResult{
+			Id:     ok.ID,
+			Status: okACK,
+		})
+	}
+
+	for _, fail := range faileds {
+		results = append(results, &spb.AFTResult{
+			Id:     fail.ID,
+			Status: spb.AFTResult_FAILED,
+			// TODO(robjs): add somewhere for the error that we provide to be
+			// returned.
+		})
 	}
 
 	return &spb.ModifyResponse{
-		Result: []*spb.AFTResult{result},
+		Result: results,
 	}, nil
 }
 

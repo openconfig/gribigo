@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/golang/glog"
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/goyang/pkg/yang"
 	"github.com/openconfig/gribigo/aft"
@@ -20,6 +21,7 @@ import (
 
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 // unixTS is used to determine the current unix timestamp in nanoseconds since the
@@ -46,6 +48,23 @@ type RIB struct {
 
 	// TODO(robjs): reference count NHGs and NHs across all AFTs to ensure that we
 	// don't allow entries to be deleted that are in use.
+
+	// pendMu protects the pendingCandidates.
+	pendMu sync.RWMutex
+	// pendingEntries is the set of entries that have been requested by
+	// the AddXXX methods that cannot yet be installed in the RIB because they do
+	// not resolve. Resolve is defined as canResolve returning true - which means that:
+	//  - entries (ipv4, ipv6 etc.) reference valid NHGs
+	//  - NHGs reference valid NHs
+	//  - NHs are accepted by default (since they can be resolved with other protocols)
+	//
+	// After every successful AddXXX operation the list of candidates is walked to
+	// determine whether they are now resolvable.
+	//
+	// The candidates are stored as the operation that was submitted in order that the
+	// same AddXXX methods can be used along with network instance the operation
+	// referred to. The map is keyed by the operation ID.
+	pendingEntries map[uint64]*pendingEntry
 }
 
 // RIBHolder is a container for a set of RIBs.
@@ -64,6 +83,14 @@ type RIBHolder struct {
 	// as we add to the RIB. We probably want to allow invalid entries to be
 	// implemented.
 
+	// checkFn is a function that is called for all entries before they are
+	// considered valid candidates to be merged. It can be used to check that
+	// an entry is resolvable. The argument handed to it is a candidate RIB
+	// as described by an aft.RIB structure. It returns a boolean indicating
+	// whether the entry should be installed, or an error indicating a fatal
+	// error for this entry.
+	checkFn func(a *aft.RIB) (bool, error)
+
 	// postChangeHook is a function that is called after each of the operations
 	// within the RIB completes, it takes arguments of the
 	//   - name of the network instance
@@ -74,12 +101,23 @@ type RIBHolder struct {
 
 // New returns a new RIB with the default network instance created with name dn.
 func New(dn string) *RIB {
-	return &RIB{
-		niRIB: map[string]*RIBHolder{
-			dn: NewRIBHolder(dn),
-		},
-		defaultName: dn,
+	r := &RIB{
+		niRIB:          map[string]*RIBHolder{},
+		defaultName:    dn,
+		pendingEntries: map[uint64]*pendingEntry{},
 	}
+	defRH := NewRIBHolder(dn, RIBHolderCheckFn(r.canResolve))
+	r.niRIB[dn] = defRH
+	return r
+}
+
+// pendingEntry describes an operation that is pending on the gRIBI server. Generally,
+// this is due to RIB recursion lookup failures.
+type pendingEntry struct {
+	// ni is the network instance the operation is operating on.
+	ni string
+	// op is the AFTOperation that is being performed.
+	op *spb.AFTOperation
 }
 
 // SetHook assigns the supplied hook to all network instance RIBs within
@@ -90,12 +128,137 @@ func (r *RIB) SetHook(fn RIBHookFn) {
 	}
 }
 
-// NI returns the RIB for the network instance with name s.
-func (r *RIB) RIBForNI(s string) (*RIBHolder, bool) {
+// NetworkInstanceRIB returns the RIB for the network instance with name s.
+func (r *RIB) NetworkInstanceRIB(s string) (*RIBHolder, bool) {
 	r.nrMu.RLock()
 	defer r.nrMu.RUnlock()
 	rh, ok := r.niRIB[s]
 	return rh, ok
+}
+
+// OpResult contains the result of an operation (Add, Modify, Delete).
+type OpResult struct {
+	// ID is the ID of the operation as specified in the input request.
+	ID uint64
+	// Op is the operation that was performed.
+	Op *spb.AFTOperation
+	// Error is an error string detailing any error that occurred.
+	Error string
+}
+
+// AddEntry adds the entry described in op to the network instance with name ni. It returns
+// two slices of OpResults:
+//  - the first ("oks") describes the set of entries that were installed successfully based on
+//    this operation.
+//  - the second ("fails") describes the set of entries that were NOT installed, and encountered
+//    fatal errors during the process of installing the entry.
+//
+// It returns an error if there is a fatal error encountered for the function during operation.
+//
+// The oks slice may have length > 1 (i.e., not just be the input operation) in the case an entry
+// becomes resolvable (per canResolve) *after* this operation has been installed. It will recursively
+// call the internal implementation in order to install all entries that are now resolvable based
+// on the operation provided.
+func (r *RIB) AddEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpResult, error) {
+	oks, fails := []*OpResult{}, []*OpResult{}
+	checked := map[uint64]bool{}
+	if err := r.addEntryInternal(ni, op, &oks, &fails, checked); err != nil {
+		return nil, nil, err
+	}
+	return oks, fails, nil
+}
+
+// addEntryInternal is the internal implementation of AddEntry. It takes arguments of:
+//  - the name of the network instance being operated on (ni) by the operation op.
+//  - a slice of installed results, which is appended to.
+//  - a slice of failed results, which is appended to.
+//  - a map, keyed by operation ID, describing the stack of calls that we have currently
+//    done during this recursion so that we do not repeat an install operation.
+func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*OpResult, installStack map[uint64]bool) error {
+	if installStack[op.GetId()] {
+		return nil
+	}
+	niR, ok := r.NetworkInstanceRIB(ni)
+	if !ok || !niR.IsValid() {
+		return fmt.Errorf("invalid network instance, %s", ni)
+	}
+
+	var installed bool
+	var err error
+	switch t := op.Entry.(type) {
+	case *spb.AFTOperation_Ipv4:
+		log.V(2).Infof("adding IPv4 prefix %s", t.Ipv4.GetPrefix())
+		installed, err = niR.AddIPv4(t.Ipv4)
+	case *spb.AFTOperation_NextHop:
+		log.V(2).Infof("adding NH Index %d", t.NextHop.GetIndex())
+		installed, err = niR.AddNextHop(t.NextHop)
+	case *spb.AFTOperation_NextHopGroup:
+		log.V(2).Infof("adding NHG ID %d", t.NextHopGroup.GetId())
+		installed, err = niR.AddNextHopGroup(t.NextHopGroup)
+	default:
+		return status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
+	}
+
+	switch {
+	case err != nil:
+		*fails = append(*fails, &OpResult{
+			ID:    op.GetId(),
+			Op:    op,
+			Error: err.Error(),
+		})
+	case installed:
+		// Mark that within this stack we have installed this entry successfully, so
+		// we don't retry if it was somewhere further up the stack.
+		installStack[op.GetId()] = true
+		log.V(2).Infof("operation %d installed in RIB successfully", op.GetId())
+		r.rmPending(op.GetId())
+		*oks = append(*oks, &OpResult{
+			ID: op.GetId(),
+			Op: op,
+		})
+		// we may now have made some other pending entry be possible to install,
+		// so try them all out!
+		for _, e := range r.getPending() {
+			err := r.addEntryInternal(e.ni, e.op, oks, fails, installStack)
+			if err != nil {
+				return err
+			}
+		}
+	default:
+		r.addPending(op.GetId(), &pendingEntry{
+			ni: ni,
+			op: op,
+		})
+	}
+
+	return nil
+}
+
+// getPending returns the current set of pending entry operations for the
+// RIB receiver.
+func (r *RIB) getPending() []*pendingEntry {
+	r.pendMu.RLock()
+	defer r.pendMu.RUnlock()
+	p := []*pendingEntry{}
+	for _, e := range r.pendingEntries {
+		p = append(p, e)
+	}
+	return p
+}
+
+// addPending adds a pendingEntry with operation ID id to the pending entries
+// within the RIB.
+func (r *RIB) addPending(id uint64, e *pendingEntry) {
+	r.pendMu.Lock()
+	defer r.pendMu.Unlock()
+	r.pendingEntries[id] = e
+}
+
+// rmPending removes the operation with ID id from the RIB's pendingEntries.
+func (r *RIB) rmPending(id uint64) {
+	r.pendMu.Lock()
+	defer r.pendMu.Unlock()
+	delete(r.pendingEntries, id)
 }
 
 // canResolve takes an input candidate RIB, which contains only the new entry
@@ -152,7 +315,8 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 	if netInst == "" {
 		netInst = r.defaultName
 	}
-	niRIB, ok := r.RIBForNI(netInst)
+
+	niRIB, ok := r.NetworkInstanceRIB(netInst)
 	if !ok {
 		return false, fmt.Errorf("invalid network-instance %s", netInst)
 	}
@@ -184,7 +348,7 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 		}
 		resolveRIB := niRIB
 		if otherNI := i.GetNextHopGroupNetworkInstance(); otherNI != "" {
-			resolveRIB, ok = r.RIBForNI(otherNI)
+			resolveRIB, ok = r.NetworkInstanceRIB(otherNI)
 			if !ok {
 				return false, fmt.Errorf("invalid unknown network-instance for IPv4Entry, %s", otherNI)
 			}
@@ -201,14 +365,65 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 	return false, errors.New("no entries in specified candidate")
 }
 
+// ribHolderOpt is an interface implemented by all options that can be provided to the RIBHolder's NewRIBHolder
+// function.
+type ribHolderOpt interface {
+	isRHOpt()
+}
+
+// ribHolderCheckFn is a ribHolderOpt that provides a function that can be run for each operation to
+// determine whether it should be installed in the RIB.
+type ribHolderCheckFn struct {
+	fn func(string, *aft.RIB) (bool, error)
+}
+
+// isRHOpt implements the ribHolderOpt function
+func (r *ribHolderCheckFn) isRHOpt() {}
+
+// RIBHolderCheckFn is an option that provides a function f - taking arguments of:
+//  * a network instance name as a string
+//  * a candidate RIB as an aft.RIB GoStruct
+// It must return:
+//  * a bool indicating whether the RIB operation should go ahead.
+//  * an error that is considered fatal for the entry (i.e., this entry should never
+//    be tried again).
+//
+// TODO(robjs): consider whether this should take an optype too - so that the same checkfn
+// can be used when we do deletes for refcounting.
+func RIBHolderCheckFn(f func(string, *aft.RIB) (bool, error)) *ribHolderCheckFn {
+	return &ribHolderCheckFn{fn: f}
+}
+
+// hasCheckFn checks whether there is a ribHolderCheckFn option within the supplied
+// options.
+func hasCheckFn(opts []ribHolderOpt) *ribHolderCheckFn {
+	for _, o := range opts {
+		if f, ok := o.(*ribHolderCheckFn); ok {
+			return f
+		}
+	}
+	return nil
+}
+
 // NewRIBHolder returns a new RIB holder for a single network instance.
-func NewRIBHolder(name string) *RIBHolder {
-	return &RIBHolder{
+func NewRIBHolder(name string, opts ...ribHolderOpt) *RIBHolder {
+	r := &RIBHolder{
 		name: name,
 		r: &aft.RIB{
 			Afts: &aft.Afts{},
 		},
 	}
+
+	fn := hasCheckFn(opts)
+	// If there is a check function - regenerate it so that it
+	// always operates on the local name.
+	if fn != nil {
+		checkFn := func(r *aft.RIB) (bool, error) {
+			return fn.fn(name, r)
+		}
+		r.checkFn = checkFn
+	}
+	return r
 }
 
 // IsValid determines whether the specified RIBHolder is valid to be
@@ -298,18 +513,17 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 	return nr, nil
 }
 
-// AddIPv4 adds the IPv4 entry described by e to the RIB. It returns an error
-// if the entry cannot be added.
-func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+// AddIPv4 adds the IPv4 entry described by e to the RIB. It returns a bool
+// which indicates whether the entry was added, and an error which can be
+// considered fatal (i.e., there is no future possibility of this entry
+// becoming valid).
+func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, error) {
 	if r.r == nil {
-		return errors.New("invalid RIB structure, nil")
+		return false, errors.New("invalid RIB structure, nil")
 	}
 
 	if e == nil {
-		return errors.New("nil IPv4 Entry provided")
+		return false, errors.New("nil IPv4 Entry provided")
 	}
 
 	// This is a hack, since ygot does not know that the field that we
@@ -319,18 +533,24 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 		Ipv4Entry: []*aftpb.Afts_Ipv4EntryKey{e},
 	})
 	if err != nil {
-		return fmt.Errorf("invalid IPv4Entry, %v", err)
+		return false, fmt.Errorf("invalid IPv4Entry, %v", err)
 	}
 
-	// MergeStructInto doesn't completely replace a list entry if it finds a missing key,
-	// so will append the two entries together.
-	// We don't use Delete itself because it will deadlock (we already hold the lock).
-	delete(r.r.GetAfts().Ipv4Entry, e.GetPrefix())
+	if r.checkFn != nil {
+		ok, err := r.checkFn(nr)
+		if err != nil {
+			// this is a fatal error, and this entry should never
+			// be installed.
+			return false, err
+		}
+		if !ok {
+			// non-fatal, but we don't want to install this entry.
+			return false, nil
+		}
+	}
 
-	// TODO(robjs): consider what happens if this fails -- we may leave the RIB in
-	// an inconsistent state.
-	if err := ygot.MergeStructInto(r.r, nr); err != nil {
-		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	if err := r.doAddIPv4(e.GetPrefix(), nr); err != nil {
+		return false, err
 	}
 
 	// We expect that there is just a single entry here since we are
@@ -342,6 +562,23 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 		}
 	}
 
+	return true, nil
+}
+
+// doAddIPv4 adds an IPv4Entry holding the shortest possible lock on the RIB.
+func (r *RIBHolder) doAddIPv4(pfx string, newRIB *aft.RIB) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// MergeStructInto doesn't completely replace a list entry if it finds a missing key,
+	// so will append the two entries together.
+	// We don't use Delete itself because it will deadlock (we already hold the lock).
+	delete(r.r.GetAfts().Ipv4Entry, pfx)
+
+	// TODO(robjs): consider what happens if this fails -- we may leave the RIB in
+	// an inconsistent state.
+	if err := ygot.MergeStructInto(r.r, newRIB); err != nil {
+		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	}
 	return nil
 }
 
@@ -350,8 +587,6 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 // of the entry is specified it is checked for equality, and removed only if the entries
 // match.
 func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	if e == nil {
 		return errors.New("nil entry provided")
 	}
@@ -380,7 +615,7 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 
 	de := r.r.Afts.Ipv4Entry[e.GetPrefix()]
 
-	delete(r.r.Afts.Ipv4Entry, e.GetPrefix())
+	r.doDeleteIPv4(e.GetPrefix())
 
 	if r.postChangeHook != nil {
 		r.postChangeHook(constants.DELETE, unixTS(), r.name, de)
@@ -389,31 +624,46 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	return nil
 }
 
-// AddNextHopGroup adds a NextHopGroup e to the RIBHolder receiver. It returns an error
-// if the group cannot be added.
-func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
+// doDeleteIPv4 deletes pfx from the IPv4Entry RIB holding the shortest possible lock.
+func (r *RIBHolder) doDeleteIPv4(pfx string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	delete(r.r.Afts.Ipv4Entry, pfx)
+}
 
+// AddNextHopGroup adds a NextHopGroup e to the RIBHolder receiver. It returns an error
+// if the group cannot be added.
+func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, error) {
 	if r.r == nil {
-		return errors.New("invalid RIB structure, nil")
+		return false, errors.New("invalid RIB structure, nil")
 	}
 
 	if e == nil {
-		return errors.New("nil NextHopGroup provided")
+		return false, errors.New("nil NextHopGroup provided")
 	}
+
 	nr, err := candidateRIB(&aftpb.Afts{
 		NextHopGroup: []*aftpb.Afts_NextHopGroupKey{e},
 	})
 	if err != nil {
-		return fmt.Errorf("invalid NextHopGroup, %v", err)
+		return false, fmt.Errorf("invalid NextHopGroup, %v", err)
 	}
 
-	// Handle implicit replace.
-	delete(r.r.GetAfts().NextHop, e.GetId())
+	if r.checkFn != nil {
+		ok, err := r.checkFn(nr)
+		if err != nil {
+			// this is a fatal error, and this entry should never
+			// be installed.
+			return false, err
+		}
+		if !ok {
+			// non-fatal, but we don't want to install this entry.
+			return false, nil
+		}
+	}
 
-	if err := ygot.MergeStructInto(r.r, nr); err != nil {
-		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	if err := r.doAddNHG(e.GetId(), nr); err != nil {
+		return false, err
 	}
 
 	if r.postChangeHook != nil {
@@ -422,34 +672,54 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 		}
 	}
 
+	return true, nil
+}
+
+// doAddNHG adds a NHG holding the shortest possible lock on the RIB to avoid
+// deadlocking.
+func (r *RIBHolder) doAddNHG(ID uint64, newRIB *aft.RIB) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Handle implicit replace.
+	delete(r.r.GetAfts().NextHopGroup, ID)
+
+	if err := ygot.MergeStructInto(r.r, newRIB); err != nil {
+		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	}
 	return nil
 }
 
 // AddNextHop adds a new NextHop e to the RIBHolder receiver. It returns an error if
 // the group cannot be added.
-func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 	if r.r == nil {
-		return errors.New("invalid RIB structure, nil")
+		return false, errors.New("invalid RIB structure, nil")
 	}
 
 	if e == nil {
-		return errors.New("nil NextHop provided")
+		return false, errors.New("nil NextHop provided")
 	}
 	nr, err := candidateRIB(&aftpb.Afts{
 		NextHop: []*aftpb.Afts_NextHopKey{e},
 	})
 	if err != nil {
-		return fmt.Errorf("invalid NextHopGroup, %v", err)
+		return false, fmt.Errorf("invalid NextHopGroup, %v", err)
+	}
+	if r.checkFn != nil {
+		ok, err := r.checkFn(nr)
+		if err != nil {
+			// this is a fatal error, and this entry should never
+			// be installed.
+			return false, err
+		}
+		if !ok {
+			// non-fatal, but we don't want to install this entry.
+			return false, nil
+		}
 	}
 
-	// Handle implicit replace.
-	delete(r.r.GetAfts().NextHopGroup, e.GetIndex())
-
-	if err := ygot.MergeStructInto(r.r, nr); err != nil {
-		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	if err := r.doAddNH(e.GetIndex(), nr); err != nil {
+		return false, err
 	}
 
 	if r.postChangeHook != nil {
@@ -458,6 +728,20 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
 		}
 	}
 
+	return true, nil
+}
+
+// doAddNHGadds a NH holding the shortest possible lock on the RIB to avoid
+// deadlocking.
+func (r *RIBHolder) doAddNH(index uint64, newRIB *aft.RIB) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Handle implicit replace.
+	delete(r.r.GetAfts().NextHop, index)
+
+	if err := ygot.MergeStructInto(r.r, newRIB); err != nil {
+		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	}
 	return nil
 }
 

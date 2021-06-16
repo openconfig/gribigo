@@ -188,6 +188,9 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 			)
 
 			switch {
+			case in == nil:
+				log.Errorf("received nil message on Modify channel")
+				skipWrite = true
 			case in.Params != nil:
 				var err error
 				if res, err = s.checkParams(cid, in.Params, gotmsg); err != nil {
@@ -235,7 +238,12 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		}
 	}()
 
-	return <-errCh
+	err := <-errCh
+
+	// when this client goes away, we need to clean up its state.
+	s.deleteClient(cid)
+
+	return err
 }
 
 // newClient creates a new client context within the server using the specified string
@@ -252,6 +260,15 @@ func (s *Server) newClient(id string) error {
 	}
 
 	return nil
+}
+
+// deleteClient removes the client with the specified id from the server. It does not return
+// an error if the client cannot be deleted, since this action is performed when the other
+// side has already gone away, so there is no error we can return to them.
+func (s *Server) deleteClient(id string) {
+	s.csMu.Lock()
+	defer s.csMu.Unlock()
+	delete(s.cs, id)
 }
 
 // updateParams writes the parameters for the client specified by id to the server state

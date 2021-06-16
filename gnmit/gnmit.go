@@ -43,13 +43,13 @@ func periodic(period time.Duration, fn func()) {
 //
 // New returns the new collector, the address it is listening on in the form hostname:port
 // or any errors encounted whilst setting it up.
-func New(ctx context.Context, addr string, hostname string, sendMeta bool) (*Collector, string, error) {
+func New(ctx context.Context, addr string, hostname string, sendMeta bool, opts ...grpc.ServerOption) (*Collector, string, error) {
 	c := &Collector{
 		inCh: make(chan *gpb.SubscribeResponse),
 		name: hostname,
 	}
 
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(opts...)
 	c.cache = cache.New([]string{hostname})
 	t := c.cache.GetTarget(hostname)
 

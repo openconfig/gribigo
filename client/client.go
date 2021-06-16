@@ -4,6 +4,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	log "github.com/golang/glog"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
@@ -151,7 +153,11 @@ type DialOpt interface {
 func (c *Client) Dial(ctx context.Context, addr string, opts ...DialOpt) error {
 	// TODO(robjs): translate any options within the dial options here, we may
 	// want to consider just accepting some gRPC dialoptions directly.
-	conn, err := grpc.DialContext(ctx, addr, grpc.WithInsecure(), grpc.WithBlock())
+
+	conn, err := grpc.DialContext(ctx, addr,
+		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true,
+		})), grpc.WithBlock())
 	if err != nil {
 		return fmt.Errorf("cannot dial remote system, %v", err)
 	}

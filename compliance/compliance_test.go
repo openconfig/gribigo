@@ -7,6 +7,7 @@ import (
 
 	"github.com/openconfig/gribigo/device"
 	"github.com/openconfig/gribigo/negtest"
+	"github.com/openconfig/gribigo/testcommon"
 )
 
 func TestModifyConnectionParameters(t *testing.T) {
@@ -33,7 +34,11 @@ func TestModifyConnectionParameters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.in.ShortName, func(t *testing.T) {
-			d, cancel, err := device.New(context.Background())
+			creds, err := device.TLSCredsFromFile(testcommon.TLSCreds())
+			if err != nil {
+				t.Fatalf("cannot load credentials, got err: %v", err)
+			}
+			d, cancel, err := device.New(context.Background(), creds)
 			defer cancel()
 			if err != nil {
 				t.Fatalf("cannot start server, %v", err)

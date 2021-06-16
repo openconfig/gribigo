@@ -11,6 +11,7 @@ import (
 	"github.com/openconfig/gribigo/device"
 	"github.com/openconfig/gribigo/negtest"
 	"github.com/openconfig/gribigo/server"
+	"github.com/openconfig/gribigo/testcommon"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -76,7 +77,11 @@ func TestGRIBIClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			d, cancel, err := device.New(context.Background())
+			creds, err := device.TLSCredsFromFile(testcommon.TLSCreds())
+			if err != nil {
+				t.Fatalf("cannot load credentials, got err: %v", err)
+			}
+			d, cancel, err := device.New(context.Background(), creds)
 			defer cancel()
 			if err != nil {
 				t.Fatalf("cannot start server, %v", err)

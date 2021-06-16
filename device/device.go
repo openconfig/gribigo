@@ -13,6 +13,7 @@ import (
 	"github.com/openconfig/gribigo/sysrib"
 	"github.com/openconfig/ygot/ygot"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	spb "github.com/openconfig/gribi/v1/proto/service"
@@ -100,6 +101,24 @@ func DeviceConfig(c []byte) *deviceConfig {
 	return &deviceConfig{json: c}
 }
 
+// tlsCreds returns TLS credentials that can be used for a device.
+type tlsCreds struct {
+	c credentials.TransportCredentials
+}
+
+// TLSCredsFromFile loads the credentials from the specified cert and key file
+// and returns them such that they can be used for the gNMI and gRIBI servers.
+func TLSCredsFromFile(certFile, keyFile string) (*tlsCreds, error) {
+	t, err := credentials.NewServerTLSFromFile(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	return &tlsCreds{c: t}, nil
+}
+
+// IsDevOpt implements the DevOpt interface for tlsCreds.
+func (*tlsCreds) isDevOpt() {}
+
 // New returns a new device with the specific context. It returns the device, a function
 // to stop the servers, or any errors that are encountered.
 func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
@@ -143,12 +162,18 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
 	gr := optGRIBIAddr(opts)
 	gn := optGNMIAddr(opts)
 
-	if err := d.startgRIBI(ctx, gr.host, gr.port, server.WithRIBHook(ribHookfn)); err != nil {
+	creds := optTLSCreds(opts)
+	if creds == nil {
+		cancel()
+		return nil, nil, fmt.Errorf("must specific TLS credentials to start a server")
+	}
+
+	if err := d.startgRIBI(ctx, gr.host, gr.port, creds, server.WithRIBHook(ribHookfn)); err != nil {
 		cancel()
 		return nil, nil, fmt.Errorf("cannot start gRIBI server, %v", err)
 	}
 
-	if err := d.startgNMI(ctx, gn.host, gn.port); err != nil {
+	if err := d.startgNMI(ctx, gn.host, gn.port, creds); err != nil {
 		cancel()
 		return nil, nil, fmt.Errorf("cannot start gNMI server, %v", err)
 	}
@@ -188,15 +213,26 @@ func optDeviceCfg(opts []DevOpt) []byte {
 	return nil
 }
 
-// Start gRIBI starts the gRIBI server on the device on the specified host:port with the specified options.
+// optTLSCreds finds the first occurrence of the tlsCreds option in opts.
+func optTLSCreds(opts []DevOpt) *tlsCreds {
+	for _, o := range opts {
+		if v, ok := o.(*tlsCreds); ok {
+			return v
+		}
+	}
+	return nil
+}
+
+// Start gRIBI starts the gRIBI server on the device on the specified host:port
+// and the specified TLS credentials, with the specified options.
 // It returns an error if the server cannot be started.
-func (d *Device) startgRIBI(ctx context.Context, host string, port int, opt ...server.ServerOpt) error {
+func (d *Device) startgRIBI(ctx context.Context, host string, port int, creds *tlsCreds, opt ...server.ServerOpt) error {
 	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
 		return fmt.Errorf("cannot create gRIBI server, %v", err)
 	}
 
-	s := grpc.NewServer()
+	s := grpc.NewServer(grpc.Creds(creds.c))
 	ts := server.New(opt...)
 	spb.RegisterGRIBIServer(s, ts)
 	d.gribiAddr = l.Addr().String()
@@ -206,8 +242,8 @@ func (d *Device) startgRIBI(ctx context.Context, host string, port int, opt ...s
 }
 
 // startgNMI starts the gNMI server on the specified host:port.
-func (d *Device) startgNMI(ctx context.Context, host string, port int) error {
-	c, addr, err := gnmit.New(ctx, fmt.Sprintf("%s:%d", host, port), targetName, true)
+func (d *Device) startgNMI(ctx context.Context, host string, port int, creds *tlsCreds) error {
+	c, addr, err := gnmit.New(ctx, fmt.Sprintf("%s:%d", host, port), targetName, true, grpc.Creds(creds.c))
 	if err != nil {
 		return err
 	}
@@ -216,14 +252,17 @@ func (d *Device) startgNMI(ctx context.Context, host string, port int) error {
 	return nil
 }
 
+// GRIBIAddr returns the address that the gRIBI server is listening on.
 func (d *Device) GRIBIAddr() string {
 	return d.gribiAddr
 }
 
+// GNMIAddr returns the address that the gNMI server is listening on.
 func (d *Device) GNMIAddr() string {
 	return d.gnmiAddr
 }
 
+// gnmiNoti creates a gNMI Notification from a RIB operation.
 func gnmiNoti(t constants.OpType, ts int64, ni string, e ygot.GoStruct) (*gpb.Notification, error) {
 	var ns []*gpb.Notification
 	var err error

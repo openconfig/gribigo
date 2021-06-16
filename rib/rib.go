@@ -37,7 +37,6 @@ type RIB struct {
 	// defaultName is the name assigned to the default network instance.
 	defaultName string
 
-	// TODO(robjs): we need locking to be implemented for the RIB.
 	// TODO(robjs): reference count NHGs and NHs across all AFTs to ensure that we
 	// don't allow entries to be deleted that are in use.
 }
@@ -61,6 +60,10 @@ type RIBHolder struct {
 	// name is the name that is used for this network instance by the system.
 	name string
 
+	// mu protects the aft.RIB datastructure. This is a coarse lock, but is
+	// the simplest implementation -- we can create a more fine-grained lock
+	// if performance requires it.
+	mu sync.RWMutex
 	// r is the RIB within the network instance as the OpenConfig AFT model.
 	r *aft.RIB
 
@@ -80,7 +83,7 @@ type RIBHolder struct {
 func New(dn string) *RIB {
 	return &RIB{
 		niRIB: map[string]*RIBHolder{
-			dn: newRIBHolder(dn),
+			dn: NewRIBHolder(dn),
 		},
 		defaultName: dn,
 	}
@@ -95,20 +98,30 @@ func (r *RIB) SetHook(fn RIBHookFn) {
 }
 
 // NI returns the RIB for the network instance with name s.
-func (r *RIB) NI(s string) *RIBHolder {
+func (r *RIB) NI(s string) (*RIBHolder, bool) {
 	r.nrMu.RLock()
 	defer r.nrMu.RUnlock()
-	return r.niRIB[s]
+	rh, ok := r.niRIB[s]
+	return rh, ok
 }
 
-// newRIBHolder returns a new RIB holder for a single network instance.
-func newRIBHolder(name string) *RIBHolder {
+// NewRIBHolder returns a new RIB holder for a single network instance.
+func NewRIBHolder(name string) *RIBHolder {
 	return &RIBHolder{
 		name: name,
 		r: &aft.RIB{
 			Afts: &aft.Afts{},
 		},
 	}
+}
+
+// IsValid determines whether the specified RIBHolder is valid to be
+// programmed.
+func (r *RIBHolder) IsValid() bool {
+	if r.name == "" || r.r == nil || r.r.Afts == nil {
+		return false
+	}
+	return true
 }
 
 // rootSchema returns the schema of the root of the AFT YANG tree.
@@ -163,6 +176,13 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 // AddIPv4 adds the IPv4 entry described by e to the RIB. It returns an error
 // if the entry cannot be added.
 func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.r == nil {
+		return errors.New("invalid RIB structure, nil")
+	}
+
 	if e == nil {
 		return errors.New("nil IPv4 Entry provided")
 	}
@@ -190,7 +210,7 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	// know the key.
 	if r.postChangeHook != nil {
 		for _, ip4 := range nr.Afts.Ipv4Entry {
-			r.postChangeHook(ADD, r.name, ip4)
+			go r.postChangeHook(ADD, r.name, ip4)
 		}
 	}
 
@@ -202,9 +222,16 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 // of the entry is specified it is checked for equality, and removed only if the entries
 // match.
 func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if e == nil {
 		return errors.New("nil entry provided")
 	}
+
+	if r.r == nil {
+		return errors.New("invalid RIB structure, nil")
+	}
+
 	ribE := r.r.Afts.Ipv4Entry[e.GetPrefix()]
 	if ribE == nil {
 		return status.Newf(codes.NotFound, "cannot find IPv4Entry to delete, %s", e.Prefix).Err()
@@ -237,6 +264,13 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 // AddNextHopGroup adds a NextHopGroup e to the RIBHolder receiver. It returns an error
 // if the group cannot be added.
 func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.r == nil {
+		return errors.New("invalid RIB structure, nil")
+	}
+
 	if e == nil {
 		return errors.New("nil NextHopGroup provided")
 	}
@@ -266,6 +300,13 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 // AddNextHop adds a new NextHop e to the RIBHolder receiver. It returns an error if
 // the group cannot be added.
 func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.r == nil {
+		return errors.New("invalid RIB structure, nil")
+	}
+
 	if e == nil {
 		return errors.New("nil NextHop provided")
 	}
@@ -331,7 +372,10 @@ func protoFromGoStruct(s ygot.GoStruct, prefix *gpb.Path, pb proto.Message) erro
 		}
 	}
 
-	if err := protomap.ProtoFromPaths(pb, vals, protomap.ProtobufMessagePrefix(prefix), protomap.IgnoreExtraPaths()); err != nil {
+	if err := protomap.ProtoFromPaths(pb, vals,
+		protomap.ProtobufMessagePrefix(prefix),
+		protomap.ValuePathPrefix(prefix),
+		protomap.IgnoreExtraPaths()); err != nil {
 		return fmt.Errorf("cannot unmarshal gNMI paths, %v", err)
 	}
 

@@ -37,7 +37,7 @@ func TestAdd(t *testing.T) {
 		wantErr     bool
 	}{{
 		desc:        "ipv4 prefix only",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix:    "1.0.0.0/24",
@@ -54,7 +54,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "ipv4 prefix and attributes",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.0.0.0/24",
@@ -74,19 +74,19 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nil update",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry:     nil,
 		wantErr:     true,
 	}, {
 		desc:        "nil IPv4 prefix value",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry:     &aftpb.Afts_Ipv4EntryKey{},
 		wantErr:     true,
 	}, {
 		desc:        "nil IPv4 value",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "8.8.8.8/32",
@@ -95,7 +95,7 @@ func TestAdd(t *testing.T) {
 	}, {
 		desc: "implicit ipv4 replace",
 		inRIBHolder: func() *RIBHolder {
-			r := newRIBHolder("DEFAULT")
+			r := NewRIBHolder("DEFAULT")
 			if err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 				Prefix: "8.8.8.8/32",
 				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
@@ -125,7 +125,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "ipv4 replace with invalid data",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix:    "NOT AN IPV$ PREFIX",
@@ -134,7 +134,7 @@ func TestAdd(t *testing.T) {
 		wantErr: true,
 	}, {
 		desc:        "nhg ID only",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      nhg,
 		inEntry: &aftpb.Afts_NextHopGroupKey{
 			Id:           1,
@@ -151,7 +151,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nhg id and attributes",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      nhg,
 		inEntry: &aftpb.Afts_NextHopGroupKey{
 			Id: 1,
@@ -181,7 +181,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nh ID only",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      nh,
 		inEntry: &aftpb.Afts_NextHopKey{
 			Index:   1,
@@ -198,7 +198,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nh id and attributes",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      nh,
 		inEntry: &aftpb.Afts_NextHopKey{
 			Index: 1,
@@ -216,6 +216,15 @@ func TestAdd(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc:        "nil rib, error",
+		inRIBHolder: &RIBHolder{},
+		inType:      ipv4,
+		inEntry: &aftpb.Afts_Ipv4EntryKey{
+			Prefix:    "1.0.0.0/24",
+			Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+		},
+		wantErr: true,
 	}}
 
 	for _, tt := range tests {

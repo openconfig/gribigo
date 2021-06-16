@@ -1,6 +1,8 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/cenkalti/backoff/v4 v4.0.0/go.mod h1:eEew/i+1Q6OrCDZh3WiXYv3+nJwBASZ8Bog/87DQnVg=
+github.com/cenkalti/backoff/v4 v4.1.0 h1:c8LkOFQTzuO0WBM/ae5HdGQuZPfPxp7lqBRwQRm4fSc=
+github.com/cenkalti/backoff/v4 v4.1.0/go.mod h1:scbssz8iZGpm3xbr14ovlUdkxfGXNInqkPWOWmG2CLw=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
@@ -55,12 +57,10 @@ github.com/openconfig/gribi v0.1.1-0.20210423184541-ce37eb4ba92f h1:8vRtC+y0xh9B
 github.com/openconfig/gribi v0.1.1-0.20210423184541-ce37eb4ba92f/go.mod h1:OoH46A2kV42cIXGyviYmAlGmn6cHjGduyC2+I9d/iVs=
 github.com/openconfig/ygot v0.6.0/go.mod h1:o30svNf7O0xK+R35tlx95odkDmZWS9JyWWQSmIhqwAs=
 github.com/openconfig/ygot v0.10.4/go.mod h1:oCQNdXnv7dWc8scTDgoFkauv1wwplJn5HspHcjlxSAQ=
-github.com/openconfig/ygot v0.10.13 h1:gxbLGbD0zzh/4yOpGt81hBbhQes2GiQeINrrzh65nTE=
-github.com/openconfig/ygot v0.10.13/go.mod h1:NDGFcX73PnipISpF8yuDpwrsOAl6vqqK4mNPvscWzXA=
-github.com/openconfig/ygot v0.10.14-0.20210611022322-f88efb12e106 h1:E9i1I+j/PvofkZgjMAwbHmiSEHFyELjd153wx4ovNOI=
-github.com/openconfig/ygot v0.10.14-0.20210611022322-f88efb12e106/go.mod h1:NDGFcX73PnipISpF8yuDpwrsOAl6vqqK4mNPvscWzXA=
 github.com/openconfig/ygot v0.10.14 h1:CzMWMx17V9hV1eUtKDh8Qi4iYePAlhimHmSDYSsTpwU=
 github.com/openconfig/ygot v0.10.14/go.mod h1:NDGFcX73PnipISpF8yuDpwrsOAl6vqqK4mNPvscWzXA=
+github.com/openconfig/ygot v0.10.15 h1:150MEjCnCtd6x8WEjLSgsmdC/Emzd5Pp1sIfZAX9QKc=
+github.com/openconfig/ygot v0.10.15/go.mod h1:NDGFcX73PnipISpF8yuDpwrsOAl6vqqK4mNPvscWzXA=
 github.com/pborman/getopt v0.0.0-20190409184431-ee0cd42419d3/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

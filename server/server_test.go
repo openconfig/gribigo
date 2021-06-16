@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -9,7 +10,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	"github.com/openconfig/gribigo/rib"
+	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
 
 func TestNewClient(t *testing.T) {
@@ -566,6 +570,536 @@ func TestRunElection(t *testing.T) {
 
 			if got, want := s.curMaster, tt.wantServerMaster; !cmp.Equal(got, want) {
 				t.Errorf("did not get expected master ID, got: %s, want: %s", got, want)
+			}
+		})
+	}
+}
+
+func checkStatusErr(t *testing.T, err error, wantCode codes.Code, wantReason spb.ModifyRPCErrorDetails_Reason) {
+	t.Helper()
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("got an error that was not a status, %v", err)
+	}
+	if st.Code() != wantCode {
+		t.Fatalf("did not get expected code, got: %s (%s), want: %s", st.Code(), st.Proto(), wantCode)
+	}
+
+	if wantReason != 0 {
+		if g := len(st.Details()); g != 1 {
+			t.Fatalf("did not get expected details, got: %d entries, want: 1", g)
+		}
+
+		dets, ok := st.Details()[0].(*spb.ModifyRPCErrorDetails)
+		if !ok {
+			t.Fatalf("got bad proto in details, got: %T, want: *spb.ModifyRPCErrorDetails", st.Details()[0])
+		}
+		if got, want := dets.Reason, wantReason; got != want {
+			t.Fatalf("did not get expected reason, got: %s, want: %s", got, want)
+		}
+	}
+}
+
+func TestDoModify(t *testing.T) {
+	type expectedMsg struct {
+		result    *spb.ModifyResponse
+		errCode   codes.Code
+		errReason spb.ModifyRPCErrorDetails_Reason
+	}
+	tests := []struct {
+		desc     string
+		inCID    string
+		inServer *Server
+		inOps    []*spb.AFTOperation
+		wantMsg  []*expectedMsg
+	}{{
+		desc:     "unknown client",
+		inServer: New(),
+		inCID:    "unknown",
+		wantMsg: []*expectedMsg{{
+			errCode: codes.Internal,
+		}},
+	}, {
+		desc: "unsupported default parameters",
+		inServer: func() *Server {
+			s := New()
+			s.cs["testclient"] = &clientState{}
+			return s
+		}(),
+		inCID: "testclient",
+		wantMsg: []*expectedMsg{{
+			errCode:   codes.Unimplemented,
+			errReason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		}},
+	}, {
+		desc: "not expecting election ID",
+		inServer: func() *Server {
+			s := New()
+			s.cs["testclient"] = &clientState{
+				params: &clientParams{
+					ExpectElecID: false,
+				},
+			}
+			return s
+		}(),
+		inCID: "testclient",
+		wantMsg: []*expectedMsg{{
+			errCode:   codes.Unimplemented,
+			errReason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		}},
+	}, {
+		desc: "not expecting persist=false",
+		inServer: func() *Server {
+			s := New()
+			s.cs["testclient"] = &clientState{
+				params: &clientParams{
+					Persist: false,
+				},
+			}
+			return s
+		}(),
+		inCID: "testclient",
+		wantMsg: []*expectedMsg{{
+			errCode:   codes.Unimplemented,
+			errReason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		}},
+	}, {
+		desc: "add to default network instance",
+		inServer: func() *Server {
+			s := New()
+			s.cs["testclient"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+				},
+				lastElecID: &spb.Uint128{High: 42, Low: 42},
+			}
+			s.curElecID = &spb.Uint128{High: 42, Low: 42}
+			s.curMaster = "testclient"
+			return s
+		}(),
+		inCID: "testclient",
+		inOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: "",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     1,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+			},
+		}},
+	}, {
+		desc: "add to unknown network instance",
+		inServer: func() *Server {
+			s := New()
+			s.cs["testclient"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+				},
+				lastElecID: &spb.Uint128{High: 42, Low: 42},
+			}
+			s.curElecID = &spb.Uint128{High: 42, Low: 42}
+			s.curMaster = "testclient"
+			return s
+		}(),
+		inCID: "testclient",
+		inOps: []*spb.AFTOperation{{
+			Id:              42,
+			NetworkInstance: "FISH",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     42,
+					Status: spb.AFTResult_FAILED,
+				}},
+			},
+		}},
+	}, {
+		desc: "invalid operation",
+		inServer: func() *Server {
+			s := New()
+			s.cs["testclient"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+				},
+				lastElecID: &spb.Uint128{High: 42, Low: 42},
+			}
+			s.curElecID = &spb.Uint128{High: 42, Low: 42}
+			s.curMaster = "testclient"
+			return s
+		}(),
+		inCID: "testclient",
+		inOps: []*spb.AFTOperation{{
+			Id:              84,
+			NetworkInstance: "",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "F-I-S-H",
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     84,
+					Status: spb.AFTResult_FAILED,
+				}},
+			},
+		}},
+	}, {
+		desc: "two valid operations",
+		inServer: func() *Server {
+			s := New()
+			s.cs["testclient"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+				},
+				lastElecID: &spb.Uint128{High: 42, Low: 42},
+			}
+			s.curElecID = &spb.Uint128{High: 42, Low: 42}
+			s.curMaster = "testclient"
+			return s
+		}(),
+		inCID: "testclient",
+		inOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: "",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}, {
+			Id:              2,
+			NetworkInstance: "",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "2.2.2.2/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     1,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+			},
+		}, {
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     2,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+			},
+		}},
+	}}
+
+	type recvMsg struct {
+		result *spb.ModifyResponse
+		err    error
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			errCh := make(chan error)
+			resCh := make(chan *spb.ModifyResponse)
+
+			go tt.inServer.doModify(tt.inCID, tt.inOps, resCh, errCh)
+			got := []*recvMsg{}
+			for i := 0; i < len(tt.wantMsg); i++ {
+				gotMsg := &recvMsg{}
+				select {
+				case err := <-errCh:
+					gotMsg.err = err
+				case got := <-resCh:
+					gotMsg.result = got
+				}
+				got = append(got, gotMsg)
+			}
+
+			lessFn := func(i, j int) bool {
+				switch {
+				case got[i].err != nil && got[j].err != nil:
+					return fmt.Sprintf("%v", got[i].err) < fmt.Sprintf("%v", got[j].err)
+				case got[i].err != nil:
+					return true
+				case got[j].err != nil:
+					return false
+				default:
+					iid := got[i].result.GetResult()[0].GetId()
+					jid := got[j].result.GetResult()[0].GetId()
+					return iid < jid
+				}
+			}
+			sort.Slice(got, lessFn)
+			sort.Slice(tt.wantMsg, lessFn)
+
+			for i := 0; i < len(tt.wantMsg); i++ {
+				wantMsg := tt.wantMsg[i]
+				gotMsg := got[i]
+				if err := gotMsg.err; err != nil {
+					checkStatusErr(t, err, wantMsg.errCode, wantMsg.errReason)
+				}
+				if wantMsg.result != nil {
+					if diff := cmp.Diff(gotMsg.result, wantMsg.result, protocmp.Transform()); diff != "" {
+						t.Fatalf("did not get expected response, diff(-got,+want):\n%s", diff)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAddEntry(t *testing.T) {
+	tests := []struct {
+		desc           string
+		inRIBHolder    *rib.RIBHolder
+		inOp           *spb.AFTOperation
+		inFIBACK       bool
+		inElection     *electionDetails
+		wantResponse   *spb.ModifyResponse
+		wantErrCode    codes.Code
+		wantErrDetails spb.ModifyRPCErrorDetails_Reason
+	}{{
+		desc:        "nil election ID",
+		inRIBHolder: rib.NewRIBHolder("default"),
+		inOp:        &spb.AFTOperation{},
+		wantErrCode: codes.FailedPrecondition,
+	}, {
+		desc:        "invalid election",
+		inRIBHolder: rib.NewRIBHolder("default"),
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 0, Low: 1},
+		},
+		wantErrCode: codes.Internal,
+	}, {
+		desc:        "client hasn't sent election ID",
+		inRIBHolder: rib.NewRIBHolder("default"),
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 0, Low: 1},
+		},
+		inElection: &electionDetails{
+			master: "some-client",
+			ID:     &spb.Uint128{High: 1, Low: 1},
+		},
+		wantErrCode: codes.FailedPrecondition,
+	}, {
+		desc:        "client gives higher ID than known master",
+		inRIBHolder: rib.NewRIBHolder("default"),
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 2, Low: 0},
+			Id:         1,
+		},
+		inElection: &electionDetails{
+			master: "this-client",
+			// note: this is an internal error that should never happen :-)
+			// so of course we test what happens when it does. In this case
+			// we have got to the stage whereby we decided that our client sent
+			// us a later ID than the one that we think is the master, even though
+			// this client is the master. In this case, we've missed updating
+			// the master ID somehow as new elections happen.
+			ID:           &spb.Uint128{High: 1, Low: 1},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 2, Low: 0},
+		},
+		wantErrCode: codes.FailedPrecondition,
+	}, {
+		desc:        "client gives lower ID than known master",
+		inRIBHolder: rib.NewRIBHolder("default"),
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 1, Low: 0},
+			Id:         1,
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 1, Low: 1},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 1, Low: 0},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     1,
+				Status: spb.AFTResult_FAILED,
+			}},
+		},
+	}, {
+		desc:        "client is not master - by name",
+		inRIBHolder: rib.NewRIBHolder("default"),
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 0, Low: 1},
+			Id:         2,
+		},
+		inElection: &electionDetails{
+			master:       "not-this-client",
+			ID:           &spb.Uint128{High: 1, Low: 1},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 2, Low: 0},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_FAILED,
+			}},
+		},
+	}, {
+		desc:        "client is not master - by mismatched latest",
+		inRIBHolder: rib.NewRIBHolder("default"),
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 0, Low: 2},
+			Id:         2,
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 0, Low: 1},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 0, Low: 1},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_FAILED,
+			}},
+		},
+	}, {
+		desc:        "nil operation",
+		inRIBHolder: rib.NewRIBHolder("default"),
+		wantErrCode: codes.Internal,
+	}, {
+		desc:        "nil RIB",
+		wantErrCode: codes.Internal,
+	}, {
+		desc:        "ADD v4: rib ACK",
+		inRIBHolder: rib.NewRIBHolder("DEFAULT"),
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "2.2.2.2/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_RIB_PROGRAMMED,
+			}},
+		},
+	}, {
+		desc:        "ADD v4: fib ACK",
+		inRIBHolder: rib.NewRIBHolder("DEFAULT"),
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "2.2.2.2/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		inFIBACK: true,
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_FIB_PROGRAMMED,
+			}},
+		},
+	}, {
+		desc:        "ADD v4: fib ACK",
+		inRIBHolder: rib.NewRIBHolder("DEFAULT"),
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Entry:      &spb.AFTOperation_NextHopGroup{},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		inFIBACK:    true,
+		wantErrCode: codes.Unimplemented,
+	}, {
+		desc:        "nil RIB",
+		inRIBHolder: nil,
+		wantErrCode: codes.Internal,
+	}, {
+		desc:        "invalid RIB",
+		inRIBHolder: &rib.RIBHolder{},
+		wantErrCode: codes.Internal,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := addEntry(tt.inRIBHolder, tt.inOp, tt.inFIBACK, tt.inElection)
+			if err != nil {
+				checkStatusErr(t, err, tt.wantErrCode, tt.wantErrDetails)
+			}
+			if diff := cmp.Diff(got, tt.wantResponse, protocmp.Transform()); diff != "" {
+				t.Fatalf("did not get expected response, diff(-got,+want):\n%s", diff)
 			}
 		})
 	}

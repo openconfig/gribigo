@@ -118,6 +118,10 @@ func NewRIBHolder(name string) *RIBHolder {
 // IsValid determines whether the specified RIBHolder is valid to be
 // programmed.
 func (r *RIBHolder) IsValid() bool {
+	// This shows why we need to make the locking on the RIB more granular,
+	// since now we're taking a lock just to check whether things are not nil.
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if r.name == "" || r.r == nil || r.r.Afts == nil {
 		return false
 	}

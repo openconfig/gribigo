@@ -529,7 +529,7 @@ func (c *Client) StartSending() {
 	defer c.qs.sendMu.Unlock()
 	for _, m := range c.qs.sendq {
 		log.V(2).Infof("sending %s to modify channel", m)
-		c.Q(m)
+		c.q(m)
 	}
 	c.qs.sendq = []*spb.ModifyRequest{}
 }
@@ -597,7 +597,13 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 		c.qs.resultq = append(c.qs.resultq, sr)
 	}
 
-	// TODO(robjs): add handling of received operations.
+	for _, r := range m.Result {
+		res, err := c.clearPendingOp(r)
+		c.qs.resultq = append(c.qs.resultq, res)
+		if err != nil {
+			return fmt.Errorf("cannot remove pending operation %d, %v", r.Id, err)
+		}
+	}
 
 	return nil
 }
@@ -623,14 +629,31 @@ func (c *Client) isConverged() bool {
 func (c *Client) addPendingOp(op *spb.AFTOperation) error {
 	c.qs.pendMu.Lock()
 	defer c.qs.pendMu.Unlock()
-	if c.qs.pendq.Ops[op.Id] != nil {
-		return fmt.Errorf("could not enqueue operation %d, duplicate pending ID", op.Id)
+	if v := c.qs.pendq.Ops[op.Id]; v != nil {
+		return fmt.Errorf("could not enqueue operation %d, duplicate pending ID (pending: %v)", op.Id, v)
 	}
 	c.qs.pendq.Ops[op.Id] = &PendingOp{
 		Timestamp: unixTS(),
 		Op:        op,
 	}
 	return nil
+}
+
+// clearPendingOp removes the operation with the ID in the specified result from the
+// pending queue and returns the result.
+func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
+	c.qs.pendMu.Lock()
+	defer c.qs.pendMu.Unlock()
+	v := c.qs.pendq.Ops[op.Id]
+	if v == nil {
+		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
+	}
+	delete(c.qs.pendq.Ops, op.Id)
+	n := unixTS()
+	return &OpResult{
+		Timestamp: n,
+		Latency:   n - v.Timestamp,
+	}, nil
 }
 
 // updatePendingElection adds the election ID specified by id to the pending transaction

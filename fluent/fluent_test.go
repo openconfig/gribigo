@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openconfig/gribigo/negtest"
+	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 	"google.golang.org/grpc/codes"
@@ -59,6 +60,16 @@ func TestGRIBIClient(t *testing.T) {
 			c.StartSending(context.Background(), t)
 			// NB: we discard the error here, this test case is just to check we are
 			// marked converged.
+			c.Await(context.Background(), t)
+		},
+	}, {
+		desc: "write basic IPv4 entry",
+		inFn: func(addr string, t testing.TB) {
+			c := NewClient()
+			c.Connection().WithTarget(addr).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
+			c.Start(context.Background(), t)
+			c.Modify().AddEntry(t, IPv4Entry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
+			c.StartSending(context.Background(), t)
 			c.Await(context.Background(), t)
 		},
 	}}

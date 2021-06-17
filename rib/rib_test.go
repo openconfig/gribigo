@@ -30,14 +30,14 @@ const (
 func TestAdd(t *testing.T) {
 	tests := []struct {
 		desc        string
-		inRIBHolder *ribHolder
+		inRIBHolder *RIBHolder
 		inType      ribType
 		inEntry     proto.Message
 		wantRIB     *aft.RIB
 		wantErr     bool
 	}{{
 		desc:        "ipv4 prefix only",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix:    "1.0.0.0/24",
@@ -54,7 +54,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "ipv4 prefix and attributes",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.0.0.0/24",
@@ -74,19 +74,19 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nil update",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry:     nil,
 		wantErr:     true,
 	}, {
 		desc:        "nil IPv4 prefix value",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry:     &aftpb.Afts_Ipv4EntryKey{},
 		wantErr:     true,
 	}, {
 		desc:        "nil IPv4 value",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "8.8.8.8/32",
@@ -94,8 +94,8 @@ func TestAdd(t *testing.T) {
 		wantErr: true,
 	}, {
 		desc: "implicit ipv4 replace",
-		inRIBHolder: func() *ribHolder {
-			r := newRIBHolder("DEFAULT")
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
 			if err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 				Prefix: "8.8.8.8/32",
 				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
@@ -125,7 +125,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "ipv4 replace with invalid data",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      ipv4,
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix:    "NOT AN IPV$ PREFIX",
@@ -134,7 +134,7 @@ func TestAdd(t *testing.T) {
 		wantErr: true,
 	}, {
 		desc:        "nhg ID only",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      nhg,
 		inEntry: &aftpb.Afts_NextHopGroupKey{
 			Id:           1,
@@ -151,7 +151,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nhg id and attributes",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      nhg,
 		inEntry: &aftpb.Afts_NextHopGroupKey{
 			Id: 1,
@@ -181,7 +181,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nh ID only",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      nh,
 		inEntry: &aftpb.Afts_NextHopKey{
 			Index:   1,
@@ -198,7 +198,7 @@ func TestAdd(t *testing.T) {
 		},
 	}, {
 		desc:        "nh id and attributes",
-		inRIBHolder: newRIBHolder("DEFAULT"),
+		inRIBHolder: NewRIBHolder("DEFAULT"),
 		inType:      nh,
 		inEntry: &aftpb.Afts_NextHopKey{
 			Index: 1,
@@ -216,6 +216,15 @@ func TestAdd(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc:        "nil rib, error",
+		inRIBHolder: &RIBHolder{},
+		inType:      ipv4,
+		inEntry: &aftpb.Afts_Ipv4EntryKey{
+			Prefix:    "1.0.0.0/24",
+			Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+		},
+		wantErr: true,
 	}}
 
 	for _, tt := range tests {
@@ -281,17 +290,17 @@ func TestDeleteIPv4Entry(t *testing.T) {
 
 	tests := []struct {
 		desc        string
-		inRIB       *ribHolder
+		inRIB       *RIBHolder
 		inEntry     *aftpb.Afts_Ipv4EntryKey
 		wantErr     bool
-		wantPostRIB *ribHolder
+		wantPostRIB *RIBHolder
 	}{{
 		desc:    "nil input",
-		inRIB:   &ribHolder{},
+		inRIB:   &RIBHolder{},
 		wantErr: true,
 	}, {
 		desc: "delete entry, no payload",
-		inRIB: &ribHolder{
+		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32"},
 			}),
@@ -299,12 +308,12 @@ func TestDeleteIPv4Entry(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
 		},
-		wantPostRIB: &ribHolder{
+		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
 		},
 	}, {
 		desc: "delete entry, matching payload",
-		inRIB: &ribHolder{
+		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			}),
@@ -315,12 +324,12 @@ func TestDeleteIPv4Entry(t *testing.T) {
 				Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			},
 		},
-		wantPostRIB: &ribHolder{
+		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
 		},
 	}, {
 		desc: "delete entry, mismatched payload",
-		inRIB: &ribHolder{
+		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
 			}),
@@ -332,7 +341,7 @@ func TestDeleteIPv4Entry(t *testing.T) {
 			},
 		},
 		wantErr: true,
-		wantPostRIB: &ribHolder{
+		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
 			}),

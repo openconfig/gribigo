@@ -4,6 +4,7 @@ package rib
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/goyang/pkg/yang"
@@ -19,16 +20,23 @@ import (
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 )
 
+// RIBHookFn is a function that is used as a hook following a change. It takes:
+//  - an OpType deterining whether an add, remove, or modify operation was sent.
+//  - a string indicating the name of the network instance
+//  - a ygot.GoStruct containing the entry that has been changed.
+type RIBHookFn func(OpType, string, ygot.GoStruct)
+
 // RIB is a struct that stores a representation of a RIB for a network device.
 type RIB struct {
+	// nrMu protects the niRIB map.
+	nrMu sync.RWMutex
 	// niRIB is a map of OpenConfig AFTs that are used to represent the RIBs of a network element.
 	// The key of the map is the name of the network instance to which the RIBs belong.
-	niRIB map[string]*ribHolder
+	niRIB map[string]*RIBHolder
 
 	// defaultName is the name assigned to the default network instance.
 	defaultName string
 
-	// TODO(robjs): we need locking to be implemented for the RIB.
 	// TODO(robjs): reference count NHGs and NHs across all AFTs to ensure that we
 	// don't allow entries to be deleted that are in use.
 }
@@ -47,11 +55,15 @@ const (
 	MODIFY
 )
 
-// ribHolder is a container for a set of RIBs.
-type ribHolder struct {
+// RIBHolder is a container for a set of RIBs.
+type RIBHolder struct {
 	// name is the name that is used for this network instance by the system.
 	name string
 
+	// mu protects the aft.RIB datastructure. This is a coarse lock, but is
+	// the simplest implementation -- we can create a more fine-grained lock
+	// if performance requires it.
+	mu sync.RWMutex
 	// r is the RIB within the network instance as the OpenConfig AFT model.
 	r *aft.RIB
 
@@ -64,14 +76,14 @@ type ribHolder struct {
 	//   - name of the network instance
 	// 	 - operation type (as an OpType enumerated value)
 	//	 - the changed entry as a ygot.GoStruct.
-	postChangeHook func(OpType, string, ygot.GoStruct)
+	postChangeHook RIBHookFn
 }
 
 // New returns a new RIB with the default network instance created with name dn.
 func New(dn string) *RIB {
 	return &RIB{
-		niRIB: map[string]*ribHolder{
-			dn: newRIBHolder(dn),
+		niRIB: map[string]*RIBHolder{
+			dn: NewRIBHolder(dn),
 		},
 		defaultName: dn,
 	}
@@ -79,20 +91,41 @@ func New(dn string) *RIB {
 
 // SetHook assigns the supplied hook to all network instance RIBs within
 // the RIB structure.
-func (r *RIB) SetHook(fn func(OpType, string, ygot.GoStruct)) {
+func (r *RIB) SetHook(fn RIBHookFn) {
 	for _, nir := range r.niRIB {
 		nir.postChangeHook = fn
 	}
 }
 
-// newRIBHolder returns a new RIB holder for a single network instance.
-func newRIBHolder(name string) *ribHolder {
-	return &ribHolder{
+// NI returns the RIB for the network instance with name s.
+func (r *RIB) NetworkInstanceRIB(s string) (*RIBHolder, bool) {
+	r.nrMu.RLock()
+	defer r.nrMu.RUnlock()
+	rh, ok := r.niRIB[s]
+	return rh, ok
+}
+
+// NewRIBHolder returns a new RIB holder for a single network instance.
+func NewRIBHolder(name string) *RIBHolder {
+	return &RIBHolder{
 		name: name,
 		r: &aft.RIB{
 			Afts: &aft.Afts{},
 		},
 	}
+}
+
+// IsValid determines whether the specified RIBHolder is valid to be
+// programmed.
+func (r *RIBHolder) IsValid() bool {
+	// This shows why we need to make the locking on the RIB more granular,
+	// since now we're taking a lock just to check whether things are not nil.
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.name == "" || r.r == nil || r.r.Afts == nil {
+		return false
+	}
+	return true
 }
 
 // rootSchema returns the schema of the root of the AFT YANG tree.
@@ -146,7 +179,14 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 
 // AddIPv4 adds the IPv4 entry described by e to the RIB. It returns an error
 // if the entry cannot be added.
-func (r *ribHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.r == nil {
+		return errors.New("invalid RIB structure, nil")
+	}
+
 	if e == nil {
 		return errors.New("nil IPv4 Entry provided")
 	}
@@ -163,8 +203,11 @@ func (r *ribHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 
 	// MergeStructInto doesn't completely replace a list entry if it finds a missing key,
 	// so will append the two entries together.
-	r.r.GetAfts().DeleteIpv4Entry(e.GetPrefix())
+	// We don't use Delete itself because it will deadlock (we already hold the lock).
+	delete(r.r.GetAfts().Ipv4Entry, e.GetPrefix())
 
+	// TODO(robjs): consider what happens if this fails -- we may leave the RIB in
+	// an inconsistent state.
 	if err := ygot.MergeStructInto(r.r, nr); err != nil {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
 	}
@@ -185,10 +228,17 @@ func (r *ribHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 // no payload the prefix is removed if it is found in the set of entries. If the payload
 // of the entry is specified it is checked for equality, and removed only if the entries
 // match.
-func (r *ribHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if e == nil {
 		return errors.New("nil entry provided")
 	}
+
+	if r.r == nil {
+		return errors.New("invalid RIB structure, nil")
+	}
+
 	ribE := r.r.Afts.Ipv4Entry[e.GetPrefix()]
 	if ribE == nil {
 		return status.Newf(codes.NotFound, "cannot find IPv4Entry to delete, %s", e.Prefix).Err()
@@ -218,9 +268,16 @@ func (r *ribHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	return nil
 }
 
-// AddNextHopGroup adds a NextHopGroup e to the ribHolder receiver. It returns an error
+// AddNextHopGroup adds a NextHopGroup e to the RIBHolder receiver. It returns an error
 // if the group cannot be added.
-func (r *ribHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
+func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.r == nil {
+		return errors.New("invalid RIB structure, nil")
+	}
+
 	if e == nil {
 		return errors.New("nil NextHopGroup provided")
 	}
@@ -232,7 +289,7 @@ func (r *ribHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 	}
 
 	// Handle implicit replace.
-	r.r.GetAfts().DeleteNextHop(e.GetId())
+	delete(r.r.GetAfts().NextHop, e.GetId())
 
 	if err := ygot.MergeStructInto(r.r, nr); err != nil {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
@@ -247,9 +304,16 @@ func (r *ribHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) error {
 	return nil
 }
 
-// AddNextHop adds a new NextHop e to the ribHolder receiver. It returns an error if
+// AddNextHop adds a new NextHop e to the RIBHolder receiver. It returns an error if
 // the group cannot be added.
-func (r *ribHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
+func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.r == nil {
+		return errors.New("invalid RIB structure, nil")
+	}
+
 	if e == nil {
 		return errors.New("nil NextHop provided")
 	}
@@ -261,7 +325,7 @@ func (r *ribHolder) AddNextHop(e *aftpb.Afts_NextHopKey) error {
 	}
 
 	// Handle implicit replace.
-	r.r.GetAfts().DeleteNextHopGroup(e.GetIndex())
+	delete(r.r.GetAfts().NextHopGroup, e.GetIndex())
 
 	if err := ygot.MergeStructInto(r.r, nr); err != nil {
 		return fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
@@ -315,7 +379,10 @@ func protoFromGoStruct(s ygot.GoStruct, prefix *gpb.Path, pb proto.Message) erro
 		}
 	}
 
-	if err := protomap.ProtoFromPaths(pb, vals, protomap.ProtobufMessagePrefix(prefix), protomap.ValuePathPrefix(prefix), protomap.IgnoreExtraPaths()); err != nil {
+	if err := protomap.ProtoFromPaths(pb, vals,
+		protomap.ProtobufMessagePrefix(prefix),
+		protomap.ValuePathPrefix(prefix),
+		protomap.IgnoreExtraPaths()); err != nil {
 		return fmt.Errorf("cannot unmarshal gNMI paths, %v", err)
 	}
 

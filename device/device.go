@@ -136,7 +136,6 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
 	}
 
 	ribHookfn := func(o constants.OpType, ts int64, ni string, data ygot.GoStruct) {
-		fmt.Printf("hook called with %v on ni %s\n", o, ni)
 		_, _, _ = o, ni, data
 		// write gNMI notifications
 		n, err := gnmiNoti(o, ts, ni, data)
@@ -327,6 +326,5 @@ func gnmiNoti(t constants.OpType, ts int64, ni string, e ygot.GoStruct) (*gpb.No
 	}
 	ns[0].Atomic = true
 	ns[0].Prefix.Target = targetName
-	fmt.Printf("returning %s\n", ns[0])
 	return ns[0], nil
 }

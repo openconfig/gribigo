@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	// DefaultNIName specifies the name of the default network instance on the system.
-	DefaultNIName = "DEFAULT"
+	// DefaultNetworkInstanceName specifies the name of the default network instance on the system.
+	DefaultNetworkInstanceName = "DEFAULT"
 )
 
 // Server implements the gRIBI service.
@@ -144,7 +144,7 @@ func hasRIBHook(opts []ServerOpt) rib.RIBHookFn {
 
 // New creates a new gRIBI server.
 func New(opts ...ServerOpt) *Server {
-	r := rib.New(DefaultNIName)
+	r := rib.New(DefaultNetworkInstanceName)
 	if f := hasRIBHook(opts); f != nil {
 		r.SetHook(f)
 	}
@@ -536,9 +536,9 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 		case spb.AFTOperation_ADD:
 			ni := o.GetNetworkInstance()
 			if ni == "" {
-				ni = DefaultNIName
+				ni = DefaultNetworkInstanceName
 			}
-			r, ok := s.masterRIB.NI(ni)
+			r, ok := s.masterRIB.NetworkInstanceRIB(ni)
 			if !ok {
 				// this is an unknown network instance, we should not return
 				// an error to the client since we do not want the connection

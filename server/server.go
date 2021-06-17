@@ -9,17 +9,22 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
+	"github.com/openconfig/gribigo/rib"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
-	"github.com/openconfig/gribigo/rib"
 )
 
 const (
 	// DefaultNIName specifies the name of the default network instance on the system.
 	DefaultNIName = "DEFAULT"
+)
+
+const (
+	// DefaultNetworkInstanceName specifies the name of the default network instance on the system.
+	DefaultNetworkInstanceName = "DEFAULT"
 )
 
 // Server implements the gRIBI service.
@@ -555,7 +560,7 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 			if ni == "" {
 				ni = DefaultNIName
 			}
-			r, ok := s.masterRIB.RIBForNI(ni)
+			r, ok := s.masterRIB.NetworkInstanceRIB(ni)
 			if !ok {
 				// this is an unknown network instance, we should not return
 				// an error to the client since we do not want the connection

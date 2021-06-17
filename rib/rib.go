@@ -91,7 +91,7 @@ func (r *RIB) SetHook(fn RIBHookFn) {
 }
 
 // NI returns the RIB for the network instance with name s.
-func (r *RIB) RIBForNI(s string) (*RIBHolder, bool) {
+func (r *RIB) NetworkInstanceRIB(s string) (*RIBHolder, bool) {
 	r.nrMu.RLock()
 	defer r.nrMu.RUnlock()
 	rh, ok := r.niRIB[s]

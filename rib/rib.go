@@ -152,7 +152,7 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 	if netInst == "" {
 		netInst = r.defaultName
 	}
-	niRIB, ok := r.RIBForNI(netInst)
+	niRIB, ok := r.NetworkInstanceRIB(netInst)
 	if !ok {
 		return false, fmt.Errorf("invalid network-instance %s", netInst)
 	}
@@ -184,7 +184,7 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 		}
 		resolveRIB := niRIB
 		if otherNI := i.GetNextHopGroupNetworkInstance(); otherNI != "" {
-			resolveRIB, ok = r.RIBForNI(otherNI)
+			resolveRIB, ok = r.NetworkInstanceRIB(otherNI)
 			if !ok {
 				return false, fmt.Errorf("invalid unknown network-instance for IPv4Entry, %s", otherNI)
 			}

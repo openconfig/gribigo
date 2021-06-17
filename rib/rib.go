@@ -99,15 +99,49 @@ type RIBHolder struct {
 	postChangeHook RIBHookFn
 }
 
+// RIBOpt is an interface that is implemented for options to the RIB.
+type RIBOpt interface {
+	isRIBOpt()
+}
+
+// DisableRIBCheckFn specifies that the consistency checking functions should
+// be disabled for the RIB. It is useful for a testing RIB that does not need
+// to have working references.
+func DisableRIBCheckFn() *disableCheckFn { return &disableCheckFn{} }
+
+// disableCheckFn is the internal implementation of DisableRIBCheckFn.
+type disableCheckFn struct{}
+
+// isRIBOpt implements the RIBOpt interface
+func (*disableCheckFn) isRIBOpt() {}
+
+// hasDisableCheckFn checks whether the RIBOpt slice supplied contains the
+// disableCheckFn option.
+func hasDisableCheckFn(opt []RIBOpt) bool {
+	for _, o := range opt {
+		if _, ok := o.(*disableCheckFn); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // New returns a new RIB with the default network instance created with name dn.
-func New(dn string) *RIB {
+func New(dn string, opt ...RIBOpt) *RIB {
 	r := &RIB{
 		niRIB:          map[string]*RIBHolder{},
 		defaultName:    dn,
 		pendingEntries: map[uint64]*pendingEntry{},
 	}
-	defRH := NewRIBHolder(dn, RIBHolderCheckFn(r.canResolve))
+
+	rhOpt := []ribHolderOpt{}
+	if !hasDisableCheckFn(opt) {
+		rhOpt = append(rhOpt, RIBHolderCheckFn(r.canResolve))
+	}
+
+	defRH := NewRIBHolder(dn, rhOpt...)
 	r.niRIB[dn] = defRH
+
 	return r
 }
 

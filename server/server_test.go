@@ -685,12 +685,10 @@ func TestDoModify(t *testing.T) {
 			NetworkInstance: "",
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
-			Entry: &spb.AFTOperation_Ipv4{
-				Ipv4: &aftpb.Afts_Ipv4EntryKey{
-					Prefix: "1.1.1.1/32",
-					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-						NextHopGroup: &wpb.UintValue{Value: 1},
-					},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
 				},
 			},
 		}},
@@ -799,12 +797,10 @@ func TestDoModify(t *testing.T) {
 			NetworkInstance: "",
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
-			Entry: &spb.AFTOperation_Ipv4{
-				Ipv4: &aftpb.Afts_Ipv4EntryKey{
-					Prefix: "1.1.1.1/32",
-					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-						NextHopGroup: &wpb.UintValue{Value: 1},
-					},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
 				},
 			},
 		}, {
@@ -812,12 +808,10 @@ func TestDoModify(t *testing.T) {
 			NetworkInstance: "",
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
-			Entry: &spb.AFTOperation_Ipv4{
-				Ipv4: &aftpb.Afts_Ipv4EntryKey{
-					Prefix: "2.2.2.2/32",
-					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-						NextHopGroup: &wpb.UintValue{Value: 1},
-					},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   2,
+					NextHop: &aftpb.Afts_NextHop{},
 				},
 			},
 		}},
@@ -895,7 +889,7 @@ func TestDoModify(t *testing.T) {
 }
 
 func TestAddEntry(t *testing.T) {
-	defName := "default"
+	defName := DefaultNIName
 	tests := []struct {
 		desc           string
 		inRIB          *rib.RIB
@@ -1015,7 +1009,7 @@ func TestAddEntry(t *testing.T) {
 		wantErrCode: codes.Internal,
 	}, {
 		desc:  "ADD v4: rib ACK",
-		inRIB: rib.New(defName),
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
 		inNI:  defName,
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 4, Low: 2},
@@ -1043,7 +1037,7 @@ func TestAddEntry(t *testing.T) {
 		},
 	}, {
 		desc:  "ADD v4: fib ACK",
-		inRIB: rib.New(defName),
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
 		inNI:  defName,
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 4, Low: 2},
@@ -1072,12 +1066,17 @@ func TestAddEntry(t *testing.T) {
 		},
 	}, {
 		desc:  "ADD NHG: unimplemented",
-		inRIB: rib.New(defName),
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
 		inNI:  defName,
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 4, Low: 2},
 			Id:         2,
-			Entry:      &spb.AFTOperation_NextHopGroup{},
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id:           2,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{},
+				},
+			},
 		},
 		inElection: &electionDetails{
 			master:       "this-client",
@@ -1085,8 +1084,12 @@ func TestAddEntry(t *testing.T) {
 			client:       "this-client",
 			clientLatest: &spb.Uint128{High: 4, Low: 2},
 		},
-		inFIBACK:    true,
-		wantErrCode: codes.Unimplemented,
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_RIB_PROGRAMMED,
+			}},
+		},
 	}, {
 		desc:        "nil RIB",
 		inRIB:       nil,

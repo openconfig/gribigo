@@ -229,13 +229,12 @@ func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entr
 			return nil, fmt.Errorf("cannot use explicitly set operation IDs for a message, got: %d, want: 0", ep.Id)
 		}
 
-		// increment before first use of the opCount so that we start at 1.
-		g.parent.opCount++
-		ep.Id = g.parent.opCount
-
 		if g.parent == nil {
 			return nil, errors.New("invalid nil parent")
 		}
+		// increment before first use of the opCount so that we start at 1.
+		g.parent.opCount++
+		ep.Id = g.parent.opCount
 
 		// If the election ID wasn't explicitly set then write the current one
 		// to the message if this is a client that requires it.

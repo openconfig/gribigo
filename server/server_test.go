@@ -889,7 +889,7 @@ func TestDoModify(t *testing.T) {
 }
 
 func TestAddEntry(t *testing.T) {
-	defName := DefaultNIName
+	defName := DefaultNetworkInstanceName
 	tests := []struct {
 		desc           string
 		inRIB          *rib.RIB

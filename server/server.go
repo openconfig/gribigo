@@ -9,17 +9,17 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
+	"github.com/openconfig/gribigo/rib"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
-	"github.com/openconfig/gribigo/rib"
 )
 
 const (
-	// DefaultNIName specifies the name of the default network instance on the system.
-	DefaultNIName = "DEFAULT"
+	// DefaultNetworkInstanceName specifies the name of the default network instance on the system.
+	DefaultNetworkInstanceName = "DEFAULT"
 )
 
 // Server implements the gRIBI service.
@@ -148,7 +148,7 @@ func New(opt ...ServerOpt) *Server {
 		cs: map[string]*clientState{},
 		// TODO(robjs): when we implement support for ALL_PRIMARY then we might not
 		// want to create a new RIB by default.
-		masterRIB: rib.New(DefaultNIName),
+		masterRIB: rib.New(DefaultNetworkInstanceName),
 	}
 
 	if v := hasRIBHook(opt); v != nil {
@@ -553,7 +553,7 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 		case spb.AFTOperation_ADD:
 			ni := o.GetNetworkInstance()
 			if ni == "" {
-				ni = DefaultNIName
+				ni = DefaultNetworkInstanceName
 			}
 
 			if _, ok := s.masterRIB.NetworkInstanceRIB(ni); !ok {
@@ -621,7 +621,7 @@ func addEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, election
 	// we ensure that we are tolerant to this error by also rewriting. This helps
 	// with testing also.
 	if ni == "" {
-		ni = DefaultNIName
+		ni = DefaultNetworkInstanceName
 	}
 
 	niR, ok := r.NetworkInstanceRIB(ni)

@@ -315,7 +315,7 @@ func protoFromGoStruct(s ygot.GoStruct, prefix *gpb.Path, pb proto.Message) erro
 		}
 	}
 
-	if err := protomap.ProtoFromPaths(pb, vals, protomap.ProtobufMessagePrefix(prefix), protomap.IgnoreExtraPaths()); err != nil {
+	if err := protomap.ProtoFromPaths(pb, vals, protomap.ProtobufMessagePrefix(prefix), protomap.ValuePathPrefix(prefix), protomap.IgnoreExtraPaths()); err != nil {
 		return fmt.Errorf("cannot unmarshal gNMI paths, %v", err)
 	}
 

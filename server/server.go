@@ -18,11 +18,6 @@ import (
 )
 
 const (
-	// DefaultNIName specifies the name of the default network instance on the system.
-	DefaultNIName = "DEFAULT"
-)
-
-const (
 	// DefaultNetworkInstanceName specifies the name of the default network instance on the system.
 	DefaultNetworkInstanceName = "DEFAULT"
 )

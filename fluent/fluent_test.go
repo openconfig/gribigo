@@ -223,7 +223,6 @@ func TestEntriesToModifyRequest(t *testing.T) {
 			connection: &gRIBIConnection{
 				redundMode: ElectedPrimaryClient,
 			},
-			opCount: 1,
 			currentElectionID: &spb.Uint128{
 				High: 42,
 				Low:  42,

@@ -603,7 +603,6 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 		c.qs.resultq = append(c.qs.resultq, sr)
 	}
 
-	// TODO(robjs): add handling of received operations.
 	for _, r := range m.Result {
 		res, err := c.clearPendingOp(r)
 		c.qs.resultq = append(c.qs.resultq, res)

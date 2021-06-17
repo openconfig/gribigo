@@ -91,7 +91,7 @@ func (r *RIB) SetHook(fn RIBHookFn) {
 }
 
 // NI returns the RIB for the network instance with name s.
-func (r *RIB) RIBForNI(s string) (*RIBHolder, bool) {
+func (r *RIB) NetworkInstanceRIB(s string) (*RIBHolder, bool) {
 	r.nrMu.RLock()
 	defer r.nrMu.RUnlock()
 	rh, ok := r.niRIB[s]
@@ -152,7 +152,7 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 	if netInst == "" {
 		netInst = r.defaultName
 	}
-	niRIB, ok := r.RIBForNI(netInst)
+	niRIB, ok := r.NetworkInstanceRIB(netInst)
 	if !ok {
 		return false, fmt.Errorf("invalid network-instance %s", netInst)
 	}
@@ -184,7 +184,7 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 		}
 		resolveRIB := niRIB
 		if otherNI := i.GetNextHopGroupNetworkInstance(); otherNI != "" {
-			resolveRIB, ok = r.RIBForNI(otherNI)
+			resolveRIB, ok = r.NetworkInstanceRIB(otherNI)
 			if !ok {
 				return false, fmt.Errorf("invalid unknown network-instance for IPv4Entry, %s", otherNI)
 			}

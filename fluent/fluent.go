@@ -427,8 +427,8 @@ const (
 	ElectionIDNotAllowed
 )
 
-// reasonMap provides a mapping between the fluent readable modify error reason and the
-// reason in the gRIBI protobuf.
+// reasonMap provides a mapping between the fluent readable modify error reason and
+// the defined reason in the gRIBI protobuf.
 var reasonMap = map[ModifyErrReason]spb.ModifyRPCErrorDetails_Reason{
 	UnsupportedParameters:        spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
 	ModifyParamsNotAllowed:       spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED,

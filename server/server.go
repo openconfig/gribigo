@@ -148,7 +148,7 @@ func New(opt ...ServerOpt) *Server {
 		cs: map[string]*clientState{},
 		// TODO(robjs): when we implement support for ALL_PRIMARY then we might not
 		// want to create a new RIB by default.
-		masterRIB: rib.New(DefaultNIName),
+		masterRIB: rib.New(DefaultNetworkInstanceName),
 	}
 
 	if v := hasRIBHook(opt); v != nil {
@@ -553,7 +553,7 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 		case spb.AFTOperation_ADD:
 			ni := o.GetNetworkInstance()
 			if ni == "" {
-				ni = DefaultNIName
+				ni = DefaultNetworkInstanceName
 			}
 			r, ok := s.masterRIB.NetworkInstanceRIB(ni)
 			if !ok {

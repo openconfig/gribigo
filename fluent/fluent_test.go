@@ -69,7 +69,7 @@ func TestGRIBIClient(t *testing.T) {
 			c := NewClient()
 			c.Connection().WithTarget(addr).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
 			c.Start(context.Background(), t)
-			c.Modify().AddEntry(t, IPv4Entry().WithPrefix("1.1.1.1./32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
+			c.Modify().AddEntry(t, IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
 			c.StartSending(context.Background(), t)
 			c.Await(context.Background(), t)
 		},
@@ -81,8 +81,10 @@ func TestGRIBIClient(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot load credentials, got err: %v", err)
 			}
-			d, cancel, err := device.New(context.Background(), creds)
+			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			d, err := device.New(ctx, creds)
+
 			if err != nil {
 				t.Fatalf("cannot start server, %v", err)
 			}

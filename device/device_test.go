@@ -17,10 +17,10 @@ func TestDevice(t *testing.T) {
 		t.Fatalf("cannot load TLS credentials, %v", err)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
-		ctx := context.Background()
-		d, cancel, err := New(context.Background(), creds)
-		defer cancel()
+		d, err := New(ctx, creds)
 		if err != nil {
 			errCh <- err
 		}

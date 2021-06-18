@@ -19,6 +19,7 @@ import (
 	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	"github.com/openconfig/gribigo/constants"
 )
 
 var (
@@ -36,6 +37,8 @@ type Client struct {
 
 	// c is the current gRIBI client.
 	c spb.GRIBIClient
+	// conn is the current gRPC connection that the client uses.
+	conn *grpc.ClientConn
 
 	// qs is the set of queues that are associated with the current
 	// client.
@@ -137,6 +140,8 @@ func handleParams(opts ...Opt) (*clientState, error) {
 			s.ElectionID = v.electionID
 		case *persistEntries:
 			s.SessParams.Persistence = spb.SessionParameters_PRESERVE
+		case *fibACK:
+			s.SessParams.AckType = spb.SessionParameters_RIB_AND_FIB_ACK
 		}
 	}
 	return s, nil
@@ -163,8 +168,14 @@ func (c *Client) Dial(ctx context.Context, addr string, opts ...DialOpt) error {
 	if err != nil {
 		return fmt.Errorf("cannot dial remote system, %v", err)
 	}
+	c.conn = conn
 	c.c = spb.NewGRIBIClient(conn)
 	return nil
+}
+
+// Close disconnects the underlying gRPC connection to the gRIBI server.
+func (c *Client) Close() error {
+	return c.conn.Close()
 }
 
 // AllPrimaryClients is an option that is used when creating a new client that
@@ -216,6 +227,18 @@ func PersistEntries() *persistEntries {
 type persistEntries struct{}
 
 func (persistEntries) isClientOpt() {}
+
+// FIBACK indicates that the client should request that the server
+// sends acknowledgements for gRIBI transactions only after they have been
+// programmed into the FIB. By default, a gRIBI server will send an acknowledgement
+// when the entry has been installed into the RIB.
+func FIBACK() *fibACK {
+	return &fibACK{}
+}
+
+type fibACK struct{}
+
+func (fibACK) isClientOpt() {}
 
 // Connect establishes a Modify RPC to the client and sends the initial session
 // parameters/election ID if required. The Modify RPC is stored within the client
@@ -458,7 +481,26 @@ type OpResult struct {
 	// ClientError describes an error that is internal to the client.
 	ClientError string
 
-	// TODO(robjs): add additional information about what the result was here.
+	// ProgrammingResult stores the result of an AFT operation on the server.
+	ProgrammingResult spb.AFTResult_Status
+
+	// Details stores detailed information about the operation over the ID
+	// and the result.
+	Details *OpDetailsResults
+}
+
+// OpDetailsResults provides details of an operation for use in the results.
+type OpDetailsResults struct {
+	// Type is the type of the operation (i.e., ADD, MODIFY, DELETE)
+	Type constants.OpType
+
+	// NextHopIndex is the identifier for a next-hop modified by the operation.
+	NextHopIndex uint64
+	// NextHopGroupID is the identifier for a next-hop-group modified by the
+	// operation.
+	NextHopGroupID uint64
+	// IPv4Prefix is the IPv4 prefix modified by the operation.
+	IPv4Prefix string
 }
 
 // String returns a string for an OpResult for debugging purposes.
@@ -473,7 +515,7 @@ func (o *OpResult) String() string {
 	}
 
 	if v := o.OperationID; v != 0 {
-		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d }", v))
+		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Status: %s }", v, o.ProgrammingResult))
 	}
 
 	if v := o.SessionParameters; v != nil {
@@ -657,10 +699,26 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
 	}
 	delete(c.qs.pendq.Ops, op.Id)
+
+	det := &OpDetailsResults{
+		Type: constants.OpFromAFTOp(v.Op.Op),
+	}
+	switch opEntry := v.Op.Entry.(type) {
+	case *spb.AFTOperation_Ipv4:
+		det.IPv4Prefix = opEntry.Ipv4.GetPrefix()
+	case *spb.AFTOperation_NextHopGroup:
+		det.NextHopGroupID = opEntry.NextHopGroup.GetId()
+	case *spb.AFTOperation_NextHop:
+		det.NextHopIndex = opEntry.NextHop.GetIndex()
+	}
+
 	n := unixTS()
 	return &OpResult{
-		Timestamp: n,
-		Latency:   n - v.Timestamp,
+		Timestamp:         n,
+		Latency:           n - v.Timestamp,
+		OperationID:       op.GetId(),
+		ProgrammingResult: op.GetStatus(),
+		Details:           det,
 	}, nil
 }
 

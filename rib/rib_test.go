@@ -636,7 +636,7 @@ func TestHooks(t *testing.T) {
 				switch {
 				case o.IP4 != "":
 					switch o.Do {
-					case constants.MODIFY, constants.DELETE:
+					case constants.REPLACE, constants.DELETE:
 						if _, err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix:    o.IP4,
 							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
@@ -646,7 +646,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NHG != 0:
 					switch o.Do {
-					case constants.MODIFY, constants.DELETE:
+					case constants.REPLACE, constants.DELETE:
 						if _, err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
@@ -656,7 +656,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NH != 0:
 					switch o.Do {
-					case constants.MODIFY, constants.DELETE:
+					case constants.REPLACE, constants.DELETE:
 						if _, err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},

@@ -20,13 +20,13 @@ func main() {
 		log.Exitf("must specify a TLS certificate and key file")
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	creds, err := device.TLSCredsFromFile(*certFile, *keyFile)
 	if err != nil {
 		log.Exitf("cannot initialise TLS, got: %v", err)
 	}
-	d, cancel, err := device.New(context.Background(), creds)
-	defer cancel()
+	d, err := device.New(ctx, creds)
 	if err != nil {
 		log.Exitf("cannot start device, %v", err)
 	}

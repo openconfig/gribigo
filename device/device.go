@@ -146,7 +146,6 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 				},
 			})
 		}
-
 		// TODO(robjs): add to the system RIB here - we need to plumb
 		// an error back to say that the FIB was not programmed.
 		// This means that we need the server to be aware of the FIB programming

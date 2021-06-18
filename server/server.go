@@ -660,6 +660,7 @@ func addEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, election
 	}
 
 	for _, fail := range faileds {
+		log.Errorf("returning failed to client because the RIB declared it failed, %v", fail)
 		results = append(results, &spb.AFTResult{
 			Id:     fail.ID,
 			Status: spb.AFTResult_FAILED,
@@ -705,6 +706,7 @@ func checkElectionForModify(opID uint64, opElecID *spb.Uint128, election *electi
 		)
 	case election.client != election.master:
 		// this client is not the elected master.
+		log.Errorf("returning failed to client %s, because they are not the elected master (%s is)", election.client, election.master)
 		return &spb.ModifyResponse{
 			Result: []*spb.AFTResult{{
 				Id:     opID,

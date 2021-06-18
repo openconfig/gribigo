@@ -15,8 +15,11 @@ import (
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/server"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 )
+
+var electionID = &atomic.Uint64{}
 
 // Test describes a test within the compliance library.
 type Test struct {
@@ -25,12 +28,63 @@ type Test struct {
 	ShortName   string
 }
 
+type TestSpec struct {
+	In       Test
+	FatalMsg string
+	ErrorMsg string
+}
+
+var (
+	TestSuite = []*TestSpec{{
+		In: Test{
+			Fn:        ModifyConnection,
+			ShortName: "Modify RPC connection",
+		},
+	}, {
+		In: Test{
+			Fn:        ModifyConnectionWithElectionID,
+			ShortName: "Modify RPC Connection with Election ID",
+		},
+	}, {
+		In: Test{
+			Fn:        ModifyConnectionSinglePrimaryPreserve,
+			ShortName: "Modify RPC Connection with invalid persist/redundancy parameters",
+		},
+	}, {
+		In: Test{
+			Fn:        AddIPv4EntryRIBACK,
+			ShortName: "Add IPv4 entry that can be programmed on the server - with RIB ACK",
+		},
+	}, {
+		In: Test{
+			Fn:        AddIPv4EntryFIBACK,
+			ShortName: "Add IPv4 entry that can be programmed on the server - with FIB ACK",
+		},
+	}, {
+		In: Test{
+			Fn:        AddUnreferencedNextHopGroupFIBACK,
+			ShortName: "Add next-hop-group entry that can be resolved on the server, no referencing IPv4 entries - with RIB ACK",
+		},
+	}, {
+		In: Test{
+			Fn:        AddUnreferencedNextHopGroupRIBACK,
+			ShortName: "Add next-hop-group entry that can be resolved on the server, no referencing IPv4 entries - with FIB ACK",
+		},
+	}, {
+		In: Test{
+			Fn:        AddIPv4EntryRandom,
+			ShortName: "Add IPv4 entries that are resolved by NHG and NH, in random order",
+		},
+	}}
+)
+
 // ModifyConnection is a test that connects to a gRIBI server at addr and opens a Modify RPC. It determines
 // that there is no response from the server.
 func ModifyConnection(addr string, t testing.TB) {
 	c := fluent.NewClient()
 	c.Connection().WithTarget(addr)
 	c.Start(context.Background(), t)
+	defer c.Stop(t)
 	c.StartSending(context.Background(), t)
 	c.Await(context.Background(), t)
 	// We get results, and just expected that there are none, because we did not
@@ -44,9 +98,11 @@ func ModifyConnection(addr string, t testing.TB) {
 // initial SessionParameters. It determines that there is a successful response from the server for the
 // election ID.
 func ModifyConnectionWithElectionID(addr string, t testing.TB) {
+	defer electionID.Inc()
 	c := fluent.NewClient()
-	c.Connection().WithTarget(addr).WithInitialElectionID(1, 0).WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence()
+	c.Connection().WithTarget(addr).WithInitialElectionID(electionID.Load(), 0).WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence()
 	c.Start(context.Background(), t)
+	defer c.Stop(t)
 	c.StartSending(context.Background(), t)
 	err := c.Await(context.Background(), t)
 	if err != nil {
@@ -55,7 +111,7 @@ func ModifyConnectionWithElectionID(addr string, t testing.TB) {
 
 	chk.HasResult(t, c.Results(t),
 		fluent.OperationResult().
-			WithCurrentServerElectionID(1, 0).
+			WithCurrentServerElectionID(electionID.Load(), 0).
 			AsResult(),
 	)
 
@@ -74,6 +130,7 @@ func ModifyConnectionSinglePrimaryPreserve(addr string, t testing.TB) {
 	c := fluent.NewClient()
 	c.Connection().WithTarget(addr).WithRedundancyMode(fluent.AllPrimaryClients).WithPersistence()
 	c.Start(context.Background(), t)
+	defer c.Stop(t)
 	c.StartSending(context.Background(), t)
 	err := c.Await(context.Background(), t)
 	if err == nil {
@@ -216,7 +273,8 @@ func AddIPv4EntryRandom(addr string, t testing.TB) {
 // If the caller sets randomise to true, the client MUST NOT, rely on the operation
 // ID to validate the entries, since this is allocated internally to the client.
 func doOps(c *fluent.GRIBIClient, addr string, t testing.TB, ops []func(), wantACK fluent.ProgrammingResult, randomise bool) []*client.OpResult {
-	conn := c.Connection().WithTarget(addr).WithRedundancyMode(fluent.ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
+	defer electionID.Inc()
+	conn := c.Connection().WithTarget(addr).WithRedundancyMode(fluent.ElectedPrimaryClient).WithInitialElectionID(electionID.Load(), 0).WithPersistence()
 
 	if wantACK == fluent.InstalledInFIB {
 		conn.WithFIBACK()
@@ -225,6 +283,10 @@ func doOps(c *fluent.GRIBIClient, addr string, t testing.TB, ops []func(), wantA
 	ctx := context.Background()
 	c.Start(ctx, t)
 	defer c.Stop(t)
+	c.StartSending(ctx, t)
+	if err := c.Await(ctx, t); err != nil {
+		t.Fatalf("got unexpected error from server - session negotiation, got: %v, want: nil", err)
+	}
 
 	// If randomise is specified, we go and do the operations in a random order.
 	// In this case, the caller MUST
@@ -237,10 +299,8 @@ func doOps(c *fluent.GRIBIClient, addr string, t testing.TB, ops []func(), wantA
 		fn()
 	}
 
-	c.StartSending(ctx, t)
-	err := c.Await(ctx, t)
-	if err != nil {
-		t.Fatalf("got unexpected error from server, got: %v, want: nil", err)
+	if err := c.Await(ctx, t); err != nil {
+		t.Fatalf("got unexpected error from server - entries, got: %v, want: nil", err)
 	}
 	return c.Results(t)
 }

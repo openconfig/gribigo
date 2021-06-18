@@ -87,7 +87,7 @@ func New(ctx context.Context, addr string, hostname string, sendMeta bool, opts 
 	}
 
 	go srv.Serve(lis)
-	c.stopFn = srv.Stop
+	c.stopFn = srv.GracefulStop
 	return c, lis.Addr().String(), nil
 }
 

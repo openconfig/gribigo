@@ -127,7 +127,7 @@ func toUpd(r *gpb.SubscribeResponse) []*upd {
 // TestONCE tests the subscribe mode of gnmit.
 func TestONCE(t *testing.T) {
 	ctx := context.Background()
-	c, addr, err := New(ctx, 0, "local", false)
+	c, addr, err := New(ctx, "localhost:0", "local", false)
 	if err != nil {
 		t.Fatalf("cannot start server, got err: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestONCE(t *testing.T) {
 // TestSTREAM tests the STREAM mode of gnmit.
 func TestSTREAM(t *testing.T) {
 	ctx := context.Background()
-	c, addr, err := New(ctx, 0, "local", false)
+	c, addr, err := New(ctx, "localhost:0", "local", false)
 	if err != nil {
 		t.Fatalf("cannot start server, got err: %v", err)
 	}

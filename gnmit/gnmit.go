@@ -37,19 +37,19 @@ func periodic(period time.Duration, fn func()) {
 	}
 }
 
-// New returns a new collector that listens on the specified port, supporting a single
-// downstream target named hostname. sendMeta controls whether the metadata *other*
-// than meta/sync and meta/connected is sent by the collector.
+// New returns a new collector that listens on the specified addr (in the form host:port),
+// supporting a single downstream target named hostname. sendMeta controls whether the
+// metadata *other* than meta/sync and meta/connected is sent by the collector.
 //
 // New returns the new collector, the address it is listening on in the form hostname:port
 // or any errors encounted whilst setting it up.
-func New(ctx context.Context, port int, hostname string, sendMeta bool) (*Collector, string, error) {
+func New(ctx context.Context, addr string, hostname string, sendMeta bool, opts ...grpc.ServerOption) (*Collector, string, error) {
 	c := &Collector{
 		inCh: make(chan *gpb.SubscribeResponse),
 		name: hostname,
 	}
 
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(opts...)
 	c.cache = cache.New([]string{hostname})
 	t := c.cache.GetTarget(hostname)
 
@@ -81,13 +81,13 @@ func New(ctx context.Context, port int, hostname string, sendMeta bool) (*Collec
 	// Forward streaming updates to clients.
 	c.cache.SetClient(subscribeSrv.Update)
 	// Register listening port and start serving.
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to listen: %v", err)
 	}
 
 	go srv.Serve(lis)
-	c.stopFn = srv.Stop
+	c.stopFn = srv.GracefulStop
 	return c, lis.Addr().String(), nil
 }
 

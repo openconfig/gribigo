@@ -112,49 +112,49 @@ func (cp *clientParams) Equal(n *clientParams) bool {
 	return cp.Persist == n.Persist && cp.FIBAck == n.FIBAck && cp.ExpectElecID == n.ExpectElecID
 }
 
-// ServerOpt is an option that can be provided to the gRIBI Server.
+// ServerOpt is an interface that is implemented by any options to the gRIBI server.
 type ServerOpt interface {
 	isServerOpt()
 }
 
-// WithRIBHook specifies that the server should be created with a function which is called
-// after every RIB change event.
-func WithRIBHook(r rib.RIBHookFn) *ribHook {
-	return &ribHook{fn: r}
+// WithRIBHook specifies that the given function that is of type rib.RIBHook function
+// should be executed after each change in the RIB.
+func WithRIBHook(fn rib.RIBHookFn) *ribHook {
+	return &ribHook{fn: fn}
 }
 
-// ribHook stores a function that is to be called on the RIB hook.
+// ribHook is the internal implementation of the WithRIBHook option.
 type ribHook struct {
 	fn rib.RIBHookFn
 }
 
-// isServerOpt implements the ServerOpt interface.
+// isServerOpt implemenets the ServerOpt interface.
 func (*ribHook) isServerOpt() {}
 
-// hasRIBHook returns the WithRIBHook function from the supplied ServerOpt slice,
-// or nil if one does not exist.
-func hasRIBHook(opts []ServerOpt) rib.RIBHookFn {
-	for _, o := range opts {
+// hasRIBHook extracts the ribHook option from the supplied ServerOpt, returning nil
+// if one is not found. It will return only the first argument if multiple are specified.
+func hasRIBHook(opt []ServerOpt) *ribHook {
+	for _, o := range opt {
 		if v, ok := o.(*ribHook); ok {
-			return v.fn
+			return v
 		}
 	}
 	return nil
 }
 
 // New creates a new gRIBI server.
-func New(opts ...ServerOpt) *Server {
-	r := rib.New(DefaultNetworkInstanceName)
-	if f := hasRIBHook(opts); f != nil {
-		r.SetHook(f)
-	}
-
-	return &Server{
+func New(opt ...ServerOpt) *Server {
+	s := &Server{
 		cs: map[string]*clientState{},
 		// TODO(robjs): when we implement support for ALL_PRIMARY then we might not
 		// want to create a new RIB by default.
-		masterRIB: r,
+		masterRIB: rib.New(DefaultNetworkInstanceName),
 	}
+
+	if v := hasRIBHook(opt); v != nil {
+		s.masterRIB.SetHook(v.fn)
+	}
+	return s
 }
 
 // Modify implements the gRIBI Modify RPC.
@@ -188,6 +188,9 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 			)
 
 			switch {
+			case in == nil:
+				log.Errorf("received nil message on Modify channel")
+				skipWrite = true
 			case in.Params != nil:
 				var err error
 				if res, err = s.checkParams(cid, in.Params, gotmsg); err != nil {
@@ -235,7 +238,12 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		}
 	}()
 
-	return <-errCh
+	err := <-errCh
+
+	// when this client goes away, we need to clean up its state.
+	s.deleteClient(cid)
+
+	return err
 }
 
 // newClient creates a new client context within the server using the specified string
@@ -252,6 +260,15 @@ func (s *Server) newClient(id string) error {
 	}
 
 	return nil
+}
+
+// deleteClient removes the client with the specified id from the server. It does not return
+// an error if the client cannot be deleted, since this action is performed when the other
+// side has already gone away, so there is no error we can return to them.
+func (s *Server) deleteClient(id string) {
+	s.csMu.Lock()
+	defer s.csMu.Unlock()
+	delete(s.cs, id)
 }
 
 // updateParams writes the parameters for the client specified by id to the server state

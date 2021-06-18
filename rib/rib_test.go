@@ -7,6 +7,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openconfig/gribigo/aft"
+	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/ygot/testutil"
 	"github.com/openconfig/ygot/ygot"
 	"google.golang.org/protobuf/proto"
@@ -426,7 +427,7 @@ func mustTypedValue(i interface{}) *gpb.TypedValue {
 
 func TestHooks(t *testing.T) {
 	type op struct {
-		Do  OpType
+		Do  constants.OpType
 		TS  int64
 		NH  uint64
 		NHG uint64
@@ -442,55 +443,55 @@ func TestHooks(t *testing.T) {
 	}{{
 		desc: "store add hooks",
 		inOps: []*op{{
-			Do:  ADD,
+			Do:  constants.ADD,
 			IP4: "8.8.8.8/32",
 		}, {
-			Do:  ADD,
+			Do:  constants.ADD,
 			NHG: 42,
 		}, {
-			Do: ADD,
+			Do: constants.ADD,
 			NH: 84,
 		}},
 		storeFn: true,
 		want: []interface{}{
-			&op{Do: ADD, TS: 0, IP4: "8.8.8.8/32"},
-			&op{Do: ADD, TS: 1, NHG: 42},
-			&op{Do: ADD, TS: 2, NH: 84},
+			&op{Do: constants.ADD, TS: 0, IP4: "8.8.8.8/32"},
+			&op{Do: constants.ADD, TS: 1, NHG: 42},
+			&op{Do: constants.ADD, TS: 2, NH: 84},
 		},
 	}, {
 		desc: "store delete hooks",
 		inOps: []*op{{
-			Do:  DELETE,
+			Do:  constants.DELETE,
 			IP4: "8.8.8.8/32",
 		}, {
-			Do:  DELETE,
+			Do:  constants.DELETE,
 			IP4: "1.1.1.1/32",
 		}},
 		storeFn: true,
 		want: []interface{}{
-			&op{Do: DELETE, TS: 0, IP4: "8.8.8.8/32"},
-			&op{Do: DELETE, TS: 1, IP4: "1.1.1.1/32"},
+			&op{Do: constants.DELETE, TS: 0, IP4: "8.8.8.8/32"},
+			&op{Do: constants.DELETE, TS: 1, IP4: "1.1.1.1/32"},
 		},
 	}, {
 		desc: "store add and delete",
 		inOps: []*op{{
-			Do:  ADD,
+			Do:  constants.ADD,
 			IP4: "1.1.1.1/32",
 		}, {
-			Do:  DELETE,
+			Do:  constants.DELETE,
 			IP4: "2.2.2.2/32",
 		}},
 		want: []interface{}{
-			&op{Do: DELETE, TS: 0, IP4: "1.1.1.1/32"},
-			&op{Do: DELETE, TS: 1, IP4: "2.2.2.2/32"},
+			&op{Do: constants.DELETE, TS: 0, IP4: "1.1.1.1/32"},
+			&op{Do: constants.DELETE, TS: 1, IP4: "2.2.2.2/32"},
 		},
 	}, {
 		desc: "gnmi add and delete",
 		inOps: []*op{{
-			Do:  ADD,
+			Do:  constants.ADD,
 			IP4: "1.2.3.4/32",
 		}, {
-			Do:  DELETE,
+			Do:  constants.DELETE,
 			IP4: "4.5.6.7/32",
 		}},
 		gnmiFn: true,
@@ -524,7 +525,7 @@ func TestHooks(t *testing.T) {
 			tsFn := func() int64 {
 				return int64(len(got))
 			}
-			store := func(o OpType, _ string, gs ygot.GoStruct) {
+			store := func(o constants.OpType, _ int64, _ string, gs ygot.GoStruct) {
 				switch t := gs.(type) {
 				case *aft.Afts_Ipv4Entry:
 					got = append(got, &op{Do: o, TS: tsFn(), IP4: t.GetPrefix()})
@@ -535,8 +536,8 @@ func TestHooks(t *testing.T) {
 				}
 			}
 
-			gnmiNoti := func(o OpType, ni string, gs ygot.GoStruct) {
-				if o == DELETE {
+			gnmiNoti := func(o constants.OpType, _ int64, ni string, gs ygot.GoStruct) {
+				if o == constants.DELETE {
 					switch t := gs.(type) {
 					case *aft.Afts_Ipv4Entry:
 						got = append(got, &gpb.Notification{
@@ -606,7 +607,7 @@ func TestHooks(t *testing.T) {
 				switch {
 				case o.IP4 != "":
 					switch o.Do {
-					case MODIFY, DELETE:
+					case constants.MODIFY, constants.DELETE:
 						if err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix:    o.IP4,
 							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
@@ -616,7 +617,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NHG != 0:
 					switch o.Do {
-					case MODIFY, DELETE:
+					case constants.MODIFY, constants.DELETE:
 						if err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
@@ -626,7 +627,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NH != 0:
 					switch o.Do {
-					case MODIFY, DELETE:
+					case constants.MODIFY, constants.DELETE:
 						if err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},
@@ -649,14 +650,14 @@ func TestHooks(t *testing.T) {
 				switch {
 				case o.IP4 != "":
 					switch o.Do {
-					case ADD:
+					case constants.ADD:
 						if err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix:    o.IP4,
 							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
 						}); err != nil {
 							t.Fatalf("cannot add IPv4 entry %s: %v", o.IP4, err)
 						}
-					case DELETE:
+					case constants.DELETE:
 						if err := r.niRIB[r.defaultName].DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix: o.IP4,
 						}); err != nil {
@@ -665,7 +666,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NHG != 0:
 					switch o.Do {
-					case ADD:
+					case constants.ADD:
 						if err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
@@ -675,7 +676,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NH != 0:
 					switch o.Do {
-					case ADD:
+					case constants.ADD:
 						if err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},

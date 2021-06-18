@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/openconfig/gribigo/device"
 	"github.com/openconfig/gribigo/negtest"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
@@ -68,7 +69,7 @@ func TestGRIBIClient(t *testing.T) {
 			c := NewClient()
 			c.Connection().WithTarget(addr).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
 			c.Start(context.Background(), t)
-			c.Modify().AddEntry(t, IPv4Entry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
+			c.Modify().AddEntry(t, IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
 			c.StartSending(context.Background(), t)
 			c.Await(context.Background(), t)
 		},
@@ -76,12 +77,21 @@ func TestGRIBIClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			startServer, addr := testcommon.Server()
-			go startServer()
+			creds, err := device.TLSCredsFromFile(testcommon.TLSCreds())
+			if err != nil {
+				t.Fatalf("cannot load credentials, got err: %v", err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			d, err := device.New(ctx, creds)
+
+			if err != nil {
+				t.Fatalf("cannot start server, %v", err)
+			}
 
 			if tt.wantFatalMsg != "" {
 				if got := negtest.ExpectFatal(t, func(t testing.TB) {
-					tt.inFn(addr, t)
+					tt.inFn(d.GRIBIAddr(), t)
 				}); !strings.Contains(got, tt.wantFatalMsg) {
 					t.Fatalf("did not get expected fatal error, got: %s, want: %s", got, tt.wantFatalMsg)
 				}
@@ -90,14 +100,14 @@ func TestGRIBIClient(t *testing.T) {
 
 			if tt.wantErrorMsg != "" {
 				if got := negtest.ExpectError(t, func(t testing.TB) {
-					tt.inFn(addr, t)
+					tt.inFn(d.GRIBIAddr(), t)
 				}); !strings.Contains(got, tt.wantErrorMsg) {
 					t.Fatalf("did not get expected error, got: %s, want: %s", got, tt.wantErrorMsg)
 				}
 			}
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
-			tt.inFn(addr, t)
+			tt.inFn(d.GRIBIAddr(), t)
 		})
 	}
 }

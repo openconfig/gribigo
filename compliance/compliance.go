@@ -6,11 +6,13 @@ package compliance
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/openconfig/gribigo/chk"
 	"github.com/openconfig/gribigo/client"
 	"github.com/openconfig/gribigo/fluent"
+	"github.com/openconfig/gribigo/server"
 	"google.golang.org/grpc/codes"
 )
 
@@ -86,4 +88,20 @@ func ModifyConnectionSinglePrimaryPreserve(addr string, t testing.TB) {
 	if want := fluent.ModifyError().WithCode(codes.FailedPrecondition).WithReason(fluent.UnsupportedParameters).AsStatus(t); !chk.HasRecvClientErrorWithStatus(ce, want) {
 		t.Fatalf("did not get expected error type, got: %v, want: %v", ce, want)
 	}
+}
+
+// AddIPv4EntrySuccess adds a simple IPv4 Entry which references a next-hop-group to the gRIBI target.
+func AddIPv4EntrySuccess(addr string, t testing.TB) {
+	c := fluent.NewClient()
+	c.Connection().WithTarget(addr).WithRedundancyMode(fluent.ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
+	c.Start(context.Background(), t)
+	c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
+	c.StartSending(context.Background(), t)
+	err := c.Await(context.Background(), t)
+	if err != nil {
+		t.Fatalf("got unexpected error from server, got: %v, want: nil", err)
+	}
+	// TODO(robjs): add verification of the received gRIBI results.
+	// TODO(robjs): add gNMI subscription using generated telemetry library.
+	fmt.Printf("%v\n", c.Results(t))
 }

@@ -19,22 +19,34 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+// electionID is a atomically updated uint64 that we use for the election ID in the tests
+// this ensures that we do not have tests that specify an election ID that is older than
+// the last tests', and thus fail due to the state of the server.
 var electionID = &atomic.Uint64{}
 
 // Test describes a test within the compliance library.
 type Test struct {
-	Fn          func(string, testing.TB)
+	// Fn is the function to be run for a test.
+	Fn func(string, testing.TB)
+	// Description is a longer description of what the test does such that it can
+	// be handed to a documentation generating function within the test.
 	Description string
-	ShortName   string
+	// ShortName is a short description of the test for use in test output.
+	ShortName string
 }
 
+// TestSpec is a description of a test.
 type TestSpec struct {
-	In       Test
+	// In is the specification of the test to be run.
+	In Test
+	// FatalMsg is an expected t.Fatalf message that the test finds.
 	FatalMsg string
+	// ErrorMsg is an expected t.Errorf message that the test finds.
 	ErrorMsg string
 }
 
 var (
+	// TestSuite is the library of tests that can be run for compliance.
 	TestSuite = []*TestSpec{{
 		In: Test{
 			Fn:        ModifyConnection,

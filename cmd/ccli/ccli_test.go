@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/compliance"
 	"github.com/openconfig/gribigo/negtest"
 )
@@ -16,7 +17,8 @@ var (
 func TestCompliance(t *testing.T) {
 	flag.Parse()
 	if *addr == "" {
-		t.Fatalf("must specify gRIBI server address, got: %v", *addr)
+		log.Errorf("must specify gRIBI server address, got: %v", *addr)
+		return
 	}
 
 	for _, tt := range compliance.TestSuite {

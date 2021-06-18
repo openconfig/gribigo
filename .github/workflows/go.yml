@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ['1.13', '1.14', '1.15', '1.16']
+        go: ['1.13', '1.14', '1.15', '1.16', '1.x']
     steps:
 
     - name: Set up Go ${{ matrix.go }}
@@ -36,10 +36,10 @@ jobs:
 
     - name: Race Test
       run: |
-           go test -race ./...
+          go test -race ./...
 
     - name: Coveralls
-      if: ${{ matrix.go == '1.14' }}
+      if: ${{ matrix.go == '1.x' }}
       uses: shogo82148/actions-goveralls@v1
       with:
         path-to-profile: profile.cov

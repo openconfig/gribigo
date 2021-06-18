@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	"github.com/openconfig/gnmi/errdiff"
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/gnmi/value"
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
@@ -707,6 +708,267 @@ func TestHooks(t *testing.T) {
 				if !testutil.NotificationSetEqual(gotN, wantN) {
 					t.Fatalf("did not get expected notifications, diff(-got,+want):\n%s", cmp.Diff(gotN, wantN, protocmp.Transform()))
 				}
+			}
+		})
+	}
+}
+
+func TestCanResolve(t *testing.T) {
+	defName := "DEFAULT"
+	tests := []struct {
+		desc             string
+		inRIB            *RIB
+		inNI             string
+		inCand           *aft.RIB
+		want             bool
+		wantErrSubstring string
+	}{{
+		desc:             "nil input",
+		inRIB:            New(defName),
+		want:             false,
+		wantErrSubstring: "invalid nil candidate",
+	}, {
+		desc:  "ipv6 entry - invalid",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateIpv6Entry("ff00::1/128")
+			return r
+		}(),
+		wantErrSubstring: "IPv6 entries are unsupported",
+	}, {
+		desc:  "MPLS - invalid",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+			return r
+		}(),
+		wantErrSubstring: "MPLS label entries are unsupported",
+	}, {
+
+		desc:  "Ethernet - invalid",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateMacEntry("1a:ce:8e:df:7b:40")
+			return r
+		}(),
+		wantErrSubstring: "ethernet MAC entries are unsupported",
+	}, {
+
+		desc:  "PBR - invalid",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreatePolicyForwardingEntry(42)
+			return r
+		}(),
+		wantErrSubstring: "PBR entries are unsupported",
+	}, {
+		desc:  "empty candidate - invalid",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: &aft.RIB{
+			Afts: &aft.Afts{},
+		},
+		wantErrSubstring: "no entries in specified candidate",
+	}, {
+		desc:  "multiple entries in candidate - invalid",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1")
+			r.GetOrCreateAfts().GetOrCreateNextHop(1)
+			return r
+		}(),
+		wantErrSubstring: "multiple entries are unsupported",
+	}, {
+		desc:  "next-hop can be successfully resolved",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			n := r.GetOrCreateAfts().GetOrCreateNextHop(1)
+			n.IpAddress = ygot.String("1.1.1.1")
+			return r
+		}(),
+		want: true,
+	}, {
+		desc:  "next-hop with index 0 - invalid",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			n := r.GetOrCreateAfts().GetOrCreateNextHop(0)
+			n.IpAddress = ygot.String("1.1.1.1")
+			return r
+		}(),
+		wantErrSubstring: "invalid index zero for next-hop",
+	}, {
+		desc:  "resolve in invalid network-instance",
+		inRIB: New(defName),
+		inNI:  "does-not-exist",
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateNextHopGroup(42)
+			return r
+		}(),
+		wantErrSubstring: "invalid network-instance does-not-exist",
+	}, {
+		desc:  "nhg with index 0 - invalid",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateNextHopGroup(0)
+			return r
+		}(),
+		wantErrSubstring: "invalid zero-index NHG",
+	}, {
+		desc:  "nhg with nh with index 0 - invalid",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateNextHopGroup(1).GetOrCreateNextHop(0)
+			return r
+		}(),
+		wantErrSubstring: "invalid zero index NH in NHG 1",
+	}, {
+		desc:  "nhg refers to missing nh",
+		inRIB: New(defName),
+		inNI:  defName,
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateNextHopGroup(1).GetOrCreateNextHop(1)
+			return r
+		}(),
+		want: false,
+	}, {
+		desc: "nhg refers to valid nhs",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB[defName].r = &aft.RIB{}
+			cc := r.niRIB[defName].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHop(1)
+			cc.GetOrCreateNextHop(2)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateNextHopGroup(1).GetOrCreateNextHop(1)
+			r.GetOrCreateAfts().GetOrCreateNextHopGroup(1).GetOrCreateNextHop(2)
+			return r
+		}(),
+		want: true,
+	}, {
+		desc:  "zero index nhg in ipv4 entry - invalid",
+		inRIB: New(defName),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			i.NextHopGroup = ygot.Uint64(0)
+			return r
+		}(),
+		wantErrSubstring: "invalid zero-index NHG in IPv4Entry",
+	}, {
+		desc:  "resolve ipv4 entry in nil NI - invalid",
+		inRIB: New(defName),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String("404")
+			return r
+		}(),
+		wantErrSubstring: "invalid unknown network-instance for IPv4Entry",
+	}, {
+		desc: "resolve ipv4 entry in default NI - implicit name",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB[defName].r = &aft.RIB{}
+			cc := r.niRIB[defName].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			i.NextHopGroup = ygot.Uint64(1)
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "resolve ipv4 entry in default NI - explicit name",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB[defName].r = &aft.RIB{}
+			cc := r.niRIB[defName].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String(defName)
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "resolve ipv4 entry in non-default NI",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB["vrf-42"] = NewRIBHolder("vrf-42")
+			r.niRIB["vrf-42"].r = &aft.RIB{}
+			cc := r.niRIB["vrf-42"].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String("vrf-42")
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "resolve ipv4 entry in non-default NI - not found",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB["vrf-42"] = NewRIBHolder("vrf-42")
+			r.niRIB["vrf-42"].r = &aft.RIB{}
+			r.niRIB["vrf-42"].r.GetOrCreateAfts()
+			// explicitly don't create NHG
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String("vrf-42")
+			return r
+		}(),
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := tt.inRIB.canResolve(tt.inNI, tt.inCand)
+			if err != nil {
+				if diff := errdiff.Substring(err, tt.wantErrSubstring); diff != "" {
+					t.Fatalf("did not get expected error, %s", diff)
+				}
+				return
+			}
+			if got != tt.want {
+				t.Fatalf("did not get expected canResolve, got: %v, want: %v", got, tt.want)
 			}
 		})
 	}

@@ -64,21 +64,40 @@ func NewSysRIB(cfg *oc.Device) (*SysRIB, error) {
 			sr.defaultNI = ni
 		}
 		for _, r := range niR.Rts {
-			addr, _, err := patricia.ParseIPFromString(r.Prefix)
-			if err != nil {
-				return nil, fmt.Errorf("cannot create prefix for %s, %v", r.Prefix, err)
-			}
-			tag, err := r.toString()
-			if err != nil {
-				return nil, fmt.Errorf("cannot create tag for %s, %v", r.Prefix, err)
-			}
-			if _, _, err := sr.NI[ni].IPv4.Add(*addr, tag, nil); err != nil {
-				return nil, fmt.Errorf("cannot insert route in network instance %s %s, %v", ni, r.Prefix, err)
+			if err := sr.AddRoute(ni, r); err != nil {
+				return nil, err
 			}
 		}
 	}
 
 	return sr, nil
+}
+
+// AddRoute adds a route, rm to the network instance, ni, in the sysRIB.
+// It returns an error if it cannot be added.
+func (sr *SysRIB) AddRoute(ni string, r *Route) error {
+	if _, ok := sr.NI[ni]; !ok {
+		return fmt.Errorf("cannot find network instance %s", ni)
+	}
+	addr, _, err := patricia.ParseIPFromString(r.Prefix)
+	if err != nil {
+		return fmt.Errorf("cannot create prefix for %s, %v", r.Prefix, err)
+	}
+	tag, err := r.toString()
+	if err != nil {
+		return fmt.Errorf("cannot create tag for %s, %v", r.Prefix, err)
+	}
+	if _, _, err := sr.NI[ni].IPv4.Add(*addr, tag, nil); err != nil {
+		return fmt.Errorf("cannot insert route in network instance %s %s, %v", ni, r.Prefix, err)
+	}
+	return nil
+}
+
+// NewRoute returns a new route for the specified prefix.
+// Note - today this doesn't actually result in a viable
+// forwarding entry unless its a connected route :-)
+func NewRouteViaIF(pfx string, intf *Interface) *Route {
+	return &Route{Prefix: pfx, Connected: intf}
 }
 
 // NewSysRIBFromJSON returns a new SysRIB from an RFC7951 marshalled JSON OpenConfig configuration.

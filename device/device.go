@@ -265,6 +265,9 @@ func (d *Device) GNMIAddr() string {
 }
 
 // gnmiNoti creates a gNMI Notification from a RIB operation.
+// TODO(robjs): It would be nice to see whether we can generate
+// this function automatically from somewhere - or at least make it
+// cleaner. It also needs unit test coverage adding.
 func gnmiNoti(t constants.OpType, ts int64, ni string, e ygot.GoStruct) (*gpb.Notification, error) {
 	var ns []*gpb.Notification
 	var err error

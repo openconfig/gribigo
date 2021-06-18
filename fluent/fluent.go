@@ -5,12 +5,12 @@ package fluent
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"testing"
 
 	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/client"
+	"github.com/openconfig/gribigo/constants"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -19,13 +19,15 @@ import (
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
 
-// gRIBIClient stores internal state and arguments related to the gRIBI client
+// GRIBIClient stores internal state and arguments related to the gRIBI client
 // that is exposed by the fluent API.
-type gRIBIClient struct {
+type GRIBIClient struct {
 	// connection stores the configuration related to the connection.
 	connection *gRIBIConnection
 	// Internal state.
 	c *client.Client
+	// ctx is the context being used to dial.
+	ctx context.Context
 
 	// opCount is the count of AFTOperations that has been sent by the client,
 	// used to populate the ID of AFTOperation messages automatically.
@@ -46,20 +48,23 @@ type gRIBIConnection struct {
 	// persist indicates whether the client requests that the server persists
 	// entries after it disconnects.
 	persist bool
+	// fibACK indicates whether the client requests that the server sends
+	// a FIB ACK rather than a RIB ACK.
+	fibACK bool
 
 	// parent is a pointer to the parent of the gRIBIConnection.
-	parent *gRIBIClient
+	parent *GRIBIClient
 }
 
 // NewClient returns a new gRIBI client instance, and is an entrypoint to this
 // package.
-func NewClient() *gRIBIClient {
-	return &gRIBIClient{}
+func NewClient() *GRIBIClient {
+	return &GRIBIClient{}
 }
 
 // Connection allows any parameters relating to gRIBI connections to be set through
 // the gRIBI fluent API.
-func (g *gRIBIClient) Connection() *gRIBIConnection {
+func (g *GRIBIClient) Connection() *gRIBIConnection {
 	c := &gRIBIConnection{parent: g}
 	g.connection = c
 	return c
@@ -73,8 +78,17 @@ func (g *gRIBIConnection) WithTarget(addr string) *gRIBIConnection {
 	return g
 }
 
+// WithPersistence specifies that the gRIBI server should maintain the RIB
+// state after the client disconnects.
 func (g *gRIBIConnection) WithPersistence() *gRIBIConnection {
 	g.persist = true
+	return g
+}
+
+// WithFIBACK indicates that the gRIBI server should send an ACK after the
+// entry has been programmed into the FIB.
+func (g *gRIBIConnection) WithFIBACK() *gRIBIConnection {
+	g.fibACK = true
 	return g
 }
 
@@ -119,8 +133,7 @@ func (g *gRIBIConnection) WithInitialElectionID(low, high uint64) *gRIBIConnecti
 // not return until a connection is successfully made. Any error in parsing the
 // specified arguments required for connections is raised using the supplied
 // testing.TB.
-func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
-	flag.Parse()
+func (g *GRIBIClient) Start(ctx context.Context, t testing.TB) {
 	t.Helper()
 	if g.connection.targetAddr == "" {
 		t.Fatalf("cannot dial without specifying target address")
@@ -141,6 +154,10 @@ func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
 		opts = append(opts, client.PersistEntries())
 	}
 
+	if g.connection.fibACK {
+		opts = append(opts, client.FIBACK())
+	}
+
 	log.V(2).Infof("setting client parameters to %+v", opts)
 	c, err := client.New(opts...)
 	if err != nil {
@@ -152,12 +169,20 @@ func (g *gRIBIClient) Start(ctx context.Context, t testing.TB) {
 	if err := c.Dial(ctx, g.connection.targetAddr); err != nil {
 		t.Fatalf("cannot dial target, %v", err)
 	}
+
+	g.ctx = ctx
+}
+
+func (g *GRIBIClient) Stop(t testing.TB) {
+	if err := g.c.Close(); err != nil {
+		t.Fatalf("cannot disconnect from client, %v", err)
+	}
 }
 
 // StartSending specifies that the Modify stream to the target should be made, and
 // the client should start to send any queued messages to the target. Any error
 // encountered is reported using the supplied testing.TB.
-func (g *gRIBIClient) StartSending(ctx context.Context, t testing.TB) {
+func (g *GRIBIClient) StartSending(ctx context.Context, t testing.TB) {
 	t.Helper()
 	if err := g.c.Connect(ctx); err != nil {
 		t.Fatalf("cannot connect Modify request, %v", err)
@@ -169,7 +194,7 @@ func (g *gRIBIClient) StartSending(ctx context.Context, t testing.TB) {
 // complete is defined as both the send and pending queue being empty, or an error
 // being hit by the client. It returns an error in the case that there were errors
 // reported.
-func (g *gRIBIClient) Await(ctx context.Context, t testing.TB) error {
+func (g *GRIBIClient) Await(ctx context.Context, t testing.TB) error {
 	if err := g.c.AwaitConverged(); err != nil {
 		return err
 	}
@@ -179,7 +204,7 @@ func (g *gRIBIClient) Await(ctx context.Context, t testing.TB) error {
 // Results returns the transaction results from the client. If the client is not converged
 // it will return a partial set of results from transactions that have completed, otherwise
 // it will return the complete set of results received from the server.
-func (g *gRIBIClient) Results(t testing.TB) []*client.OpResult {
+func (g *GRIBIClient) Results(t testing.TB) []*client.OpResult {
 	r, err := g.c.Results()
 	if err != nil {
 		t.Fatalf("did not get valid results, %v", err)
@@ -191,14 +216,14 @@ func (g *gRIBIClient) Results(t testing.TB) []*client.OpResult {
 // after it has initially been created.
 
 // Modify wraps methods that trigger operations within the gRIBI Modify RPC.
-func (g *gRIBIClient) Modify() *gRIBIModify {
+func (g *GRIBIClient) Modify() *gRIBIModify {
 	return &gRIBIModify{parent: g}
 }
 
 // gRIBIModify provides a wrapper for methods associated with the gRIBI Modify RPC.
 type gRIBIModify struct {
 	// parent is a pointer to the parent of the gRIBI modify.
-	parent *gRIBIClient
+	parent *GRIBIClient
 }
 
 // AddEntry creates an operation adding a new entry to the server.
@@ -460,4 +485,119 @@ func (m *modifyError) AsStatus(t testing.TB) *status.Status {
 		t.Fatalf("cannot build error, %v", err)
 	}
 	return s
+}
+
+// opResult is an internal representation of the client
+// operation result that can be built up using the fluent API.
+type opResult struct {
+	r *client.OpResult
+}
+
+// OperationResult is a response that is received from the gRIBI server.
+func OperationResult() *opResult {
+	return &opResult{
+		r: &client.OpResult{},
+	}
+}
+
+// WithCurrentServerElectionID specifies a result that contains a response
+// that set the election ID to the uint128 value represented by low and high.
+func (o *opResult) WithCurrentServerElectionID(low, high uint64) *opResult {
+	o.r.CurrentServerElectionID = &spb.Uint128{Low: low, High: high}
+	return o
+}
+
+// WithSuccessfulSessionParams specifies that the server responded to a
+// session parameters request with an OK response.
+func (o *opResult) WithSuccessfulSessionParams() *opResult {
+	o.r.SessionParameters = &spb.SessionParametersResult{
+		Status: spb.SessionParametersResult_OK,
+	}
+	return o
+}
+
+// WithOperationID specifies the result was in response to a specific
+// operation ID.
+func (o *opResult) WithOperationID(i uint64) *opResult {
+	o.r.OperationID = i
+	return o
+}
+
+// WithIPv4Operation indicates that the result corresponds to
+// an operation impacting the IPv4 prefix p which is of the form
+// prefix/mask.
+func (o *opResult) WithIPv4Operation(p string) *opResult {
+	if o.r.Details == nil {
+		o.r.Details = &client.OpDetailsResults{}
+	}
+	o.r.Details.IPv4Prefix = p
+	return o
+}
+
+// WithNextHopGroupOperation indicates that the result correspodns to
+// an operation impacting the next-hop-group with index i.
+func (o *opResult) WithNextHopGroupOperation(i uint64) *opResult {
+	if o.r.Details == nil {
+		o.r.Details = &client.OpDetailsResults{}
+	}
+	o.r.Details.NextHopGroupID = i
+	return o
+}
+
+// WithNextHopOperation indicates that the result corresponds to
+// an operation impacting the next-hop with ID i.
+func (o *opResult) WithNextHopOperation(i uint64) *opResult {
+	if o.r.Details == nil {
+		o.r.Details = &client.OpDetailsResults{}
+	}
+	o.r.Details.NextHopIndex = i
+	return o
+}
+
+// WithOperationType indicates that the result corresponds to
+// an operation with a specific type.
+func (o *opResult) WithOperationType(c constants.OpType) *opResult {
+	if o.r.Details == nil {
+		o.r.Details = &client.OpDetailsResults{}
+	}
+	o.r.Details.Type = c
+	return o
+}
+
+// ProgrammingResult is a fluent-style representation of the AFTResult Status
+// enumeration in gRIBI.
+type ProgrammingResult int64
+
+const (
+	// ProgrammingFailed indicates that the entry was not installed into the
+	// RIB or FIB, and cannot be.
+	ProgrammingFailed ProgrammingResult = iota
+	// InstalledInRIB indicates that the entry was installed into the RIB. It
+	// does not guarantee that the system is using the entry, and does not
+	// guarantee that it is in hardware.
+	InstalledInRIB
+	// InstalledInFIB indicates that the entry was installed into the FIB. It
+	// indicates that the system is using the entry and it is installed in
+	// hardware.
+	InstalledInFIB
+)
+
+// programmingResultMap maps the fluent-style programming result to the
+// enumerated value in the protobuf.
+var programmingResultMap = map[ProgrammingResult]spb.AFTResult_Status{
+	ProgrammingFailed: spb.AFTResult_FAILED,
+	InstalledInRIB:    spb.AFTResult_RIB_PROGRAMMED,
+	InstalledInFIB:    spb.AFTResult_FIB_PROGRAMMED,
+}
+
+// WithProgrammingResult specifies an expected programming result for
+// the operation result.
+func (o *opResult) WithProgrammingResult(r ProgrammingResult) *opResult {
+	o.r.ProgrammingResult = programmingResultMap[r]
+	return o
+}
+
+// AsResult returns the operation result as a client OpResult for comparison.
+func (o *opResult) AsResult() *client.OpResult {
+	return o.r
 }

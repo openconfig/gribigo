@@ -401,7 +401,7 @@ func NextHopGroupEntry() *nextHopGroupEntry {
 	}
 }
 
-// WithIndex specifies the index of the next-hop entry.
+// WithID specifies the index of the next-hop entry.
 func (n *nextHopGroupEntry) WithID(i uint64) *nextHopGroupEntry {
 	n.pb.Id = i
 	return n

@@ -87,8 +87,14 @@ type RIBHolder struct {
 	// considered valid candidates to be merged. It can be used to check that
 	// an entry is resolvable. The argument handed to it is a candidate RIB
 	// as described by an aft.RIB structure. It returns a boolean indicating
-	// whether the entry should be installed, or an error indicating a fatal
-	// error for this entry.
+	// whether the entry should be installed, or an error indicating that the
+	// entry is not valid for installation.
+	//
+	// When checkFn returns false, but no error is returned, it is expected
+	// that the client of the RIB can retry to install this entry at a later
+	// point in time. If an error is returned, the checkFn is asserting that
+	// there is no way that this entry can ever be installed in the RIB,
+	// regardless of whether there are state changes.
 	checkFn func(a *aft.RIB) (bool, error)
 
 	// postChangeHook is a function that is called after each of the operations
@@ -572,12 +578,17 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, error) {
 	if r.checkFn != nil {
 		ok, err := r.checkFn(nr)
 		if err != nil {
-			// this is a fatal error, and this entry should never
-			// be installed.
+			// This entry can never be installed, so return the error
+			// to the caller directly -- signalling to them not to retry.
 			return false, err
 		}
 		if !ok {
-			// non-fatal, but we don't want to install this entry.
+			// The checkFn validated the entry and found it to be OK, but
+			// indicated that we should not merge it into the RIB because
+			// some prerequisite was not satisifed. Based on this, we
+			// return false (we didn't install it), but indicate with err == nil
+			// that the caller can retry this entry at some later point, and we'll
+			// run the checkFn again to see whether it can now be installed.
 			return false, nil
 		}
 	}
@@ -685,12 +696,12 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, error)
 	if r.checkFn != nil {
 		ok, err := r.checkFn(nr)
 		if err != nil {
-			// this is a fatal error, and this entry should never
-			// be installed.
+			// Entry can never be installed (see the documentation in
+			// the AddIPv4 function for additional details).
 			return false, err
 		}
 		if !ok {
-			// non-fatal, but we don't want to install this entry.
+			// Entry is not valid for installation right now.
 			return false, nil
 		}
 	}
@@ -741,12 +752,12 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 	if r.checkFn != nil {
 		ok, err := r.checkFn(nr)
 		if err != nil {
-			// this is a fatal error, and this entry should never
-			// be installed.
+			// Entry can never be installed (see the documentation in
+			// the AddIPv4 function for additional details).
 			return false, err
 		}
 		if !ok {
-			// non-fatal, but we don't want to install this entry.
+			// Entry is not valid for installation right now.
 			return false, nil
 		}
 	}

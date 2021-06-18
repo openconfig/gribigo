@@ -167,17 +167,25 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
 		return nil, nil, fmt.Errorf("must specific TLS credentials to start a server")
 	}
 
-	if err := d.startgRIBI(ctx, gr.host, gr.port, creds, server.WithRIBHook(ribHookfn)); err != nil {
+	gRIBIStop, err := d.startgRIBI(ctx, gr.host, gr.port, creds, server.WithRIBHook(ribHookfn))
+	if err != nil {
 		cancel()
 		return nil, nil, fmt.Errorf("cannot start gRIBI server, %v", err)
 	}
 
-	if err := d.startgNMI(ctx, gn.host, gn.port, creds); err != nil {
+	gNMIStop, err := d.startgNMI(ctx, gn.host, gn.port, creds)
+	if err != nil {
 		cancel()
 		return nil, nil, fmt.Errorf("cannot start gNMI server, %v", err)
 	}
 
-	return d, cancel, nil
+	userCancel := func() {
+		gNMIStop()
+		gRIBIStop()
+		cancel()
+	}
+
+	return d, userCancel, nil
 }
 
 // optGRIBIAddr finds the first occurrence of the GRIBIAddr option in opts.
@@ -224,11 +232,11 @@ func optTLSCreds(opts []DevOpt) *tlsCreds {
 
 // Start gRIBI starts the gRIBI server on the device on the specified host:port
 // and the specified TLS credentials, with the specified options.
-// It returns an error if the server cannot be started.
-func (d *Device) startgRIBI(ctx context.Context, host string, port int, creds *tlsCreds, opt ...server.ServerOpt) error {
+// It returns a function to stop the server, and error if the server cannot be started.
+func (d *Device) startgRIBI(ctx context.Context, host string, port int, creds *tlsCreds, opt ...server.ServerOpt) (func(), error) {
 	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
-		return fmt.Errorf("cannot create gRIBI server, %v", err)
+		return nil, fmt.Errorf("cannot create gRIBI server, %v", err)
 	}
 
 	s := grpc.NewServer(grpc.Creds(creds.c))
@@ -237,18 +245,19 @@ func (d *Device) startgRIBI(ctx context.Context, host string, port int, creds *t
 	d.gribiAddr = l.Addr().String()
 	d.gribiSrv = ts
 	go s.Serve(l)
-	return nil
+	return func() { s.Stop() }, nil
 }
 
-// startgNMI starts the gNMI server on the specified host:port.
-func (d *Device) startgNMI(ctx context.Context, host string, port int, creds *tlsCreds) error {
+// startgNMI starts the gNMI server on the specified host:port. It returns a function
+// to stop the server, an error if one occurred.
+func (d *Device) startgNMI(ctx context.Context, host string, port int, creds *tlsCreds) (func(), error) {
 	c, addr, err := gnmit.New(ctx, fmt.Sprintf("%s:%d", host, port), targetName, true, grpc.Creds(creds.c))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	d.gnmiAddr = addr
 	d.gnmiSrv = c
-	return nil
+	return c.Stop, nil
 }
 
 // GRIBIAddr returns the address that the gRIBI server is listening on.

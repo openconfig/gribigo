@@ -38,8 +38,11 @@ func TestModifyConnectionParameters(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot load credentials, got err: %v", err)
 			}
-			d, cancel, err := device.New(context.Background(), creds)
+			ctx, cancel := context.WithCancel(context.Background())
+
 			defer cancel()
+			d, err := device.New(ctx, creds)
+
 			if err != nil {
 				t.Fatalf("cannot start server, %v", err)
 			}

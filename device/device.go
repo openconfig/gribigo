@@ -119,18 +119,15 @@ func TLSCredsFromFile(certFile, keyFile string) (*tlsCreds, error) {
 // IsDevOpt implements the DevOpt interface for tlsCreds.
 func (*tlsCreds) isDevOpt() {}
 
-// New returns a new device with the specific context. It returns the device, a function
-// to stop the servers, or any errors that are encountered.
-func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
-	var cancel func()
-	ctx, cancel = context.WithCancel(ctx)
+// New returns a new device with the specific context. It returns the device, and
+// an optional error. The servers can be stopped by cancelling the supplied context.
+func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 	d := &Device{}
 
 	if jcfg := optDeviceCfg(opts); jcfg != nil {
 		sr, err := sysrib.NewSysRIBFromJSON(jcfg)
 		if err != nil {
-			cancel()
-			return nil, nil, fmt.Errorf("cannot build system RIB, %v", err)
+			return nil, fmt.Errorf("cannot build system RIB, %v", err)
 		}
 		d.sysRIB = sr
 	}
@@ -163,29 +160,26 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, func(), error) {
 
 	creds := optTLSCreds(opts)
 	if creds == nil {
-		cancel()
-		return nil, nil, fmt.Errorf("must specific TLS credentials to start a server")
+		return nil, fmt.Errorf("must specific TLS credentials to start a server")
 	}
 
 	gRIBIStop, err := d.startgRIBI(ctx, gr.host, gr.port, creds, server.WithRIBHook(ribHookfn))
 	if err != nil {
-		cancel()
-		return nil, nil, fmt.Errorf("cannot start gRIBI server, %v", err)
+		return nil, fmt.Errorf("cannot start gRIBI server, %v", err)
 	}
 
 	gNMIStop, err := d.startgNMI(ctx, gn.host, gn.port, creds)
 	if err != nil {
-		cancel()
-		return nil, nil, fmt.Errorf("cannot start gNMI server, %v", err)
+		return nil, fmt.Errorf("cannot start gNMI server, %v", err)
 	}
 
-	userCancel := func() {
+	go func() {
+		<-ctx.Done()
 		gNMIStop()
 		gRIBIStop()
-		cancel()
-	}
+	}()
 
-	return d, userCancel, nil
+	return d, nil
 }
 
 // optGRIBIAddr finds the first occurrence of the GRIBIAddr option in opts.
@@ -245,7 +239,7 @@ func (d *Device) startgRIBI(ctx context.Context, host string, port int, creds *t
 	d.gribiAddr = l.Addr().String()
 	d.gribiSrv = ts
 	go s.Serve(l)
-	return func() { s.Stop() }, nil
+	return s.GracefulStop, nil
 }
 
 // startgNMI starts the gNMI server on the specified host:port. It returns a function

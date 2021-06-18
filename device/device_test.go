@@ -16,17 +16,16 @@ func TestDevice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot load TLS credentials, %v", err)
 	}
-	ctx := context.Background()
-	ctx, cancel := context.WithCancel(ctx)
+
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		d, stop, err := New(ctx, creds)
+		d, err := New(ctx, creds)
 		if err != nil {
 			errCh <- err
 		}
 		devCh <- d.GRIBIAddr()
 		<-ctx.Done()
-		stop()
 	}()
 	select {
 	case err := <-errCh:

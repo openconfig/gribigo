@@ -685,12 +685,10 @@ func TestDoModify(t *testing.T) {
 			NetworkInstance: "",
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
-			Entry: &spb.AFTOperation_Ipv4{
-				Ipv4: &aftpb.Afts_Ipv4EntryKey{
-					Prefix: "1.1.1.1/32",
-					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-						NextHopGroup: &wpb.UintValue{Value: 1},
-					},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
 				},
 			},
 		}},
@@ -799,12 +797,10 @@ func TestDoModify(t *testing.T) {
 			NetworkInstance: "",
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
-			Entry: &spb.AFTOperation_Ipv4{
-				Ipv4: &aftpb.Afts_Ipv4EntryKey{
-					Prefix: "1.1.1.1/32",
-					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-						NextHopGroup: &wpb.UintValue{Value: 1},
-					},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
 				},
 			},
 		}, {
@@ -812,12 +808,10 @@ func TestDoModify(t *testing.T) {
 			NetworkInstance: "",
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
-			Entry: &spb.AFTOperation_Ipv4{
-				Ipv4: &aftpb.Afts_Ipv4EntryKey{
-					Prefix: "2.2.2.2/32",
-					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-						NextHopGroup: &wpb.UintValue{Value: 1},
-					},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   2,
+					NextHop: &aftpb.Afts_NextHop{},
 				},
 			},
 		}},
@@ -895,9 +889,11 @@ func TestDoModify(t *testing.T) {
 }
 
 func TestAddEntry(t *testing.T) {
+	defName := DefaultNetworkInstanceName
 	tests := []struct {
 		desc           string
-		inRIBHolder    *rib.RIBHolder
+		inRIB          *rib.RIB
+		inNI           string
 		inOp           *spb.AFTOperation
 		inFIBACK       bool
 		inElection     *electionDetails
@@ -906,19 +902,19 @@ func TestAddEntry(t *testing.T) {
 		wantErrDetails spb.ModifyRPCErrorDetails_Reason
 	}{{
 		desc:        "nil election ID",
-		inRIBHolder: rib.NewRIBHolder("default"),
+		inRIB:       rib.New(defName),
 		inOp:        &spb.AFTOperation{},
 		wantErrCode: codes.FailedPrecondition,
 	}, {
-		desc:        "invalid election",
-		inRIBHolder: rib.NewRIBHolder("default"),
+		desc:  "invalid election",
+		inRIB: rib.New(defName),
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 0, Low: 1},
 		},
 		wantErrCode: codes.Internal,
 	}, {
-		desc:        "client hasn't sent election ID",
-		inRIBHolder: rib.NewRIBHolder("default"),
+		desc:  "client hasn't sent election ID",
+		inRIB: rib.New(defName),
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 0, Low: 1},
 		},
@@ -928,8 +924,8 @@ func TestAddEntry(t *testing.T) {
 		},
 		wantErrCode: codes.FailedPrecondition,
 	}, {
-		desc:        "client gives higher ID than known master",
-		inRIBHolder: rib.NewRIBHolder("default"),
+		desc:  "client gives higher ID than known master",
+		inRIB: rib.New(defName),
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 2, Low: 0},
 			Id:         1,
@@ -948,8 +944,8 @@ func TestAddEntry(t *testing.T) {
 		},
 		wantErrCode: codes.FailedPrecondition,
 	}, {
-		desc:        "client gives lower ID than known master",
-		inRIBHolder: rib.NewRIBHolder("default"),
+		desc:  "client gives lower ID than known master",
+		inRIB: rib.New(defName),
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 1, Low: 0},
 			Id:         1,
@@ -967,8 +963,8 @@ func TestAddEntry(t *testing.T) {
 			}},
 		},
 	}, {
-		desc:        "client is not master - by name",
-		inRIBHolder: rib.NewRIBHolder("default"),
+		desc:  "client is not master - by name",
+		inRIB: rib.New(defName),
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 0, Low: 1},
 			Id:         2,
@@ -986,8 +982,8 @@ func TestAddEntry(t *testing.T) {
 			}},
 		},
 	}, {
-		desc:        "client is not master - by mismatched latest",
-		inRIBHolder: rib.NewRIBHolder("default"),
+		desc:  "client is not master - by mismatched latest",
+		inRIB: rib.New(defName),
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 0, Low: 2},
 			Id:         2,
@@ -1006,14 +1002,15 @@ func TestAddEntry(t *testing.T) {
 		},
 	}, {
 		desc:        "nil operation",
-		inRIBHolder: rib.NewRIBHolder("default"),
+		inRIB:       rib.New(defName),
 		wantErrCode: codes.Internal,
 	}, {
 		desc:        "nil RIB",
 		wantErrCode: codes.Internal,
 	}, {
-		desc:        "ADD v4: rib ACK",
-		inRIBHolder: rib.NewRIBHolder("DEFAULT"),
+		desc:  "ADD v4: rib ACK",
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
+		inNI:  defName,
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 4, Low: 2},
 			Id:         2,
@@ -1039,8 +1036,9 @@ func TestAddEntry(t *testing.T) {
 			}},
 		},
 	}, {
-		desc:        "ADD v4: fib ACK",
-		inRIBHolder: rib.NewRIBHolder("DEFAULT"),
+		desc:  "ADD v4: fib ACK",
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
+		inNI:  defName,
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 4, Low: 2},
 			Id:         2,
@@ -1067,12 +1065,18 @@ func TestAddEntry(t *testing.T) {
 			}},
 		},
 	}, {
-		desc:        "ADD v4: fib ACK",
-		inRIBHolder: rib.NewRIBHolder("DEFAULT"),
+		desc:  "ADD NHG: unimplemented",
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
+		inNI:  defName,
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 4, Low: 2},
 			Id:         2,
-			Entry:      &spb.AFTOperation_NextHopGroup{},
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id:           2,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{},
+				},
+			},
 		},
 		inElection: &electionDetails{
 			master:       "this-client",
@@ -1080,21 +1084,26 @@ func TestAddEntry(t *testing.T) {
 			client:       "this-client",
 			clientLatest: &spb.Uint128{High: 4, Low: 2},
 		},
-		inFIBACK:    true,
-		wantErrCode: codes.Unimplemented,
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_RIB_PROGRAMMED,
+			}},
+		},
 	}, {
 		desc:        "nil RIB",
-		inRIBHolder: nil,
+		inRIB:       nil,
 		wantErrCode: codes.Internal,
 	}, {
 		desc:        "invalid RIB",
-		inRIBHolder: &rib.RIBHolder{},
+		inRIB:       &rib.RIB{},
+		inNI:        "fish",
 		wantErrCode: codes.Internal,
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := addEntry(tt.inRIBHolder, tt.inOp, tt.inFIBACK, tt.inElection)
+			got, err := addEntry(tt.inRIB, tt.inNI, tt.inOp, tt.inFIBACK, tt.inElection)
 			if err != nil {
 				checkStatusErr(t, err, tt.wantErrCode, tt.wantErrDetails)
 			}

@@ -146,13 +146,12 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 				},
 			})
 		}
-		// TODO(robjs): add to the system RIB here - we need to plumb
-		// an error back to say that the FIB was not programmed.
-		// This means that we need the server to be aware of the FIB programming
-		// function, and be able to check with it whether something was programmed
-		// or not. We can implement an interface that allows us to create and hand
-		// that "checker" function to the server and write the contents here.
-		// This will be needed to allow testing of failures of FIB programming.
+
+		// server.WithFIBProgrammedCheck()
+		//   -> gives us a function that checks whether an ID is a tristate (ok, failed, pending)
+		//   -> plumb this through to the rib - and have a fib pending queue for responding.
+		//
+		// here we just write to something that the server has access to.
 	}
 
 	gr := optGRIBIAddr(opts)

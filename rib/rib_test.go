@@ -2,10 +2,13 @@ package rib
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/openconfig/gnmi/errdiff"
+	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/ygot/testutil"
@@ -13,10 +16,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	"github.com/openconfig/gnmi/errdiff"
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
-	"github.com/openconfig/gnmi/value"
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
 
@@ -31,12 +33,13 @@ const (
 
 func TestAdd(t *testing.T) {
 	tests := []struct {
-		desc        string
-		inRIBHolder *RIBHolder
-		inType      ribType
-		inEntry     proto.Message
-		wantRIB     *aft.RIB
-		wantErr     bool
+		desc          string
+		inRIBHolder   *RIBHolder
+		inType        ribType
+		inEntry       proto.Message
+		wantInstalled bool
+		wantRIB       *aft.RIB
+		wantErr       bool
 	}{{
 		desc:        "ipv4 prefix only",
 		inRIBHolder: NewRIBHolder("DEFAULT"),
@@ -45,6 +48,7 @@ func TestAdd(t *testing.T) {
 			Prefix:    "1.0.0.0/24",
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
 		},
+		wantInstalled: true,
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
@@ -64,6 +68,7 @@ func TestAdd(t *testing.T) {
 				Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			},
 		},
+		wantInstalled: true,
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
@@ -98,7 +103,7 @@ func TestAdd(t *testing.T) {
 		desc: "implicit ipv4 replace",
 		inRIBHolder: func() *RIBHolder {
 			r := NewRIBHolder("DEFAULT")
-			if err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+			if _, err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 				Prefix: "8.8.8.8/32",
 				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
 					Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
@@ -115,6 +120,7 @@ func TestAdd(t *testing.T) {
 				Metadata: &wpb.BytesValue{Value: []byte{10, 11, 12, 13, 14, 15, 16, 17}},
 			},
 		},
+		wantInstalled: true,
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
@@ -142,6 +148,7 @@ func TestAdd(t *testing.T) {
 			Id:           1,
 			NextHopGroup: &aftpb.Afts_NextHopGroup{},
 		},
+		wantInstalled: true,
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
@@ -166,6 +173,7 @@ func TestAdd(t *testing.T) {
 				}},
 			},
 		},
+		wantInstalled: true,
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
@@ -189,6 +197,7 @@ func TestAdd(t *testing.T) {
 			Index:   1,
 			NextHop: &aftpb.Afts_NextHop{},
 		},
+		wantInstalled: true,
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHop: map[uint64]*aft.Afts_NextHop{
@@ -208,6 +217,7 @@ func TestAdd(t *testing.T) {
 				IpAddress: &wpb.StringValue{Value: "8.8.4.4"},
 			},
 		},
+		wantInstalled: true,
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHop: map[uint64]*aft.Afts_NextHop{
@@ -236,21 +246,34 @@ func TestAdd(t *testing.T) {
 			case ipv4:
 				// special case for nil test
 				if tt.inEntry == nil {
-					if err := r.AddIPv4(nil); (err != nil) != tt.wantErr {
+					_, err := r.AddIPv4(nil)
+					if (err != nil) != tt.wantErr {
 						t.Fatalf("got unexpected error adding IPv4 entry, got: %v, wantErr? %v", err, tt.wantErr)
 					}
 					return
 				}
-				if err := r.AddIPv4(tt.inEntry.(*aftpb.Afts_Ipv4EntryKey)); (err != nil) != tt.wantErr {
+				gotInstalled, err := r.AddIPv4(tt.inEntry.(*aftpb.Afts_Ipv4EntryKey))
+				if (err != nil) != tt.wantErr {
 					t.Fatalf("got unexpected error adding IPv4 entry, got: %v, wantErr? %v", err, tt.wantErr)
 				}
+				if gotInstalled != tt.wantInstalled {
+					t.Fatalf("did not get expected installed IPv4 bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
+				}
 			case nhg:
-				if err := r.AddNextHopGroup(tt.inEntry.(*aftpb.Afts_NextHopGroupKey)); (err != nil) != tt.wantErr {
+				gotInstalled, err := r.AddNextHopGroup(tt.inEntry.(*aftpb.Afts_NextHopGroupKey))
+				if (err != nil) != tt.wantErr {
 					t.Fatalf("got unexpected error adding NHG entry, got: %v, wantErr? %v", err, tt.wantErr)
 				}
+				if gotInstalled != tt.wantInstalled {
+					t.Fatalf("did not get expected installed NHG bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
+				}
 			case nh:
-				if err := r.AddNextHop(tt.inEntry.(*aftpb.Afts_NextHopKey)); (err != nil) != tt.wantErr {
+				gotInstalled, err := r.AddNextHop(tt.inEntry.(*aftpb.Afts_NextHopKey))
+				if (err != nil) != tt.wantErr {
 					t.Fatalf("got unexpected error adding NH entry, got: %v, wantErr? %v", err, tt.wantErr)
+				}
+				if gotInstalled != tt.wantInstalled {
+					t.Fatalf("did not get expected installed NH bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
 				}
 			default:
 				t.Fatalf("unsupported test type in Add, %v", tt.inType)
@@ -507,6 +530,9 @@ func TestHooks(t *testing.T) {
 				}, {
 					Path: mustPath("state/prefix"),
 					Val:  mustTypedValue("1.2.3.4/32"),
+				}, {
+					Path: mustPath("state/next-hop-group"),
+					Val:  mustTypedValue(uint64(1)),
 				}},
 			},
 			&gpb.Notification{
@@ -601,6 +627,8 @@ func TestHooks(t *testing.T) {
 			}
 
 			r := New("DEFAULT")
+			// override the default check function.
+			r.niRIB["DEFAULT"].checkFn = nil
 
 			// do setup before we start, we can't delete or modify entries
 			// that don't exist, so remove them.
@@ -609,7 +637,7 @@ func TestHooks(t *testing.T) {
 				case o.IP4 != "":
 					switch o.Do {
 					case constants.MODIFY, constants.DELETE:
-						if err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+						if _, err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix:    o.IP4,
 							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
 						}); err != nil {
@@ -619,7 +647,7 @@ func TestHooks(t *testing.T) {
 				case o.NHG != 0:
 					switch o.Do {
 					case constants.MODIFY, constants.DELETE:
-						if err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+						if _, err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
 						}); err != nil {
@@ -629,7 +657,7 @@ func TestHooks(t *testing.T) {
 				case o.NH != 0:
 					switch o.Do {
 					case constants.MODIFY, constants.DELETE:
-						if err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
+						if _, err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},
 						}); err != nil {
@@ -652,9 +680,11 @@ func TestHooks(t *testing.T) {
 				case o.IP4 != "":
 					switch o.Do {
 					case constants.ADD:
-						if err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
-							Prefix:    o.IP4,
-							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+						if _, err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+							Prefix: o.IP4,
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
 						}); err != nil {
 							t.Fatalf("cannot add IPv4 entry %s: %v", o.IP4, err)
 						}
@@ -668,7 +698,7 @@ func TestHooks(t *testing.T) {
 				case o.NHG != 0:
 					switch o.Do {
 					case constants.ADD:
-						if err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+						if _, err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
 						}); err != nil {
@@ -678,7 +708,7 @@ func TestHooks(t *testing.T) {
 				case o.NH != 0:
 					switch o.Do {
 					case constants.ADD:
-						if err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
+						if _, err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},
 						}); err != nil {
@@ -970,6 +1000,308 @@ func TestCanResolve(t *testing.T) {
 			if got != tt.want {
 				t.Fatalf("did not get expected canResolve, got: %v, want: %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func sortResultSlice(s []*OpResult) {
+	sort.Slice(s, func(i, j int) bool { return s[i].ID < s[j].ID })
+}
+
+func TestRIBAddEntry(t *testing.T) {
+	defName := "default"
+	tests := []struct {
+		desc      string
+		inRIB     *RIB
+		inNI      string
+		inOp      *spb.AFTOperation
+		wantOKs   []*OpResult
+		wantFails []*OpResult
+		wantErr   bool
+	}{{
+		desc:  "single nexthop - no pending",
+		inRIB: New(defName),
+		inNI:  defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   42,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   42,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc:  "unsupported type - pbr",
+		inRIB: New(defName),
+		inNI:  defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_MacEntry{
+				MacEntry: &aftpb.Afts_MacEntryKey{
+					MacAddress: "82:33:1b:e9:a4:01",
+				},
+			},
+		},
+		wantErr: true,
+	}, {
+		desc:  "invalid nh",
+		inRIB: New(defName),
+		inNI:  defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 42,
+					// nil nexthop
+				},
+			},
+		},
+		wantFails: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 42,
+					},
+				},
+			},
+			Error: "invalid NextHopGroup, could not parse a field within the list gribi_aft.Afts.next_hop , nil list member in field gribi_aft.Afts.NextHopKey.next_hop, <nil>",
+		}},
+	}, {
+		desc: "nh makes nhg resolvable",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.pendingEntries[1] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 1,
+					Entry: &spb.AFTOperation_NextHopGroup{
+						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+							Id: 1,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{
+								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+									Index:   1,
+									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+								}},
+							},
+						},
+					},
+				},
+			}
+			return r
+		}(),
+		inNI: defName,
+		inOp: &spb.AFTOperation{
+			Id: 2,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 1,
+			Op: &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index:   1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+							}},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 2,
+			Op: &spb.AFTOperation{
+				Id: 2,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "nh does not make nhg resolvable",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.pendingEntries[1] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 1,
+					Entry: &spb.AFTOperation_NextHopGroup{
+						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+							Id: 1,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{
+								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+									// waiting on NH 42
+									Index:   42,
+									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+								}},
+							},
+						},
+					},
+				},
+			}
+			return r
+		}(),
+		inNI: defName,
+		// install NH 1
+		inOp: &spb.AFTOperation{
+			Id: 2,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		// only NH 1 install is OK
+		wantOKs: []*OpResult{{
+			ID: 2,
+			Op: &spb.AFTOperation{
+				Id: 2,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "nh makes nhg makes ipv4 resolvable",
+		inRIB: func() *RIB {
+			r := New(defName)
+			// op#1: NHG ID 1 pending on NH index = 1 showing up
+			r.pendingEntries[1] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 1,
+					Entry: &spb.AFTOperation_NextHopGroup{
+						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+							Id: 1,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{
+								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+									Index:   1,
+									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+								}},
+							},
+						},
+					},
+				},
+			}
+
+			// op#2: IPv4 prefix 42.42.42.42/32 pending on NNG index 1 showing up (q'd above)
+			r.pendingEntries[2] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 2,
+					Entry: &spb.AFTOperation_Ipv4{
+						Ipv4: &aftpb.Afts_Ipv4EntryKey{
+							Prefix: "42.42.42.42/32",
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				},
+			}
+			return r
+		}(),
+		inNI: defName,
+		// op#3 -> NH = 1 shows up, makes NHG 1 and 42.42.42.42/32 resolvable.
+		inOp: &spb.AFTOperation{
+			Id: 3,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 1,
+			Op: &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index:   1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+							}},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 2,
+			Op: &spb.AFTOperation{
+				Id: 2,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "42.42.42.42/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 3,
+			Op: &spb.AFTOperation{
+				Id: 3,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			gotOKs, gotFails, err := tt.inRIB.AddEntry(tt.inNI, tt.inOp)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("got unexpected error, got: %v, wantErr?", err)
+			}
+			sortResultSlice(gotOKs)
+			sortResultSlice(gotFails)
+			sortResultSlice(tt.wantOKs)
+			sortResultSlice(tt.wantFails)
+
+			if diff := cmp.Diff(gotOKs, tt.wantOKs, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected OK IDs, diff(-got,+want):\n%s", diff)
+			}
+			if diff := cmp.Diff(gotFails, tt.wantFails, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected OK IDs, diff(-got,+want):\n%s", diff)
+			}
+
 		})
 	}
 }

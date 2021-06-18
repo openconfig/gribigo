@@ -165,7 +165,7 @@ func TestEntry(t *testing.T) {
 func TestEntriesToModifyRequest(t *testing.T) {
 	tests := []struct {
 		desc              string
-		inClient          *gRIBIClient
+		inClient          *GRIBIClient
 		inOp              spb.AFTOperation_Operation
 		inEntries         []gRIBIEntry
 		wantModifyRequest *spb.ModifyRequest
@@ -231,7 +231,7 @@ func TestEntriesToModifyRequest(t *testing.T) {
 		},
 	}, {
 		desc: "set election ID",
-		inClient: &gRIBIClient{
+		inClient: &GRIBIClient{
 			connection: &gRIBIConnection{
 				redundMode: ElectedPrimaryClient,
 			},

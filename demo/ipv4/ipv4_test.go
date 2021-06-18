@@ -21,6 +21,6 @@ func TestDemo(t *testing.T) {
 	if *addr == "" {
 		t.Fatalf("must specify an address")
 	}
-	compliance.AddIPv4EntrySuccess(*addr, t)
+	compliance.AddIPv4EntryRIBACK(*addr, t)
 	time.Sleep(2 * time.Second)
 }

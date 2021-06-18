@@ -31,6 +31,6 @@ func TestDevice(t *testing.T) {
 	case err := <-errCh:
 		t.Fatalf("got unexpected error from device, got: %v", err)
 	case addr := <-devCh:
-		compliance.AddIPv4EntrySuccess(addr, t)
+		compliance.AddIPv4EntryRIBACK(addr, t)
 	}
 }

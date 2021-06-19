@@ -251,8 +251,8 @@ func TestSTREAM(t *testing.T) {
 	got := []*upd{}
 	clientCtx, cancel := context.WithCancel(context.Background())
 	var sendErr, recvErr error
-	go func(ctx context.Context) {
-		defer cancel()
+	go func(ctx context.Context, cfn func()) {
+		defer cfn()
 		conn, err := grpc.Dial(addr, grpc.WithInsecure())
 		if err != nil {
 			sendErr = fmt.Errorf("cannot dial gNMI server, %v", err)
@@ -299,7 +299,7 @@ func TestSTREAM(t *testing.T) {
 				return
 			}
 		}
-	}(clientCtx)
+	}(clientCtx, cancel)
 
 	go func() {
 		// time to connect

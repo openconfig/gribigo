@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -248,7 +249,16 @@ func TestSTREAM(t *testing.T) {
 	})
 
 	planets := []string{"mercury", "venus", "earth", "mars"}
+
+	var gotMu sync.RWMutex
 	got := []*upd{}
+
+	addGot := func(in *gpb.SubscribeResponse) {
+		gotMu.Lock()
+		defer gotMu.Unlock()
+		got = append(got, toUpd(in)...)
+	}
+
 	clientCtx, cancel := context.WithCancel(context.Background())
 	var sendErr, recvErr error
 	go func(ctx context.Context, cfn func()) {
@@ -293,7 +303,8 @@ func TestSTREAM(t *testing.T) {
 				return
 			}
 
-			got = append(got, toUpd(in)...)
+			addGot(in)
+
 			j++
 			if j == len(planets)+4 { // we also get original update, meta/sync and meta/connected + sync_response
 				return
@@ -338,6 +349,9 @@ func TestSTREAM(t *testing.T) {
 	//  - we need to see all the updates that we expect.
 	seenVal := map[string]bool{}
 	meta := 0
+
+	gotMu.RLock()
+	defer gotMu.RUnlock()
 	for _, s := range got {
 		if s.T == SYNC {
 			if len(seenVal) < 1 || meta != 2 { // seen hello, meta/sync, meta/connected

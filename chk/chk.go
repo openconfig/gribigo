@@ -15,6 +15,9 @@
 // Package chk implements checks against the gRIBI client return values, it can be
 // used to determine whether there are expected results within a specific set of return
 // values.
+//
+// Package chk relies on the testing package, and therefore is a test only package -
+// that should be used as a helper to tets that are executed by 'go test'.
 package chk
 
 import (
@@ -64,6 +67,7 @@ func hasIgnoreOperationID(opt []resultOpt) bool {
 // HasResult checks whether the specified res slice contains a result containing
 // with the value of want.
 func HasResult(t testing.TB, res []*client.OpResult, want *client.OpResult, opt ...resultOpt) {
+	t.Helper()
 	var found bool
 
 	ignoreFields := []string{"Timestamp", "Latency"}

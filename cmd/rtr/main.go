@@ -6,6 +6,9 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/device"
+
+	"net/http"
+	_ "net/http/pprof"
 )
 
 var (
@@ -31,5 +34,8 @@ func main() {
 		log.Exitf("cannot start device, %v", err)
 	}
 	log.Infof("listening on:\n\tgRIBI: %s\n\tgNMI: %s", d.GRIBIAddr(), d.GNMIAddr())
+	go func() {
+		log.Infof("%v", http.ListenAndServe("localhost:6060", nil))
+	}()
 	<-ctx.Done()
 }

@@ -489,7 +489,7 @@ type OpResult struct {
 	Details *OpDetailsResults
 }
 
-// OpDetails provides details of an operation for use in the results.
+// OpDetailsResults provides details of an operation for use in the results.
 type OpDetailsResults struct {
 	// Type is the type of the operation (i.e., ADD, MODIFY, DELETE)
 	Type constants.OpType

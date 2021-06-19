@@ -10,7 +10,7 @@ import (
 	"github.com/openconfig/gribigo/testcommon"
 )
 
-func TestModifyConnectionParameters(t *testing.T) {
+func TestCompliance(t *testing.T) {
 	tests := []struct {
 		in           Test
 		wantFatalMsg string
@@ -29,6 +29,31 @@ func TestModifyConnectionParameters(t *testing.T) {
 		in: Test{
 			Fn:        ModifyConnectionSinglePrimaryPreserve,
 			ShortName: "Modify RPC Connection with invalid persist/redundancy parameters",
+		},
+	}, {
+		in: Test{
+			Fn:        AddIPv4EntryRIBACK,
+			ShortName: "Add IPv4 entry that can be programmed on the server - with RIB ACK",
+		},
+	}, {
+		in: Test{
+			Fn:        AddIPv4EntryFIBACK,
+			ShortName: "Add IPv4 entry that can be programmed on the server - with FIB ACK",
+		},
+	}, {
+		in: Test{
+			Fn:        AddUnreferencedNextHopGroupFIBACK,
+			ShortName: "Add next-hop-group entry that can be resolved on the server, no referencing IPv4 entries - with RIB ACK",
+		},
+	}, {
+		in: Test{
+			Fn:        AddUnreferencedNextHopGroupRIBACK,
+			ShortName: "Add next-hop-group entry that can be resolved on the server, no referencing IPv4 entries - with FIB ACK",
+		},
+	}, {
+		in: Test{
+			Fn:        AddIPv4EntryRandom,
+			ShortName: "Add IPv4 entries that are resolved by NHG and NH, in random order",
 		},
 	}}
 

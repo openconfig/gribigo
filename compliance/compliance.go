@@ -6,11 +6,13 @@ package compliance
 
 import (
 	"context"
-	"fmt"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/openconfig/gribigo/chk"
 	"github.com/openconfig/gribigo/client"
+	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/server"
 	"google.golang.org/grpc/codes"
@@ -50,15 +52,18 @@ func ModifyConnectionWithElectionID(addr string, t testing.TB) {
 	if err != nil {
 		t.Fatalf("got unexpected error on client, %v", err)
 	}
-	res := c.Results(t)
 
-	if !chk.HasElectionID(res, 1, 0) {
-		t.Errorf("did not get expected election ID, got: %v, want: ElectionID=1", res)
-	}
+	chk.HasResult(t, c.Results(t),
+		fluent.OperationResult().
+			WithCurrentServerElectionID(1, 0).
+			AsResult(),
+	)
 
-	if !chk.HasSuccessfulSessionParams(res) {
-		t.Errorf("did not get expected successful session params, got: %v, want: SessionParams=OK", res)
-	}
+	chk.HasResult(t, c.Results(t),
+		fluent.OperationResult().
+			WithSuccessfulSessionParams().
+			AsResult(),
+	)
 }
 
 // ModifyConnectionSinglePrimaryPreserve is a test that connects to a gRIBI server at addr and requests
@@ -74,36 +79,201 @@ func ModifyConnectionSinglePrimaryPreserve(addr string, t testing.TB) {
 	if err == nil {
 		t.Fatalf("did not get expected error from server, got: nil")
 	}
-	ce, ok := err.(*client.ClientErr)
-	if !ok {
-		t.Fatalf("error returned from client was not expected type, got: %T, want: *client.ClientError", err)
-	}
-	if len(ce.Send) != 0 {
-		t.Fatalf("got unexpected send errors, got: %v, want: none", ce.Send)
-	}
-	if num := len(ce.Recv); num != 1 {
-		t.Fatalf("got wrong number of recv errors, got: %d (%v), want: 1", num, ce.Recv)
-	}
 
-	if want := fluent.ModifyError().WithCode(codes.FailedPrecondition).WithReason(fluent.UnsupportedParameters).AsStatus(t); !chk.HasRecvClientErrorWithStatus(ce, want) {
-		t.Fatalf("did not get expected error type, got: %v, want: %v", ce, want)
-	}
+	chk.HasNSendErrors(t, err, 0)
+	chk.HasNRecvErrors(t, err, 1)
+
+	want := fluent.
+		ModifyError().
+		WithCode(codes.FailedPrecondition).
+		WithReason(fluent.UnsupportedParameters).
+		AsStatus(t)
+
+	chk.HasRecvClientErrorWithStatus(t, err, want)
 }
 
-// AddIPv4EntrySuccess adds a simple IPv4 Entry which references a next-hop-group to the gRIBI target.
-func AddIPv4EntrySuccess(addr string, t testing.TB) {
+// AddIPv4EntryRIBACK adds a simple IPv4 Entry which references a next-hop-group
+// to the gRIBI server, requesting a RIB-level ACK.
+func AddIPv4EntryRIBACK(addr string, t testing.TB) {
+	addIPv4Internal(addr, t, fluent.InstalledInRIB)
+}
+
+// AddIPv4EntryFIBACK adds a simple IPv4 Entry which references a next-hop-group
+// to the gRIBI server, requesting a FIB-level ACK.
+func AddIPv4EntryFIBACK(addr string, t testing.TB) {
+	addIPv4Internal(addr, t, fluent.InstalledInFIB)
+}
+
+// AddUnreferencedNextHopGroupRIBACK adds an unreferenced next-hop-group that contains
+// nexthops to the gRIBI server, requesting a FIB-level ACK.
+func AddUnreferencedNextHopGroupRIBACK(addr string, t testing.TB) {
+	addNextHopGroupInternal(addr, t, fluent.InstalledInRIB)
+}
+
+// AddUnreferencedNextHopGroupFIBACK adds an unreferenced next-hop-group that contains
+// nexthops to the gRIBI server, requesting a FIB-level ACK.
+func AddUnreferencedNextHopGroupFIBACK(addr string, t testing.TB) {
+	addNextHopGroupInternal(addr, t, fluent.InstalledInFIB)
+}
+
+// addIPv4Internal is an internal test that adds IPv4 entries, and checks
+// whether the specified FIB ack is received.
+func addIPv4Internal(addr string, t testing.TB, wantACK fluent.ProgrammingResult) {
 	c := fluent.NewClient()
-	c.Connection().WithTarget(addr).WithRedundancyMode(fluent.ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
-	c.Start(context.Background(), t)
-	c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1))
-	c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
-	c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
-	c.StartSending(context.Background(), t)
-	err := c.Await(context.Background(), t)
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
+		},
+	}
+
+	res := doOps(c, addr, t, ops, wantACK, false)
+
+	// Check the three entries in order.
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(1).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(2).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(3).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+	)
+
+	// TODO(robjs): add gNMI subscription using generated telemetry library.
+}
+
+// addIPv4Random adds an IPv4 Entry, shuffling the order of the entries, and
+// validating those entries are ACKed.
+func AddIPv4EntryRandom(addr string, t testing.TB) {
+	c := fluent.NewClient()
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
+		},
+	}
+
+	res := doOps(c, addr, t, ops, fluent.InstalledInRIB, true)
+
+	// Check the three entries in order.
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("1.1.1.1/32").
+			WithProgrammingResult(fluent.InstalledInRIB).
+			WithOperationType(constants.ADD).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(42).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			WithOperationType(constants.ADD).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			WithOperationType(constants.ADD).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	// TODO(robjs): add gNMI subscription using generated telemetry library.
+}
+
+// doOps performs the series of operations in ops using the context client c. The
+// address specified by addr is dialed. wantACK specifies the ACK type to request
+// from the server, and randomise specifies whether the operations should be
+// sent in order, or randomised.
+//
+// If the caller sets randomise to true, the client MUST NOT, rely on the operation
+// ID to validate the entries, since this is allocated internally to the client.
+func doOps(c *fluent.GRIBIClient, addr string, t testing.TB, ops []func(), wantACK fluent.ProgrammingResult, randomise bool) []*client.OpResult {
+	conn := c.Connection().WithTarget(addr).WithRedundancyMode(fluent.ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
+
+	if wantACK == fluent.InstalledInFIB {
+		conn.WithFIBACK()
+	}
+
+	ctx := context.Background()
+	c.Start(ctx, t)
+	defer c.Stop(t)
+
+	// If randomise is specified, we go and do the operations in a random order.
+	// In this case, the caller MUST
+	if randomise {
+		rand.Seed(time.Now().UnixNano())
+		rand.Shuffle(len(ops), func(i, j int) { ops[i], ops[j] = ops[j], ops[i] })
+	}
+
+	for _, fn := range ops {
+		fn()
+	}
+
+	c.StartSending(ctx, t)
+	err := c.Await(ctx, t)
 	if err != nil {
 		t.Fatalf("got unexpected error from server, got: %v, want: nil", err)
 	}
-	// TODO(robjs): add verification of the received gRIBI results.
-	// TODO(robjs): add gNMI subscription using generated telemetry library.
-	fmt.Printf("%v\n", c.Results(t))
+	return c.Results(t)
+}
+
+// addNextHopGroupInternal is an internal implementation that checks that a
+// next-hop-group can be added to the gRIBI server with the specified ACK mode.
+// The tests does not install an IPv4Entry, so these NHGs are unreferenced.
+// We still expect an ACK in this case.
+func addNextHopGroupInternal(addr string, t testing.TB, wantACK fluent.ProgrammingResult) {
+	c := fluent.NewClient()
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
+		},
+	}
+
+	res := doOps(c, addr, t, ops, wantACK, false)
+
+	// Check the three entries in order.
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(1).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(2).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+	)
 }

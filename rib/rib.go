@@ -832,44 +832,6 @@ func (r *RIBHolder) doAddNH(index uint64, newRIB *aft.RIB) error {
 	return nil
 }
 
-// nextHopEntryProto returns a protobuf message for the specified nexthop index. It returns
-// the found index as a NextHopKey protobuf, along with a bool indicating whether the
-// prefix was found in the RIB.
-func (r *RIBHolder) nextHopEntryProto(index uint64) (*aftpb.Afts_NextHopKey, bool, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	ribE := r.r.Afts.NextHop[index]
-	if ribE == nil {
-		return nil, false, nil
-	}
-
-	existingEntryProto, err := concreteNextHopProto(ribE)
-	if err != nil {
-		return nil, true, status.Newf(codes.Internal, "invalid existing entry in RIB %v", ribE).Err()
-	}
-
-	return existingEntryProto, true, nil
-}
-
-// nextHopGroupEntryProto returns a protobuf message for the specified nexthop group index. It returns
-// the found index as a NextHopGroupKey protobuf, along with a bool indicating whether the
-// prefix was found in the RIB.
-func (r *RIBHolder) nextHopGroupEntryProto(id uint64) (*aftpb.Afts_NextHopGroupKey, bool, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	ribE := r.r.Afts.NextHopGroup[id]
-	if ribE == nil {
-		return nil, false, nil
-	}
-
-	existingEntryProto, err := concreteNextHopGroupProto(ribE)
-	if err != nil {
-		return nil, true, status.Newf(codes.Internal, "invalid existing entry in RIB %v", ribE).Err()
-	}
-
-	return existingEntryProto, true, nil
-}
-
 // contextIPv4Proto takes the input Ipv4Entry GoStruct and returns it as a gRIBI
 // Ipv4EntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func concreteIPv4Proto(e *aft.Afts_Ipv4Entry) (*aftpb.Afts_Ipv4EntryKey, error) {
@@ -981,7 +943,6 @@ func (r *RIBHolder) GetRIB(msgCh chan *spb.GetResponse, stopCh chan struct{}) er
 	defer r.mu.RUnlock()
 
 	for pfx, e := range r.r.Afts.Ipv4Entry {
-		fmt.Printf("prefix %s\n", pfx)
 		select {
 		case <-stopCh:
 			return nil

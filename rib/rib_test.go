@@ -1319,3 +1319,167 @@ func TestRIBAddEntry(t *testing.T) {
 		})
 	}
 }
+
+func TestKnownNetworkInstances(t *testing.T) {
+	tests := []struct {
+		desc      string
+		inRIB     *RIB
+		wantNames []string
+	}{{
+		desc:      "empty set of network instances",
+		inRIB:     &RIB{},
+		wantNames: []string{},
+	}, {
+		desc: "set of known names",
+		inRIB: &RIB{
+			niRIB: map[string]*RIBHolder{
+				"one": {},
+				"two": {},
+			},
+		},
+		wantNames: []string{"one", "two"},
+	}, {
+		desc: "ensure alphabetical",
+		inRIB: &RIB{
+			niRIB: map[string]*RIBHolder{
+				"zebra":    {},
+				"antelope": {},
+			},
+		},
+		wantNames: []string{"antelope", "zebra"},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got := tt.inRIB.KnownNetworkInstances()
+			if diff := cmp.Diff(got, tt.wantNames); diff != "" {
+				t.Fatalf("did not get expected set of network instance names, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestGetRIB(t *testing.T) {
+	tests := []struct {
+		desc          string
+		inRIB         *RIBHolder
+		wantResponses []*spb.GetResponse
+		wantErr       bool
+	}{{
+		desc:          "empty RIB",
+		inRIB:         NewRIBHolder("VRF-1"),
+		wantResponses: []*spb.GetResponse{},
+	}, {
+		desc: "ipv4 entry",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("VRF-1")
+
+			cr := &aft.RIB{}
+			ipv4 := cr.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			ipv4.NextHopGroup = ygot.Uint64(42)
+
+			if err := r.doAddIPv4("1.1.1.1/32", cr); err != nil {
+				panic(fmt.Sprintf("cannot build RIB, %v", err))
+			}
+			return r
+		}(),
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-1",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc: "next-hop-group entry",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("VRF-42")
+
+			cr := &aft.RIB{}
+			nhg := cr.GetOrCreateAfts().GetOrCreateNextHopGroup(42)
+			nhg.Color = ygot.Uint64(1)
+
+			if err := r.doAddNHG(42, cr); err != nil {
+				panic(fmt.Sprintf("cannot build RIB, %v", err))
+			}
+			return r
+		}(),
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 42,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							Color: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc: "next-hop entry",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("VRF-42")
+
+			cr := &aft.RIB{}
+			nh := cr.GetOrCreateAfts().GetOrCreateNextHop(1)
+			nh.IpAddress = ygot.String("1.1.1.1/32")
+
+			if err := r.doAddNHG(42, cr); err != nil {
+				panic(fmt.Sprintf("cannot build RIB, %v", err))
+			}
+			return r
+		}(),
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHop{
+							IpAddress: &wpb.StringValue{Value: "1.1.1.1/32"},
+						},
+					},
+				},
+			}},
+		}},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			msgCh := make(chan *spb.GetResponse)
+			stopCh := make(chan struct{})
+
+			doneCh := make(chan struct{})
+			defer close(doneCh)
+
+			got := []*spb.GetResponse{}
+			go func() {
+				for {
+					select {
+					case r := <-msgCh:
+						got = append(got, r)
+					case <-doneCh:
+						return
+					}
+				}
+			}()
+
+			if err := tt.inRIB.GetRIB(msgCh, stopCh); (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+			doneCh <- struct{}{}
+
+			if diff := cmp.Diff(got, tt.wantResponses, protocmp.Transform()); diff != "" {
+				t.Fatalf("did not get expected responses, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}

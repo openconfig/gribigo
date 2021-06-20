@@ -130,15 +130,25 @@ func TestGRIBIClient(t *testing.T) {
 
 func TestEntry(t *testing.T) {
 	tests := []struct {
-		desc      string
-		in        gRIBIEntry
-		wantProto *spb.AFTOperation
-		wantErr   bool
+		desc           string
+		in             gRIBIEntry
+		wantOpProto    *spb.AFTOperation
+		wantEntryProto *spb.AFTEntry
+		wantOpErr      bool
+		wantEntryErr   bool
 	}{{
 		desc: "prefix populated only",
 		in:   IPv4Entry().WithPrefix("1.1.1.1/32"),
-		wantProto: &spb.AFTOperation{
+		wantOpProto: &spb.AFTOperation{
 			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			Entry: &spb.AFTEntry_Ipv4{
 				Ipv4: &aftpb.Afts_Ipv4EntryKey{
 					Prefix:    "1.1.1.1/32",
 					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
@@ -148,7 +158,7 @@ func TestEntry(t *testing.T) {
 	}, {
 		desc: "prefix, nhg, ni",
 		in:   IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance("DEFAULT").WithNextHopGroup(42),
-		wantProto: &spb.AFTOperation{
+		wantOpProto: &spb.AFTOperation{
 			NetworkInstance: "DEFAULT",
 			Entry: &spb.AFTOperation_Ipv4{
 				Ipv4: &aftpb.Afts_Ipv4EntryKey{
@@ -161,16 +171,103 @@ func TestEntry(t *testing.T) {
 				},
 			},
 		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{
+							Value: 42,
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "next-hop-group",
+		in:   NextHopGroupEntry().WithID(42).WithNetworkInstance("DEFAULT").AddNextHop(1, 32).AddNextHop(2, 16),
+		wantOpProto: &spb.AFTOperation{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 42,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 32},
+							},
+						}, {
+							Index: 2,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 16},
+							},
+						}},
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 42,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 32},
+							},
+						}, {
+							Index: 2,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 16},
+							},
+						}},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "next-hop",
+		in:   NextHopEntry().WithNetworkInstance("DEFAULT").WithIndex(1),
+		wantOpProto: &spb.AFTOperation{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := tt.in.proto()
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			gotop, err := tt.in.opproto()
+			if (err != nil) != tt.wantOpErr {
+				t.Fatalf("did not get expected error for op, got: %v, wantErr? %v", err, tt.wantOpErr)
 			}
-			if diff := cmp.Diff(got, tt.wantProto, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(gotop, tt.wantOpProto, protocmp.Transform()); diff != "" {
 				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
+			}
+
+			gotent, err := tt.in.entryproto()
+			if (err != nil) != tt.wantEntryErr {
+				t.Fatalf("did not get expected error for entry, got: %v, wantErr? %v", err, tt.wantEntryErr)
+			}
+			if diff := cmp.Diff(gotent, tt.wantEntryProto, protocmp.Transform()); diff != "" {
+				t.Fatalf("did not get expexcted proto, diff(-got,+want)\n%s", diff)
 			}
 		})
 	}

@@ -1145,6 +1145,80 @@ func TestDoGet(t *testing.T) {
 			},
 		},
 	}, {
+		desc: "empty network instance name",
+		inReq: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_Name{
+				Name: "",
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "all network instances",
+		inReq: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_All{
+				All: &spb.Empty{},
+			},
+		},
+		inServer: func() *Server {
+			s := New(DisableRIBCheckFn())
+			vrfNames := []string{"ONE", "EIGHT", "FOUR"}
+			for _, v := range vrfNames {
+				if err := s.masterRIB.AddNetworkInstance(v); err != nil {
+					panic(fmt.Sprintf("cannot build testcase, %v", err))
+				}
+			}
+
+			prefixes := []string{"1.1.1.1/32", "8.8.8.8/32", "8.8.4.4/32"}
+
+			for i, pfx := range prefixes {
+				if _, _, err := s.masterRIB.AddEntry(vrfNames[i], &spb.AFTOperation{
+					Id:              uint64(i),
+					NetworkInstance: vrfNames[i],
+					Op:              spb.AFTOperation_ADD,
+					Entry: &spb.AFTOperation_Ipv4{
+						Ipv4: &aftpb.Afts_Ipv4EntryKey{
+							Prefix:    pfx,
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+						},
+					},
+				}); err != nil {
+					panic(fmt.Sprintf("cannot build testcase, %v", err))
+				}
+			}
+			return s
+		}(),
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "ONE",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}, {
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "EIGHT",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "8.8.8.8/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}, {
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "FOUR",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "8.8.4.4/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}},
+	}, {
 		desc: "single network-instance get with one entry in each table",
 		inReq: &spb.GetRequest{
 			NetworkInstance: &spb.GetRequest_Name{

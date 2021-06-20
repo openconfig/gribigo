@@ -60,6 +60,8 @@ type RIB struct {
 
 	// defaultName is the name assigned to the default network instance.
 	defaultName string
+	// ribCheck indicates whether this RIB is running the RIB check function.
+	ribCheck bool
 
 	// TODO(robjs): reference count NHGs and NHs across all AFTs to ensure that we
 	// don't allow entries to be deleted that are in use.
@@ -156,12 +158,13 @@ func New(dn string, opt ...RIBOpt) *RIB {
 	}
 
 	rhOpt := []ribHolderOpt{}
-	if !hasDisableCheckFn(opt) {
+	checkRIB := !hasDisableCheckFn(opt)
+	if checkRIB {
 		rhOpt = append(rhOpt, RIBHolderCheckFn(r.canResolve))
 	}
+	r.ribCheck = checkRIB
 
-	defRH := NewRIBHolder(dn, rhOpt...)
-	r.niRIB[dn] = defRH
+	r.niRIB[dn] = NewRIBHolder(dn, rhOpt...)
 
 	return r
 }
@@ -189,6 +192,25 @@ func (r *RIB) NetworkInstanceRIB(s string) (*RIBHolder, bool) {
 	defer r.nrMu.RUnlock()
 	rh, ok := r.niRIB[s]
 	return rh, ok
+}
+
+// AddNetworkInstance adds a new network instance with the specified name
+// to the RIB.
+func (r *RIB) AddNetworkInstance(name string) error {
+	r.nrMu.Lock()
+	defer r.nrMu.Unlock()
+
+	if r.niRIB[name] != nil {
+		return fmt.Errorf("RIB %s already exists", name)
+	}
+
+	rhOpt := []ribHolderOpt{}
+	if r.ribCheck {
+		rhOpt = append(rhOpt, RIBHolderCheckFn(r.canResolve))
+	}
+
+	r.niRIB[name] = NewRIBHolder(name, rhOpt...)
+	return nil
 }
 
 // KnownNetworkInstances returns the name of all known network instances

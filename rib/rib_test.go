@@ -1360,14 +1360,50 @@ func TestKnownNetworkInstances(t *testing.T) {
 }
 
 func TestGetRIB(t *testing.T) {
+
+	// allPopRIB is a RIB with one entry in each table.
+	allPopRIB := func() *RIBHolder {
+		r := NewRIBHolder("VRF-42")
+
+		cr := &aft.RIB{}
+		nh := cr.GetOrCreateAfts().GetOrCreateNextHop(1)
+		nh.IpAddress = ygot.String("1.1.1.1/32")
+
+		if err := r.doAddNH(1, cr); err != nil {
+			panic(fmt.Sprintf("cannot build RIB, %v", err))
+		}
+
+		cr = &aft.RIB{}
+		nhg := cr.GetOrCreateAfts().GetOrCreateNextHopGroup(42).GetOrCreateNextHop(1)
+		nhg.Weight = ygot.Uint64(1)
+
+		if err := r.doAddNHG(42, cr); err != nil {
+			panic(fmt.Sprintf("cannot build RIB, %v", err))
+		}
+
+		cr = &aft.RIB{}
+		ipv4 := cr.GetOrCreateAfts().GetOrCreateIpv4Entry("42.42.42.42/32")
+		ipv4.NextHopGroup = ygot.Uint64(42)
+
+		if err := r.doAddIPv4("42.42.42.42/32", cr); err != nil {
+			panic(fmt.Sprintf("cannot build RIB, %v", err))
+		}
+
+		return r
+	}()
+
 	tests := []struct {
 		desc          string
 		inRIB         *RIBHolder
+		inFilter      map[spb.AFTType]bool
 		wantResponses []*spb.GetResponse
 		wantErr       bool
 	}{{
-		desc:          "empty RIB",
-		inRIB:         NewRIBHolder("VRF-1"),
+		desc:  "empty RIB",
+		inRIB: NewRIBHolder("VRF-1"),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
 		wantResponses: []*spb.GetResponse{},
 	}, {
 		desc: "ipv4 entry",
@@ -1383,6 +1419,9 @@ func TestGetRIB(t *testing.T) {
 			}
 			return r
 		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
 		wantResponses: []*spb.GetResponse{{
 			Entry: []*spb.AFTEntry{{
 				NetworkInstance: "VRF-1",
@@ -1410,6 +1449,9 @@ func TestGetRIB(t *testing.T) {
 			}
 			return r
 		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
 		wantResponses: []*spb.GetResponse{{
 			Entry: []*spb.AFTEntry{{
 				NetworkInstance: "VRF-42",
@@ -1432,11 +1474,69 @@ func TestGetRIB(t *testing.T) {
 			nh := cr.GetOrCreateAfts().GetOrCreateNextHop(1)
 			nh.IpAddress = ygot.String("1.1.1.1/32")
 
-			if err := r.doAddNHG(42, cr); err != nil {
+			if err := r.doAddNH(1, cr); err != nil {
 				panic(fmt.Sprintf("cannot build RIB, %v", err))
 			}
 			return r
 		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHop{
+							IpAddress: &wpb.StringValue{Value: "1.1.1.1/32"},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to ipv4",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_IPV4: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "42.42.42.42/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to nhg",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_NEXTHOP_GROUP: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id:           42,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to nh",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_NEXTHOP: true,
+		},
 		wantResponses: []*spb.GetResponse{{
 			Entry: []*spb.AFTEntry{{
 				NetworkInstance: "VRF-42",
@@ -1472,7 +1572,7 @@ func TestGetRIB(t *testing.T) {
 				}
 			}()
 
-			if err := tt.inRIB.GetRIB(msgCh, stopCh); (err != nil) != tt.wantErr {
+			if err := tt.inRIB.GetRIB(tt.inFilter, msgCh, stopCh); (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}
 			doneCh <- struct{}{}

@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 202oogle LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -295,23 +295,36 @@ func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
 	doneCh := make(chan struct{})
 	stopCh := make(chan struct{})
 
-	// defer a function to stop the goroutine, since this will be called
+	// defer a function to stop the goroutine and close all channels, since this will be called
 	// when we exit, then it will stop the goroutine that we started to do
 	// the get in the case that we exit due to some error.
-	defer func() { stopCh <- struct{}{} }()
+	defer func() {
+		// Non-blocking write to the stopCh, since if the goroutine has
+		// already returned then it won't be listening and we'll deadlock.
+		select {
+		case stopCh <- struct{}{}:
+		default:
+		}
+		close(msgCh)
+		close(errCh)
+		close(doneCh)
+		close(stopCh)
+	}()
+
 	go s.doGet(req, msgCh, doneCh, stopCh, errCh)
 
 	var done bool
+
 	for !done {
 		select {
+		case <-doneCh:
+			done = true
+		case err := <-errCh:
+			return status.Errorf(codes.Internal, "cannot generate GetResponse, %v", err)
 		case r := <-msgCh:
 			if err := stream.Send(r); err != nil {
 				return status.Errorf(codes.Internal, "cannot write message to client channel, %v", err)
 			}
-		case err := <-errCh:
-			return status.Errorf(codes.Internal, "cannot generate GetResponse, %v", err)
-		case <-doneCh:
-			done = true
 		}
 	}
 	return nil
@@ -832,7 +845,9 @@ func checkElectionForModify(opID uint64, opElecID *spb.Uint128, election *electi
 // errCh.
 func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh, stopCh chan struct{}, errCh chan error) {
 	// Any time we return we return we tell the done channel that we're complete.
-	defer close(doneCh)
+	defer func() {
+		doneCh <- struct{}{}
+	}()
 
 	if req == nil {
 		errCh <- status.Errorf(codes.InvalidArgument, "invalid nil GetRequest received")
@@ -863,5 +878,21 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 			return
 		}
 	}
+}
 
+// FakeServer is a wrapper around the server with functions to enable testing
+// to be performed more easily, for example, injecting specific state.
+type FakeServer struct {
+	*Server
+}
+
+func NewFake(opt ...ServerOpt) *FakeServer {
+	s := New(opt...)
+	return &FakeServer{Server: s}
+}
+
+// InjectRIB allows a client to inject a RIB into the server as though it was
+// received from the master client.
+func (f *FakeServer) InjectRIB(r *rib.RIB) {
+	f.Server.masterRIB = r
 }

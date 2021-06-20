@@ -15,14 +15,25 @@
 package client
 
 import (
+	"context"
 	"errors"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	spb "github.com/openconfig/gribi/v1/proto/service"
+	"github.com/openconfig/gribigo/rib"
+	"github.com/openconfig/gribigo/server"
+	"github.com/openconfig/gribigo/testcommon"
 	"go.uber.org/atomic"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/testing/protocmp"
+
+	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 func TestHandleParams(t *testing.T) {
@@ -759,6 +770,267 @@ func TestHasErrors(t *testing.T) {
 			}
 			if diff := cmp.Diff(gotRecv, tt.wantRecvErr, cmpopts.EquateErrors()); diff != "" {
 				t.Fatalf("did not get expected recv errors, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestGet(t *testing.T) {
+	tests := []struct {
+		desc string
+		// Operations to perform on the server before we make the request.
+		inOperations []*spb.AFTOperation
+		inGetRequest *GetRequest
+		wantResponse *spb.GetResponse
+		wantErr      bool
+	}{{
+		desc: "empty operations",
+		inGetRequest: &GetRequest{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+		},
+		wantResponse: &spb.GetResponse{},
+	}, {
+		desc: "single entry in Server - specific NI",
+		inOperations: []*spb.AFTOperation{{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}},
+		inGetRequest: &GetRequest{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+		},
+		wantResponse: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: server.DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		},
+	}, {
+		desc: "multiple entries - single NI",
+		inOperations: []*spb.AFTOperation{{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}, {
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "2.2.2.2/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}},
+		inGetRequest: &GetRequest{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+		},
+		wantResponse: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: server.DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}, {
+				NetworkInstance: server.DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "2.2.2.2/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		},
+	}, {
+		desc: "multiple entries - different NIs, but only one requested",
+		inOperations: []*spb.AFTOperation{{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}, {
+			// this entry should not be returned.
+			NetworkInstance: "VRF-42",
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "2.2.2.2/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}},
+		inGetRequest: &GetRequest{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+		},
+		wantResponse: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: server.DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		},
+	}, {
+		desc: "single entry in Server - non-default NI",
+		inOperations: []*spb.AFTOperation{{
+			NetworkInstance: "VRF-FOO",
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}},
+		inGetRequest: &GetRequest{
+			NetworkInstance: "VRF-FOO",
+		},
+		wantResponse: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-FOO",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		},
+	}, {
+		desc: "multiple entries - different NI - with ALL",
+		inOperations: []*spb.AFTOperation{{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}, {
+			NetworkInstance: "VRF-42",
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "2.2.2.2/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}},
+		inGetRequest: &GetRequest{
+			AllNetworkInstances: true,
+		},
+		wantResponse: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: server.DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}, {
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "2.2.2.2/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		},
+	}, {
+		desc:         "invalid request - nothing specified",
+		inGetRequest: &GetRequest{},
+		wantErr:      true,
+	}, {
+		desc: "invalid request - both fields specified",
+		inGetRequest: &GetRequest{
+			NetworkInstance:     "foo",
+			AllNetworkInstances: true,
+		},
+		wantErr: true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			nr := rib.New(server.DefaultNetworkInstanceName, rib.DisableRIBCheckFn())
+			addedNIs := map[string]bool{server.DefaultNetworkInstanceName: true}
+
+			for _, op := range tt.inOperations {
+				ni := op.GetNetworkInstance()
+				if !addedNIs[ni] {
+					if err := nr.AddNetworkInstance(ni); err != nil {
+						t.Fatalf("invalid operations, cannot add NI %s", ni)
+					}
+					addedNIs[ni] = true
+				}
+				if _, _, err := nr.AddEntry(ni, op); err != nil {
+					t.Fatalf("invalid operations, cannot add entry to NI %s, (entry: %s), err: %v", ni, op, err)
+				}
+			}
+
+			creds, err := credentials.NewServerTLSFromFile(testcommon.TLSCreds())
+			if err != nil {
+				t.Fatalf("cannot load TLS credentials, got err: %v", err)
+			}
+			srv := grpc.NewServer(grpc.Creds(creds))
+			s := server.NewFake(server.DisableRIBCheckFn())
+
+			s.InjectRIB(nr)
+
+			l, err := net.Listen("tcp", "localhost:0")
+			if err != nil {
+				t.Fatalf("cannot create gRIBI server, %v", err)
+			}
+
+			spb.RegisterGRIBIServer(srv, s)
+
+			go srv.Serve(l)
+			defer srv.Stop()
+
+			c, err := New()
+			if err != nil {
+				t.Fatalf("cannot create client, %v", err)
+			}
+			dctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			if err := c.Dial(dctx, l.Addr().String()); err != nil {
+				t.Fatalf("cannot connect to fake server, %v", err)
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			got, err := c.Get(ctx, tt.inGetRequest)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+
+			if diff := cmp.Diff(got, tt.wantResponse,
+				cmpopts.EquateEmpty(),
+				protocmp.Transform(),
+				protocmp.SortRepeated(func(a, b *spb.AFTEntry) bool {
+					return prototext.Format(a) < prototext.Format(b)
+				})); diff != "" {
+				t.Fatalf("did not get expected responses, diff(-got,+want):\n%s", diff)
 			}
 		})
 	}

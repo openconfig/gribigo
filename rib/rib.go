@@ -16,6 +16,7 @@
 package rib
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sort"
@@ -122,6 +123,17 @@ type RIBHolder struct {
 	postChangeHook RIBHookFn
 }
 
+// String returns a string representation of the RIBHolder.
+func (r *RIBHolder) String() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	js, err := ygot.Marshal7951(r.r, ygot.JSONIndent("  "))
+	if err != nil {
+		return "invalid RIB"
+	}
+	return string(js)
+}
+
 // RIBOpt is an interface that is implemented for options to the RIB.
 type RIBOpt interface {
 	isRIBOpt()
@@ -225,6 +237,17 @@ func (r *RIB) KnownNetworkInstances() []string {
 	// return the RIB names in a stable order.
 	sort.Strings(names)
 	return names
+}
+
+// String returns a string representation of the RIB.
+func (r *RIB) String() string {
+	r.nrMu.RLock()
+	defer r.nrMu.RUnlock()
+	buf := &bytes.Buffer{}
+	for ni, niR := range r.niRIB {
+		buf.WriteString(fmt.Sprintf("%s:\n-----\n%s\n", ni, niR))
+	}
+	return buf.String()
 }
 
 // OpResult contains the result of an operation (Add, Modify, Delete).

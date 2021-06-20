@@ -45,3 +45,32 @@ var aftopMap = map[spb.AFTOperation_Operation]OpType{
 func OpFromAFTOp(o spb.AFTOperation_Operation) OpType {
 	return aftopMap[o]
 }
+
+// AFT is an enumerated type describing the AFTs available within gRIBI.
+type AFT int64
+
+const (
+	_ AFT = iota
+	// ALL specifies all AFTs.
+	ALL
+	// IPV4 specifies the IPv4 AFT.
+	IPV4
+	// NEXTHOP specifies the next-hop AFT.
+	NEXTHOP
+	// NEXTHOPGROUP specifies the next-hop-group AFT.
+	NEXTHOPGROUP
+)
+
+// aftMap maps between an AFT enumerated type and the specified type in the
+// gRIBI protobuf.
+var aftMap = map[AFT]spb.AFTType{
+	ALL:          spb.AFTType_ALL,
+	IPV4:         spb.AFTType_IPV4,
+	NEXTHOP:      spb.AFTType_NEXTHOP,
+	NEXTHOPGROUP: spb.AFTType_NEXTHOP_GROUP,
+}
+
+// AFTTypeFromAFT returns the gRIBI AFTType from the enumerated AFT type.
+func AFTTypeFromAFT(a AFT) spb.AFTType {
+	return aftMap[a]
+}

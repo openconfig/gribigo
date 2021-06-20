@@ -305,10 +305,6 @@ func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
 		case stopCh <- struct{}{}:
 		default:
 		}
-		close(msgCh)
-		close(errCh)
-		close(doneCh)
-		close(stopCh)
 	}()
 
 	go s.doGet(req, msgCh, doneCh, stopCh, errCh)

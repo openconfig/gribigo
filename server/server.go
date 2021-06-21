@@ -863,5 +863,4 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 			return
 		}
 	}
-
 }

@@ -968,6 +968,11 @@ func protoFromGoStruct(s ygot.GoStruct, prefix *gpb.Path, pb proto.Message) erro
 	return nil
 }
 
+// GetRIB returns the content of the RIB that is contained within the r RIBHolder
+// receiver. The contents of the RIB are returned as gRIBI GetResponse messages which
+// are written to the supplied msgCh. stopCh is a channel that indicates that the
+// GetRIB method should stop its work and return immediately. An error is returned
+// if the RIB cannot be returned.
 func (r *RIBHolder) GetRIB(msgCh chan *spb.GetResponse, stopCh chan struct{}) error {
 	// TODO(robjs): since we are wanting to ensure that we tell the client
 	// exactly what is installed, this leads to a decision to make about locking

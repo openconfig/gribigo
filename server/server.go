@@ -886,6 +886,9 @@ type FakeServer struct {
 	*Server
 }
 
+// NewFake returns a new version of the fake server. This implementation wraps
+// the Server implementation with functions to insert specific state into
+// the server without a need to use the public APIs.
 func NewFake(opt ...ServerOpt) *FakeServer {
 	s := New(opt...)
 	return &FakeServer{Server: s}

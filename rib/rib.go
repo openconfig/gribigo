@@ -18,6 +18,7 @@ package rib
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -188,6 +189,20 @@ func (r *RIB) NetworkInstanceRIB(s string) (*RIBHolder, bool) {
 	defer r.nrMu.RUnlock()
 	rh, ok := r.niRIB[s]
 	return rh, ok
+}
+
+// KnownNetworkInstances returns the name of all known network instances
+// within the RIB.
+func (r *RIB) KnownNetworkInstances() []string {
+	r.nrMu.RLock()
+	defer r.nrMu.RUnlock()
+	names := []string{}
+	for n := range r.niRIB {
+		names = append(names, n)
+	}
+	// return the RIB names in a stable order.
+	sort.Strings(names)
+	return names
 }
 
 // OpResult contains the result of an operation (Add, Modify, Delete).
@@ -653,26 +668,21 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 		return errors.New("invalid RIB structure, nil")
 	}
 
-	ribE := r.r.Afts.Ipv4Entry[e.GetPrefix()]
-	if ribE == nil {
-		return status.Newf(codes.NotFound, "cannot find IPv4Entry to delete, %s", e.Prefix).Err()
-	}
-
 	// This is an optional check, today some servers do not implement it and return true
 	// even if the load does not match. Compliance tests should note this.
 	if e.GetIpv4Entry() != nil {
-		existingEntryProto, err := concreteIPv4Proto(ribE)
+		// We do not mind if we don't find this entry - since this shouldn't be an
+		// error.
+		existingEntryProto, _, err := r.ipv4EntryProto(e.GetPrefix())
 		if err != nil {
-			return status.Newf(codes.Internal, "invalid existing entry in RIB %s", e).Err()
+			return err
 		}
-
 		if !proto.Equal(existingEntryProto, e) {
 			return status.Newf(codes.NotFound, "delete of an entry with non-matching, existing: %s, candidate: %s", existingEntryProto, e).Err()
 		}
 	}
 
 	de := r.r.Afts.Ipv4Entry[e.GetPrefix()]
-
 	r.doDeleteIPv4(e.GetPrefix())
 
 	if r.postChangeHook != nil {
@@ -680,6 +690,25 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	}
 
 	return nil
+}
+
+// ipv4EntryProto returns a protobuf message for the specified IPv4 prefix. It returns
+// the found prefix as a Ipv4EntryKey protobuf, along with a bool indicating whether the
+// prefix was found in the RIB.
+func (r *RIBHolder) ipv4EntryProto(pfx string) (*aftpb.Afts_Ipv4EntryKey, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ribE := r.r.Afts.Ipv4Entry[pfx]
+	if ribE == nil {
+		return nil, false, nil
+	}
+
+	existingEntryProto, err := concreteIPv4Proto(ribE)
+	if err != nil {
+		return nil, true, status.Newf(codes.Internal, "invalid existing entry in RIB %v", ribE).Err()
+	}
+
+	return existingEntryProto, true, nil
 }
 
 // doDeleteIPv4 deletes pfx from the IPv4Entry RIB holding the shortest possible lock.
@@ -824,6 +853,48 @@ func concreteIPv4Proto(e *aft.Afts_Ipv4Entry) (*aftpb.Afts_Ipv4EntryKey, error) 
 	}, nil
 }
 
+// concreteNextHopProto takes the input NextHop GoStruct and returns it as a gRIBI
+// NextHopEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
+func concreteNextHopProto(e *aft.Afts_NextHop) (*aftpb.Afts_NextHopKey, error) {
+	nhproto := &aftpb.Afts_NextHop{}
+	if err := protoFromGoStruct(e, &gpb.Path{
+		Elem: []*gpb.PathElem{{
+			Name: "afts",
+		}, {
+			Name: "next-hops",
+		}, {
+			Name: "next-hop",
+		}},
+	}, nhproto); err != nil {
+		return nil, fmt.Errorf("cannot marshal next-hop index %d, %v", e.GetIndex(), err)
+	}
+	return &aftpb.Afts_NextHopKey{
+		Index:   *e.Index,
+		NextHop: nhproto,
+	}, nil
+}
+
+// concreteNextHopGroupProto takes the input NextHopGroup GoStruct and returns it as a gRIBI
+// NextHopGroupEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
+func concreteNextHopGroupProto(e *aft.Afts_NextHopGroup) (*aftpb.Afts_NextHopGroupKey, error) {
+	nhgproto := &aftpb.Afts_NextHopGroup{}
+	if err := protoFromGoStruct(e, &gpb.Path{
+		Elem: []*gpb.PathElem{{
+			Name: "afts",
+		}, {
+			Name: "next-hop-groups",
+		}, {
+			Name: "next-hop-group",
+		}},
+	}, nhgproto); err != nil {
+		return nil, fmt.Errorf("cannot marshal next-hop index %d, %v", e.GetId(), err)
+	}
+	return &aftpb.Afts_NextHopGroupKey{
+		Id:           *e.Id,
+		NextHopGroup: nhgproto,
+	}, nil
+}
+
 // protoFromGoStruct takes the input GoStruct and marshals into the supplied pb
 // protobuf message, trimming the prefix specified from the annotated paths within
 // the protobuf.
@@ -847,6 +918,93 @@ func protoFromGoStruct(s ygot.GoStruct, prefix *gpb.Path, pb proto.Message) erro
 		protomap.ValuePathPrefix(prefix),
 		protomap.IgnoreExtraPaths()); err != nil {
 		return fmt.Errorf("cannot unmarshal gNMI paths, %v", err)
+	}
+
+	return nil
+}
+
+// GetRIB returns the content of the RIB that is contained within the r RIBHolder
+// receiver. The contents of the RIB are returned as gRIBI GetResponse messages which
+// are written to the supplied msgCh. stopCh is a channel that indicates that the
+// GetRIB method should stop its work and return immediately. An error is returned
+// if the RIB cannot be returned.
+func (r *RIBHolder) GetRIB(msgCh chan *spb.GetResponse, stopCh chan struct{}) error {
+	// TODO(robjs): since we are wanting to ensure that we tell the client
+	// exactly what is installed, this leads to a decision to make about locking
+	// of the RIB -- either we can go and lock the entire network instance RIB,
+	// or be more granular than that.
+	//
+	//  * we take the NI-level lock: in the incoming master case, the client can
+	//    ensure that they wait for the Get to complete before writing ==> there
+	//    is no convergence impact. In the multi-master case (or even a consistency)
+	//    check case, we impact convergence.
+	//  * we take a more granular lock, in this case we do not impact convergence
+	//    for any other entity than that individual entry.
+	//
+	// The latter is a better choice for a high-performance implementation, but
+	// its not clear that we need to worry about this for this implementation *yet*.
+	// In the future we should consider a fine-grained per-entry lock.
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for pfx, e := range r.r.Afts.Ipv4Entry {
+		select {
+		case <-stopCh:
+			return nil
+		default:
+			p, err := concreteIPv4Proto(e)
+			if err != nil {
+				return status.Errorf(codes.Internal, "cannot marshal IPv4Entry for %s into GetResponse, %v", pfx, err)
+			}
+			msgCh <- &spb.GetResponse{
+				Entry: []*spb.AFTEntry{{
+					NetworkInstance: r.name,
+					Entry: &spb.AFTEntry_Ipv4{
+						Ipv4: p,
+					},
+				}},
+			}
+		}
+	}
+
+	for index, e := range r.r.Afts.NextHopGroup {
+		select {
+		case <-stopCh:
+			return nil
+		default:
+			p, err := concreteNextHopGroupProto(e)
+			if err != nil {
+				return status.Errorf(codes.Internal, "cannot marshal NextHopGroupEntry for index %d into GetResponse, %v", index, err)
+			}
+			msgCh <- &spb.GetResponse{
+				Entry: []*spb.AFTEntry{{
+					NetworkInstance: r.name,
+					Entry: &spb.AFTEntry_NextHopGroup{
+						NextHopGroup: p,
+					},
+				}},
+			}
+		}
+	}
+
+	for id, e := range r.r.Afts.NextHop {
+		select {
+		case <-stopCh:
+			return nil
+		default:
+			p, err := concreteNextHopProto(e)
+			if err != nil {
+				return status.Errorf(codes.Internal, "cannot marshal NextHopEntry for ID %d into GetResponse, %v", id, err)
+			}
+			msgCh <- &spb.GetResponse{
+				Entry: []*spb.AFTEntry{{
+					NetworkInstance: r.name,
+					Entry: &spb.AFTEntry_NextHop{
+						NextHop: p,
+					},
+				}},
+			}
+		}
 	}
 
 	return nil

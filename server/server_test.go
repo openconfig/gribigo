@@ -1131,6 +1131,57 @@ func TestAddEntry(t *testing.T) {
 }
 
 func TestDoGet(t *testing.T) {
+	// serverAllRIBs is a function that returns a server with one entry in each RIB
+	// populated.
+	serverAllRIBs := func() *Server {
+		// use a nil function to check the RIB so that addEntry always succeeds
+		s := New(DisableRIBCheckFn())
+
+		if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
+			Id:              1,
+			NetworkInstance: DefaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}); err != nil {
+			panic(fmt.Sprintf("cannot build testcase, %v", err))
+		}
+
+		if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
+			Id:              1,
+			NetworkInstance: DefaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id:           1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{},
+				},
+			},
+		}); err != nil {
+			panic(fmt.Sprintf("cannot build testcase, %v", err))
+		}
+
+		if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
+			Id:              1,
+			NetworkInstance: DefaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}); err != nil {
+			panic(fmt.Sprintf("cannot build testcase, %v", err))
+		}
+
+		return s
+	}()
+
 	tests := []struct {
 		desc          string
 		inReq         *spb.GetRequest
@@ -1143,6 +1194,7 @@ func TestDoGet(t *testing.T) {
 			NetworkInstance: &spb.GetRequest_Name{
 				Name: DefaultNetworkInstanceName,
 			},
+			Aft: spb.AFTType_ALL,
 		},
 	}, {
 		desc: "empty network instance name",
@@ -1150,11 +1202,13 @@ func TestDoGet(t *testing.T) {
 			NetworkInstance: &spb.GetRequest_Name{
 				Name: "",
 			},
+			Aft: spb.AFTType_ALL,
 		},
 		wantErr: true,
 	}, {
 		desc: "all network instances",
 		inReq: &spb.GetRequest{
+			Aft: spb.AFTType_ALL,
 			NetworkInstance: &spb.GetRequest_All{
 				All: &spb.Empty{},
 			},
@@ -1224,55 +1278,9 @@ func TestDoGet(t *testing.T) {
 			NetworkInstance: &spb.GetRequest_Name{
 				Name: DefaultNetworkInstanceName,
 			},
+			Aft: spb.AFTType_ALL,
 		},
-		inServer: func() *Server {
-			// use a nil function to check the RIB so that addEntry always succeeds
-			s := New(DisableRIBCheckFn())
-
-			if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
-				Id:              1,
-				NetworkInstance: DefaultNetworkInstanceName,
-				Op:              spb.AFTOperation_ADD,
-				Entry: &spb.AFTOperation_NextHop{
-					NextHop: &aftpb.Afts_NextHopKey{
-						Index:   1,
-						NextHop: &aftpb.Afts_NextHop{},
-					},
-				},
-			}); err != nil {
-				panic(fmt.Sprintf("cannot build testcase, %v", err))
-			}
-
-			if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
-				Id:              1,
-				NetworkInstance: DefaultNetworkInstanceName,
-				Op:              spb.AFTOperation_ADD,
-				Entry: &spb.AFTOperation_NextHopGroup{
-					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
-						Id:           1,
-						NextHopGroup: &aftpb.Afts_NextHopGroup{},
-					},
-				},
-			}); err != nil {
-				panic(fmt.Sprintf("cannot build testcase, %v", err))
-			}
-
-			if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
-				Id:              1,
-				NetworkInstance: DefaultNetworkInstanceName,
-				Op:              spb.AFTOperation_ADD,
-				Entry: &spb.AFTOperation_Ipv4{
-					Ipv4: &aftpb.Afts_Ipv4EntryKey{
-						Prefix:    "1.1.1.1/32",
-						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
-					},
-				},
-			}); err != nil {
-				panic(fmt.Sprintf("cannot build testcase, %v", err))
-			}
-
-			return s
-		}(),
+		inServer: serverAllRIBs,
 		wantResponses: []*spb.GetResponse{{
 			Entry: []*spb.AFTEntry{{
 				NetworkInstance: DefaultNetworkInstanceName,
@@ -1294,6 +1302,35 @@ func TestDoGet(t *testing.T) {
 				},
 			}},
 		}, {
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc: "unsupported AFT",
+		inReq: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+			Aft: spb.AFTType_IPV6,
+		},
+		wantErr: true,
+	}, {
+		desc: "filter to ipv4",
+		inReq: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+			Aft: spb.AFTType_IPV4,
+		},
+		inServer: serverAllRIBs,
+		wantResponses: []*spb.GetResponse{{
 			Entry: []*spb.AFTEntry{{
 				NetworkInstance: DefaultNetworkInstanceName,
 				Entry: &spb.AFTEntry_Ipv4{

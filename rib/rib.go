@@ -676,7 +676,7 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, error) {
 	// know the key.
 	if r.postChangeHook != nil {
 		for _, ip4 := range nr.Afts.Ipv4Entry {
-			r.postChangeHook(constants.ADD, unixTS(), r.name, ip4)
+			r.postChangeHook(constants.Add, unixTS(), r.name, ip4)
 		}
 	}
 
@@ -687,6 +687,12 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, error) {
 func (r *RIBHolder) doAddIPv4(pfx string, newRIB *aft.RIB) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Sanity check.
+	if nhg, nh := len(newRIB.Afts.NextHopGroup), len(newRIB.Afts.NextHop); nhg != 0 || nh != 0 {
+		return fmt.Errorf("candidate RIB specifies entries other than NextHopGroups, got: %d nhg, %d nh", nhg, nh)
+	}
+
 	// MergeStructInto doesn't completely replace a list entry if it finds a missing key,
 	// so will append the two entries together.
 	// We don't use Delete itself because it will deadlock (we already hold the lock).
@@ -731,7 +737,7 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	r.doDeleteIPv4(e.GetPrefix())
 
 	if r.postChangeHook != nil {
-		r.postChangeHook(constants.DELETE, unixTS(), r.name, de)
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
 	}
 
 	return nil
@@ -800,7 +806,7 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, error)
 
 	if r.postChangeHook != nil {
 		for _, nhg := range nr.Afts.NextHopGroup {
-			r.postChangeHook(constants.ADD, unixTS(), r.name, nhg)
+			r.postChangeHook(constants.Add, unixTS(), r.name, nhg)
 		}
 	}
 
@@ -812,6 +818,12 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, error)
 func (r *RIBHolder) doAddNHG(ID uint64, newRIB *aft.RIB) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Sanity check.
+	if ip4, nh := len(newRIB.Afts.Ipv4Entry), len(newRIB.Afts.NextHop); ip4 != 0 || nh != 0 {
+		return fmt.Errorf("candidate RIB specifies entries other than NextHopGroups, got: %d ipv4, %d nh", ip4, nh)
+	}
+
 	// Handle implicit replace.
 	delete(r.r.GetAfts().NextHopGroup, ID)
 
@@ -856,7 +868,7 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 
 	if r.postChangeHook != nil {
 		for _, nh := range nr.Afts.NextHop {
-			r.postChangeHook(constants.ADD, unixTS(), r.name, nh)
+			r.postChangeHook(constants.Add, unixTS(), r.name, nh)
 		}
 	}
 
@@ -868,6 +880,12 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 func (r *RIBHolder) doAddNH(index uint64, newRIB *aft.RIB) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Sanity check.
+	if ip4, nhg := len(newRIB.Afts.Ipv4Entry), len(newRIB.Afts.NextHopGroup); ip4 != 0 || nhg != 0 {
+		return fmt.Errorf("candidate RIB specifies entries other than NextHopGroups, got: %d ipv4, %d nhg", ip4, nhg)
+	}
+
 	// Handle implicit replace.
 	delete(r.r.GetAfts().NextHop, index)
 
@@ -968,12 +986,14 @@ func protoFromGoStruct(s ygot.GoStruct, prefix *gpb.Path, pb proto.Message) erro
 	return nil
 }
 
-// GetRIB returns the content of the RIB that is contained within the r RIBHolder
-// receiver. The contents of the RIB are returned as gRIBI GetResponse messages which
-// are written to the supplied msgCh. stopCh is a channel that indicates that the
-// GetRIB method should stop its work and return immediately. An error is returned
-// if the RIB cannot be returned.
-func (r *RIBHolder) GetRIB(msgCh chan *spb.GetResponse, stopCh chan struct{}) error {
+// GetRIB writes the contents of the RIBs specified in the filter to msgCh. filter is a map,
+// keyed by the gRIBI AFTType enumeration, if the value is set to true, the AFT is written
+// to msgCh, otherwise it is skipped. The contents of the RIB are returned as gRIBI
+// GetResponse messages which are written to the supplied msgCh. stopCh is a channel that
+// indicates that the GetRIB method should stop its work and return immediately.
+//
+// An error is returned if the RIB cannot be returned.
+func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetResponse, stopCh chan struct{}) error {
 	// TODO(robjs): since we are wanting to ensure that we tell the client
 	// exactly what is installed, this leads to a decision to make about locking
 	// of the RIB -- either we can go and lock the entire network instance RIB,
@@ -992,62 +1012,77 @@ func (r *RIBHolder) GetRIB(msgCh chan *spb.GetResponse, stopCh chan struct{}) er
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	for pfx, e := range r.r.Afts.Ipv4Entry {
-		select {
-		case <-stopCh:
-			return nil
-		default:
-			p, err := concreteIPv4Proto(e)
-			if err != nil {
-				return status.Errorf(codes.Internal, "cannot marshal IPv4Entry for %s into GetResponse, %v", pfx, err)
-			}
-			msgCh <- &spb.GetResponse{
-				Entry: []*spb.AFTEntry{{
-					NetworkInstance: r.name,
-					Entry: &spb.AFTEntry_Ipv4{
-						Ipv4: p,
-					},
-				}},
+	// rewrite ALL to the values that we support.
+	if filter[spb.AFTType_ALL] {
+		filter = map[spb.AFTType]bool{
+			spb.AFTType_IPV4:          true,
+			spb.AFTType_NEXTHOP:       true,
+			spb.AFTType_NEXTHOP_GROUP: true,
+		}
+	}
+
+	if filter[spb.AFTType_IPV4] {
+		for pfx, e := range r.r.Afts.Ipv4Entry {
+			select {
+			case <-stopCh:
+				return nil
+			default:
+				p, err := concreteIPv4Proto(e)
+				if err != nil {
+					return status.Errorf(codes.Internal, "cannot marshal IPv4Entry for %s into GetResponse, %v", pfx, err)
+				}
+				msgCh <- &spb.GetResponse{
+					Entry: []*spb.AFTEntry{{
+						NetworkInstance: r.name,
+						Entry: &spb.AFTEntry_Ipv4{
+							Ipv4: p,
+						},
+					}},
+				}
 			}
 		}
 	}
 
-	for index, e := range r.r.Afts.NextHopGroup {
-		select {
-		case <-stopCh:
-			return nil
-		default:
-			p, err := concreteNextHopGroupProto(e)
-			if err != nil {
-				return status.Errorf(codes.Internal, "cannot marshal NextHopGroupEntry for index %d into GetResponse, %v", index, err)
-			}
-			msgCh <- &spb.GetResponse{
-				Entry: []*spb.AFTEntry{{
-					NetworkInstance: r.name,
-					Entry: &spb.AFTEntry_NextHopGroup{
-						NextHopGroup: p,
-					},
-				}},
+	if filter[spb.AFTType_NEXTHOP_GROUP] {
+		for index, e := range r.r.Afts.NextHopGroup {
+			select {
+			case <-stopCh:
+				return nil
+			default:
+				p, err := concreteNextHopGroupProto(e)
+				if err != nil {
+					return status.Errorf(codes.Internal, "cannot marshal NextHopGroupEntry for index %d into GetResponse, %v", index, err)
+				}
+				msgCh <- &spb.GetResponse{
+					Entry: []*spb.AFTEntry{{
+						NetworkInstance: r.name,
+						Entry: &spb.AFTEntry_NextHopGroup{
+							NextHopGroup: p,
+						},
+					}},
+				}
 			}
 		}
 	}
 
-	for id, e := range r.r.Afts.NextHop {
-		select {
-		case <-stopCh:
-			return nil
-		default:
-			p, err := concreteNextHopProto(e)
-			if err != nil {
-				return status.Errorf(codes.Internal, "cannot marshal NextHopEntry for ID %d into GetResponse, %v", id, err)
-			}
-			msgCh <- &spb.GetResponse{
-				Entry: []*spb.AFTEntry{{
-					NetworkInstance: r.name,
-					Entry: &spb.AFTEntry_NextHop{
-						NextHop: p,
-					},
-				}},
+	if filter[spb.AFTType_NEXTHOP] {
+		for id, e := range r.r.Afts.NextHop {
+			select {
+			case <-stopCh:
+				return nil
+			default:
+				p, err := concreteNextHopProto(e)
+				if err != nil {
+					return status.Errorf(codes.Internal, "cannot marshal NextHopEntry for ID %d into GetResponse, %v", id, err)
+				}
+				msgCh <- &spb.GetResponse{
+					Entry: []*spb.AFTEntry{{
+						NetworkInstance: r.name,
+						Entry: &spb.AFTEntry_NextHop{
+							NextHop: p,
+						},
+					}},
+				}
 			}
 		}
 	}

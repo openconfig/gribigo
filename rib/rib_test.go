@@ -481,55 +481,55 @@ func TestHooks(t *testing.T) {
 	}{{
 		desc: "store add hooks",
 		inOps: []*op{{
-			Do:  constants.ADD,
+			Do:  constants.Add,
 			IP4: "8.8.8.8/32",
 		}, {
-			Do:  constants.ADD,
+			Do:  constants.Add,
 			NHG: 42,
 		}, {
-			Do: constants.ADD,
+			Do: constants.Add,
 			NH: 84,
 		}},
 		storeFn: true,
 		want: []interface{}{
-			&op{Do: constants.ADD, TS: 0, IP4: "8.8.8.8/32"},
-			&op{Do: constants.ADD, TS: 1, NHG: 42},
-			&op{Do: constants.ADD, TS: 2, NH: 84},
+			&op{Do: constants.Add, TS: 0, IP4: "8.8.8.8/32"},
+			&op{Do: constants.Add, TS: 1, NHG: 42},
+			&op{Do: constants.Add, TS: 2, NH: 84},
 		},
 	}, {
 		desc: "store delete hooks",
 		inOps: []*op{{
-			Do:  constants.DELETE,
+			Do:  constants.Delete,
 			IP4: "8.8.8.8/32",
 		}, {
-			Do:  constants.DELETE,
+			Do:  constants.Delete,
 			IP4: "1.1.1.1/32",
 		}},
 		storeFn: true,
 		want: []interface{}{
-			&op{Do: constants.DELETE, TS: 0, IP4: "8.8.8.8/32"},
-			&op{Do: constants.DELETE, TS: 1, IP4: "1.1.1.1/32"},
+			&op{Do: constants.Delete, TS: 0, IP4: "8.8.8.8/32"},
+			&op{Do: constants.Delete, TS: 1, IP4: "1.1.1.1/32"},
 		},
 	}, {
 		desc: "store add and delete",
 		inOps: []*op{{
-			Do:  constants.ADD,
+			Do:  constants.Add,
 			IP4: "1.1.1.1/32",
 		}, {
-			Do:  constants.DELETE,
+			Do:  constants.Delete,
 			IP4: "2.2.2.2/32",
 		}},
 		want: []interface{}{
-			&op{Do: constants.DELETE, TS: 0, IP4: "1.1.1.1/32"},
-			&op{Do: constants.DELETE, TS: 1, IP4: "2.2.2.2/32"},
+			&op{Do: constants.Delete, TS: 0, IP4: "1.1.1.1/32"},
+			&op{Do: constants.Delete, TS: 1, IP4: "2.2.2.2/32"},
 		},
 	}, {
 		desc: "gnmi add and delete",
 		inOps: []*op{{
-			Do:  constants.ADD,
+			Do:  constants.Add,
 			IP4: "1.2.3.4/32",
 		}, {
-			Do:  constants.DELETE,
+			Do:  constants.Delete,
 			IP4: "4.5.6.7/32",
 		}},
 		gnmiFn: true,
@@ -578,7 +578,7 @@ func TestHooks(t *testing.T) {
 			}
 
 			gnmiNoti := func(o constants.OpType, _ int64, ni string, gs ygot.GoStruct) {
-				if o == constants.DELETE {
+				if o == constants.Delete {
 					switch t := gs.(type) {
 					case *aft.Afts_Ipv4Entry:
 						got = append(got, &gpb.Notification{
@@ -650,7 +650,7 @@ func TestHooks(t *testing.T) {
 				switch {
 				case o.IP4 != "":
 					switch o.Do {
-					case constants.REPLACE, constants.DELETE:
+					case constants.Replace, constants.Delete:
 						if _, err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix:    o.IP4,
 							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
@@ -660,7 +660,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NHG != 0:
 					switch o.Do {
-					case constants.REPLACE, constants.DELETE:
+					case constants.Replace, constants.Delete:
 						if _, err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
@@ -670,7 +670,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NH != 0:
 					switch o.Do {
-					case constants.REPLACE, constants.DELETE:
+					case constants.Replace, constants.Delete:
 						if _, err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},
@@ -693,7 +693,7 @@ func TestHooks(t *testing.T) {
 				switch {
 				case o.IP4 != "":
 					switch o.Do {
-					case constants.ADD:
+					case constants.Add:
 						if _, err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix: o.IP4,
 							Ipv4Entry: &aftpb.Afts_Ipv4Entry{
@@ -702,7 +702,7 @@ func TestHooks(t *testing.T) {
 						}); err != nil {
 							t.Fatalf("cannot add IPv4 entry %s: %v", o.IP4, err)
 						}
-					case constants.DELETE:
+					case constants.Delete:
 						if err := r.niRIB[r.defaultName].DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix: o.IP4,
 						}); err != nil {
@@ -711,7 +711,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NHG != 0:
 					switch o.Do {
-					case constants.ADD:
+					case constants.Add:
 						if _, err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
@@ -721,7 +721,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NH != 0:
 					switch o.Do {
-					case constants.ADD:
+					case constants.Add:
 						if _, err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},
@@ -1360,14 +1360,50 @@ func TestKnownNetworkInstances(t *testing.T) {
 }
 
 func TestGetRIB(t *testing.T) {
+
+	// allPopRIB is a RIB with one entry in each table.
+	allPopRIB := func() *RIBHolder {
+		r := NewRIBHolder("VRF-42")
+
+		cr := &aft.RIB{}
+		nh := cr.GetOrCreateAfts().GetOrCreateNextHop(1)
+		nh.IpAddress = ygot.String("1.1.1.1/32")
+
+		if err := r.doAddNH(1, cr); err != nil {
+			panic(fmt.Sprintf("cannot build RIB, %v", err))
+		}
+
+		cr = &aft.RIB{}
+		nhg := cr.GetOrCreateAfts().GetOrCreateNextHopGroup(42).GetOrCreateNextHop(1)
+		nhg.Weight = ygot.Uint64(1)
+
+		if err := r.doAddNHG(42, cr); err != nil {
+			panic(fmt.Sprintf("cannot build RIB, %v", err))
+		}
+
+		cr = &aft.RIB{}
+		ipv4 := cr.GetOrCreateAfts().GetOrCreateIpv4Entry("42.42.42.42/32")
+		ipv4.NextHopGroup = ygot.Uint64(42)
+
+		if err := r.doAddIPv4("42.42.42.42/32", cr); err != nil {
+			panic(fmt.Sprintf("cannot build RIB, %v", err))
+		}
+
+		return r
+	}()
+
 	tests := []struct {
 		desc          string
 		inRIB         *RIBHolder
+		inFilter      map[spb.AFTType]bool
 		wantResponses []*spb.GetResponse
 		wantErr       bool
 	}{{
-		desc:          "empty RIB",
-		inRIB:         NewRIBHolder("VRF-1"),
+		desc:  "empty RIB",
+		inRIB: NewRIBHolder("VRF-1"),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
 		wantResponses: []*spb.GetResponse{},
 	}, {
 		desc: "ipv4 entry",
@@ -1383,6 +1419,9 @@ func TestGetRIB(t *testing.T) {
 			}
 			return r
 		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
 		wantResponses: []*spb.GetResponse{{
 			Entry: []*spb.AFTEntry{{
 				NetworkInstance: "VRF-1",
@@ -1410,6 +1449,9 @@ func TestGetRIB(t *testing.T) {
 			}
 			return r
 		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
 		wantResponses: []*spb.GetResponse{{
 			Entry: []*spb.AFTEntry{{
 				NetworkInstance: "VRF-42",
@@ -1432,11 +1474,69 @@ func TestGetRIB(t *testing.T) {
 			nh := cr.GetOrCreateAfts().GetOrCreateNextHop(1)
 			nh.IpAddress = ygot.String("1.1.1.1/32")
 
-			if err := r.doAddNHG(42, cr); err != nil {
+			if err := r.doAddNH(1, cr); err != nil {
 				panic(fmt.Sprintf("cannot build RIB, %v", err))
 			}
 			return r
 		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHop{
+							IpAddress: &wpb.StringValue{Value: "1.1.1.1/32"},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to ipv4",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_IPV4: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "42.42.42.42/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to nhg",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_NEXTHOP_GROUP: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id:           42,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to nh",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_NEXTHOP: true,
+		},
 		wantResponses: []*spb.GetResponse{{
 			Entry: []*spb.AFTEntry{{
 				NetworkInstance: "VRF-42",
@@ -1472,7 +1572,7 @@ func TestGetRIB(t *testing.T) {
 				}
 			}()
 
-			if err := tt.inRIB.GetRIB(msgCh, stopCh); (err != nil) != tt.wantErr {
+			if err := tt.inRIB.GetRIB(tt.inFilter, msgCh, stopCh); (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}
 			doneCh <- struct{}{}

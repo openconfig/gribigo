@@ -305,9 +305,6 @@ func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
 		case stopCh <- struct{}{}:
 		default:
 		}
-		close(msgCh)
-		close(errCh)
-		close(stopCh)
 	}()
 
 	go s.doGet(req, msgCh, doneCh, stopCh, errCh)
@@ -865,6 +862,14 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 		netInstances = s.masterRIB.KnownNetworkInstances()
 	}
 
+	filter := map[spb.AFTType]bool{}
+	switch v := req.Aft; v {
+	case spb.AFTType_ALL, spb.AFTType_IPV4, spb.AFTType_NEXTHOP, spb.AFTType_NEXTHOP_GROUP:
+		filter[v] = true
+	default:
+		errCh <- status.Errorf(codes.Unimplemented, "AFTs other than IPv4, IPv6, NHG and NH are unimplemented, requested: %s", v)
+	}
+
 	for _, ni := range netInstances {
 		netInst, ok := s.masterRIB.NetworkInstanceRIB(ni)
 		if !ok {
@@ -872,7 +877,7 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 			return
 		}
 
-		if err := netInst.GetRIB(msgCh, stopCh); err != nil {
+		if err := netInst.GetRIB(filter, msgCh, stopCh); err != nil {
 			errCh <- err
 			return
 		}

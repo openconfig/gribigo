@@ -968,6 +968,8 @@ type GetRequest struct {
 	// queried. AllNetworkInstances and NetworkInstance are mutually
 	// exclusive.
 	NetworkInstance string
+	// AFT is the AFT that should be requested.
+	AFT constants.AFT
 }
 
 // Get implements the Get RPC to the gRIBI server. It takes an input context and a
@@ -988,6 +990,13 @@ func (c *Client) Get(ctx context.Context, req *GetRequest) (*spb.GetResponse, er
 		sreq.NetworkInstance = &spb.GetRequest_Name{
 			Name: req.NetworkInstance,
 		}
+	}
+
+	switch v := req.AFT; v {
+	case constants.All, constants.IPv4, constants.NextHop, constants.NextHopGroup:
+		sreq.Aft = constants.AFTTypeFromAFT(v)
+	default:
+		return nil, fmt.Errorf("invalid/unsupported AFT type specified, %d", v)
 	}
 
 	result := &spb.GetResponse{}

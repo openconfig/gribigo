@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/rib"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
@@ -787,6 +788,7 @@ func TestGet(t *testing.T) {
 		desc: "empty operations",
 		inGetRequest: &GetRequest{
 			NetworkInstance: server.DefaultNetworkInstanceName,
+			AFT:             constants.All,
 		},
 		wantResponse: &spb.GetResponse{},
 	}, {
@@ -802,6 +804,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			NetworkInstance: server.DefaultNetworkInstanceName,
+			AFT:             constants.All,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{
@@ -835,6 +838,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			NetworkInstance: server.DefaultNetworkInstanceName,
+			AFT:             constants.All,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{
@@ -877,6 +881,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			NetworkInstance: server.DefaultNetworkInstanceName,
+			AFT:             constants.All,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{
@@ -902,6 +907,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			NetworkInstance: "VRF-FOO",
+			AFT:             constants.All,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{
@@ -915,7 +921,7 @@ func TestGet(t *testing.T) {
 			}},
 		},
 	}, {
-		desc: "multiple entries - different NI - with ALL",
+		desc: "multiple entries - different NI - with All",
 		inOperations: []*spb.AFTOperation{{
 			NetworkInstance: server.DefaultNetworkInstanceName,
 			Entry: &spb.AFTOperation_Ipv4{
@@ -935,6 +941,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			AllNetworkInstances: true,
+			AFT:                 constants.All,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{
@@ -966,6 +973,62 @@ func TestGet(t *testing.T) {
 			AllNetworkInstances: true,
 		},
 		wantErr: true,
+	}, {
+		desc: "invalid request, unsupported AFT",
+		inGetRequest: &GetRequest{
+			NetworkInstance: "foo",
+		},
+		wantErr: true,
+	}, {
+		desc: "multiple entries - single NI - fltered",
+		inOperations: []*spb.AFTOperation{{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}, {
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "2.2.2.2/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		}, {
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}},
+		inGetRequest: &GetRequest{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			AFT:             constants.IPv4,
+		},
+		wantResponse: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: server.DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}, {
+				NetworkInstance: server.DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "2.2.2.2/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		},
 	}}
 
 	for _, tt := range tests {

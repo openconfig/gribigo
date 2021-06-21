@@ -265,7 +265,7 @@ func AddIPv4EntryRandom(addr string, t testing.TB) {
 		fluent.OperationResult().
 			WithIPv4Operation("1.1.1.1/32").
 			WithProgrammingResult(fluent.InstalledInRIB).
-			WithOperationType(constants.ADD).
+			WithOperationType(constants.Add).
 			AsResult(),
 		chk.IgnoreOperationID(),
 	)
@@ -274,7 +274,7 @@ func AddIPv4EntryRandom(addr string, t testing.TB) {
 		fluent.OperationResult().
 			WithNextHopGroupOperation(42).
 			WithProgrammingResult(fluent.InstalledInRIB).
-			WithOperationType(constants.ADD).
+			WithOperationType(constants.Add).
 			AsResult(),
 		chk.IgnoreOperationID(),
 	)
@@ -283,7 +283,7 @@ func AddIPv4EntryRandom(addr string, t testing.TB) {
 		fluent.OperationResult().
 			WithNextHopOperation(1).
 			WithProgrammingResult(fluent.InstalledInRIB).
-			WithOperationType(constants.ADD).
+			WithOperationType(constants.Add).
 			AsResult(),
 		chk.IgnoreOperationID(),
 	)

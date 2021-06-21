@@ -65,7 +65,7 @@ func TestHasMessage(t *testing.T) {
 		inResults: []*client.OpResult{{
 			OperationID: 42,
 			Details: &client.OpDetailsResults{
-				Type: constants.ADD,
+				Type: constants.Add,
 			},
 		}},
 		inMsg: fluent.OperationResult().WithOperationID(42).AsResult(),
@@ -74,26 +74,26 @@ func TestHasMessage(t *testing.T) {
 		inResults: []*client.OpResult{{
 			OperationID: 42,
 			Details: &client.OpDetailsResults{
-				Type: constants.ADD,
+				Type: constants.Add,
 			},
 		}},
 		inMsg: fluent.OperationResult().
 			WithOperationID(42).
-			WithOperationType(constants.ADD).
+			WithOperationType(constants.Add).
 			AsResult(),
 	}, {
 		desc: "check for ipv4 prefix",
 		inResults: []*client.OpResult{{
 			OperationID: 42,
 			Details: &client.OpDetailsResults{
-				Type:       constants.ADD,
+				Type:       constants.Add,
 				IPv4Prefix: "1.1.1.1/32",
 			},
 		}},
 		inMsg: fluent.OperationResult().
 			WithOperationID(42).
 			WithIPv4Operation("1.1.1.1/32").
-			WithOperationType(constants.ADD).
+			WithOperationType(constants.Add).
 			AsResult(),
 	}}
 

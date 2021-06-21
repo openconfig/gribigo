@@ -986,9 +986,13 @@ func protoFromGoStruct(s ygot.GoStruct, prefix *gpb.Path, pb proto.Message) erro
 	return nil
 }
 
-// GetRIB writes the contents of the RIBs specified in the filter to msgCh. filter is a map, keyed by the gRIBI
-// AFTType enumeration, if the value is set to true, the AFT is written to msgCh, otherwise it is skipped.
-// stopCh can be used to cancel the iteration of the AFTs in the case that it is no longer needed.
+// GetRIB writes the contents of the RIBs specified in the filter to msgCh. filter is a map,
+// keyed by the gRIBI AFTType enumeration, if the value is set to true, the AFT is written
+// to msgCh, otherwise it is skipped. The contents of the RIB are returned as gRIBI
+// GetResponse messages which are written to the supplied msgCh. stopCh is a channel that
+// indicates that the GetRIB method should stop its work and return immediately.
+//
+// An error is returned if the RIB cannot be returned.
 func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetResponse, stopCh chan struct{}) error {
 	// TODO(robjs): since we are wanting to ensure that we tell the client
 	// exactly what is installed, this leads to a decision to make about locking

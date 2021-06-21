@@ -993,7 +993,7 @@ func (c *Client) Get(ctx context.Context, req *GetRequest) (*spb.GetResponse, er
 	}
 
 	switch v := req.AFT; v {
-	case constants.ALL, constants.IPV4, constants.NEXTHOP, constants.NEXTHOPGROUP:
+	case constants.All, constants.IPv4, constants.NextHop, constants.NextHopGroup:
 		sreq.Aft = constants.AFTTypeFromAFT(v)
 	default:
 		return nil, fmt.Errorf("invalid/unsupported AFT type specified, %d", v)

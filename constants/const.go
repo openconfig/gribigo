@@ -25,19 +25,19 @@ type OpType int64
 
 const (
 	_ OpType = iota
-	// ADD indicates that the operation called was an Add.
-	ADD
-	// DELETE indicates that the operation called was a Delete.
-	DELETE
-	// REPLACE indicates that the operation called was a Modify.
-	REPLACE
+	// Add indicates that the operation called was an Add.
+	Add
+	// Delete indicates that the operation called was a Delete.
+	Delete
+	// Replace indicates that the operation called was a Modify.
+	Replace
 )
 
 // aftopMap maps from the gRIBI proto AFT operation to an OpType.
 var aftopMap = map[spb.AFTOperation_Operation]OpType{
-	spb.AFTOperation_ADD:     ADD,
-	spb.AFTOperation_DELETE:  DELETE,
-	spb.AFTOperation_REPLACE: REPLACE,
+	spb.AFTOperation_ADD:     Add,
+	spb.AFTOperation_DELETE:  Delete,
+	spb.AFTOperation_REPLACE: Replace,
 }
 
 // OpFromAFTOp returns an OpType from the AFT operation in the gRIBI
@@ -51,23 +51,23 @@ type AFT int64
 
 const (
 	_ AFT = iota
-	// ALL specifies all AFTs.
-	ALL
-	// IPV4 specifies the IPv4 AFT.
-	IPV4
-	// NEXTHOP specifies the next-hop AFT.
-	NEXTHOP
-	// NEXTHOPGROUP specifies the next-hop-group AFT.
-	NEXTHOPGROUP
+	// All specifies all AFTs.
+	All
+	// IPv4 specifies the IPv4 AFT.
+	IPv4
+	// NextHop specifies the next-hop AFT.
+	NextHop
+	// NextHopGroup specifies the next-hop-group AFT.
+	NextHopGroup
 )
 
 // aftMap maps between an AFT enumerated type and the specified type in the
 // gRIBI protobuf.
 var aftMap = map[AFT]spb.AFTType{
-	ALL:          spb.AFTType_ALL,
-	IPV4:         spb.AFTType_IPV4,
-	NEXTHOP:      spb.AFTType_NEXTHOP,
-	NEXTHOPGROUP: spb.AFTType_NEXTHOP_GROUP,
+	All:          spb.AFTType_ALL,
+	IPv4:         spb.AFTType_IPV4,
+	NextHop:      spb.AFTType_NEXTHOP,
+	NextHopGroup: spb.AFTType_NEXTHOP_GROUP,
 }
 
 // AFTTypeFromAFT returns the gRIBI AFTType from the enumerated AFT type.

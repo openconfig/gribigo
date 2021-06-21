@@ -788,7 +788,7 @@ func TestGet(t *testing.T) {
 		desc: "empty operations",
 		inGetRequest: &GetRequest{
 			NetworkInstance: server.DefaultNetworkInstanceName,
-			AFT:             constants.ALL,
+			AFT:             constants.All,
 		},
 		wantResponse: &spb.GetResponse{},
 	}, {
@@ -804,7 +804,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			NetworkInstance: server.DefaultNetworkInstanceName,
-			AFT:             constants.ALL,
+			AFT:             constants.All,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{
@@ -838,7 +838,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			NetworkInstance: server.DefaultNetworkInstanceName,
-			AFT:             constants.ALL,
+			AFT:             constants.All,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{
@@ -881,7 +881,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			NetworkInstance: server.DefaultNetworkInstanceName,
-			AFT:             constants.ALL,
+			AFT:             constants.All,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{
@@ -907,7 +907,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			NetworkInstance: "VRF-FOO",
-			AFT:             constants.ALL,
+			AFT:             constants.All,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{
@@ -921,7 +921,7 @@ func TestGet(t *testing.T) {
 			}},
 		},
 	}, {
-		desc: "multiple entries - different NI - with ALL",
+		desc: "multiple entries - different NI - with All",
 		inOperations: []*spb.AFTOperation{{
 			NetworkInstance: server.DefaultNetworkInstanceName,
 			Entry: &spb.AFTOperation_Ipv4{
@@ -941,7 +941,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			AllNetworkInstances: true,
-			AFT:                 constants.ALL,
+			AFT:                 constants.All,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{
@@ -1008,7 +1008,7 @@ func TestGet(t *testing.T) {
 		}},
 		inGetRequest: &GetRequest{
 			NetworkInstance: server.DefaultNetworkInstanceName,
-			AFT:             constants.IPV4,
+			AFT:             constants.IPv4,
 		},
 		wantResponse: &spb.GetResponse{
 			Entry: []*spb.AFTEntry{{

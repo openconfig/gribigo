@@ -676,7 +676,7 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, error) {
 	// know the key.
 	if r.postChangeHook != nil {
 		for _, ip4 := range nr.Afts.Ipv4Entry {
-			r.postChangeHook(constants.ADD, unixTS(), r.name, ip4)
+			r.postChangeHook(constants.Add, unixTS(), r.name, ip4)
 		}
 	}
 
@@ -737,7 +737,7 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
 	r.doDeleteIPv4(e.GetPrefix())
 
 	if r.postChangeHook != nil {
-		r.postChangeHook(constants.DELETE, unixTS(), r.name, de)
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
 	}
 
 	return nil
@@ -806,7 +806,7 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, error)
 
 	if r.postChangeHook != nil {
 		for _, nhg := range nr.Afts.NextHopGroup {
-			r.postChangeHook(constants.ADD, unixTS(), r.name, nhg)
+			r.postChangeHook(constants.Add, unixTS(), r.name, nhg)
 		}
 	}
 
@@ -868,7 +868,7 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 
 	if r.postChangeHook != nil {
 		for _, nh := range nr.Afts.NextHop {
-			r.postChangeHook(constants.ADD, unixTS(), r.name, nh)
+			r.postChangeHook(constants.Add, unixTS(), r.name, nh)
 		}
 	}
 

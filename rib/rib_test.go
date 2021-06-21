@@ -481,55 +481,55 @@ func TestHooks(t *testing.T) {
 	}{{
 		desc: "store add hooks",
 		inOps: []*op{{
-			Do:  constants.ADD,
+			Do:  constants.Add,
 			IP4: "8.8.8.8/32",
 		}, {
-			Do:  constants.ADD,
+			Do:  constants.Add,
 			NHG: 42,
 		}, {
-			Do: constants.ADD,
+			Do: constants.Add,
 			NH: 84,
 		}},
 		storeFn: true,
 		want: []interface{}{
-			&op{Do: constants.ADD, TS: 0, IP4: "8.8.8.8/32"},
-			&op{Do: constants.ADD, TS: 1, NHG: 42},
-			&op{Do: constants.ADD, TS: 2, NH: 84},
+			&op{Do: constants.Add, TS: 0, IP4: "8.8.8.8/32"},
+			&op{Do: constants.Add, TS: 1, NHG: 42},
+			&op{Do: constants.Add, TS: 2, NH: 84},
 		},
 	}, {
 		desc: "store delete hooks",
 		inOps: []*op{{
-			Do:  constants.DELETE,
+			Do:  constants.Delete,
 			IP4: "8.8.8.8/32",
 		}, {
-			Do:  constants.DELETE,
+			Do:  constants.Delete,
 			IP4: "1.1.1.1/32",
 		}},
 		storeFn: true,
 		want: []interface{}{
-			&op{Do: constants.DELETE, TS: 0, IP4: "8.8.8.8/32"},
-			&op{Do: constants.DELETE, TS: 1, IP4: "1.1.1.1/32"},
+			&op{Do: constants.Delete, TS: 0, IP4: "8.8.8.8/32"},
+			&op{Do: constants.Delete, TS: 1, IP4: "1.1.1.1/32"},
 		},
 	}, {
 		desc: "store add and delete",
 		inOps: []*op{{
-			Do:  constants.ADD,
+			Do:  constants.Add,
 			IP4: "1.1.1.1/32",
 		}, {
-			Do:  constants.DELETE,
+			Do:  constants.Delete,
 			IP4: "2.2.2.2/32",
 		}},
 		want: []interface{}{
-			&op{Do: constants.DELETE, TS: 0, IP4: "1.1.1.1/32"},
-			&op{Do: constants.DELETE, TS: 1, IP4: "2.2.2.2/32"},
+			&op{Do: constants.Delete, TS: 0, IP4: "1.1.1.1/32"},
+			&op{Do: constants.Delete, TS: 1, IP4: "2.2.2.2/32"},
 		},
 	}, {
 		desc: "gnmi add and delete",
 		inOps: []*op{{
-			Do:  constants.ADD,
+			Do:  constants.Add,
 			IP4: "1.2.3.4/32",
 		}, {
-			Do:  constants.DELETE,
+			Do:  constants.Delete,
 			IP4: "4.5.6.7/32",
 		}},
 		gnmiFn: true,
@@ -578,7 +578,7 @@ func TestHooks(t *testing.T) {
 			}
 
 			gnmiNoti := func(o constants.OpType, _ int64, ni string, gs ygot.GoStruct) {
-				if o == constants.DELETE {
+				if o == constants.Delete {
 					switch t := gs.(type) {
 					case *aft.Afts_Ipv4Entry:
 						got = append(got, &gpb.Notification{
@@ -650,7 +650,7 @@ func TestHooks(t *testing.T) {
 				switch {
 				case o.IP4 != "":
 					switch o.Do {
-					case constants.REPLACE, constants.DELETE:
+					case constants.Replace, constants.Delete:
 						if _, err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix:    o.IP4,
 							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
@@ -660,7 +660,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NHG != 0:
 					switch o.Do {
-					case constants.REPLACE, constants.DELETE:
+					case constants.Replace, constants.Delete:
 						if _, err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
@@ -670,7 +670,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NH != 0:
 					switch o.Do {
-					case constants.REPLACE, constants.DELETE:
+					case constants.Replace, constants.Delete:
 						if _, err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},
@@ -693,7 +693,7 @@ func TestHooks(t *testing.T) {
 				switch {
 				case o.IP4 != "":
 					switch o.Do {
-					case constants.ADD:
+					case constants.Add:
 						if _, err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix: o.IP4,
 							Ipv4Entry: &aftpb.Afts_Ipv4Entry{
@@ -702,7 +702,7 @@ func TestHooks(t *testing.T) {
 						}); err != nil {
 							t.Fatalf("cannot add IPv4 entry %s: %v", o.IP4, err)
 						}
-					case constants.DELETE:
+					case constants.Delete:
 						if err := r.niRIB[r.defaultName].DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix: o.IP4,
 						}); err != nil {
@@ -711,7 +711,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NHG != 0:
 					switch o.Do {
-					case constants.ADD:
+					case constants.Add:
 						if _, err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
@@ -721,7 +721,7 @@ func TestHooks(t *testing.T) {
 					}
 				case o.NH != 0:
 					switch o.Do {
-					case constants.ADD:
+					case constants.Add:
 						if _, err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},

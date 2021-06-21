@@ -229,6 +229,69 @@ func (g *GRIBIClient) Results(t testing.TB) []*client.OpResult {
 // TODO(robjs): add an UpdateElectionID method such that we can set the election ID
 // after it has initially been created.
 
+// gRIBIGet is a container for arguments to the Get RPC.
+type gRIBIGet struct {
+	// parent is a reference to the parent client.
+	parent *GRIBIClient
+	// pb is the GetRequest protobuf.
+	pb *spb.GetRequest
+}
+
+// Get is a wrapper for the gRIBI Get RPC which is used to retrieve the current
+// entries that are in the active gRIBI RIB. Get returns only entries that have
+// been succesfully installed according to the request's ACK type. It can be filtered
+// according to network instance and AFT.
+func (g *GRIBIClient) Get() *gRIBIGet {
+	return &gRIBIGet{parent: g}
+}
+
+// AllNetworkInstance requests entries from all network instances.
+func (g *gRIBIGet) AllNetworkInstances() *gRIBIGet {
+	g.pb.NetworkInstance = &spb.GetRequest_All{
+		All: &spb.Empty{},
+	}
+	return g
+}
+
+// WithNetworkInstance requests the specific network instance, ni, with the Get
+// request.
+func (g *gRIBIGet) WithNetworkInstance(ni string) *gRIBIGet {
+	g.pb.NetworkInstance = &spb.GetRequest_Name{
+		Name: ni,
+	}
+	return g
+}
+
+// AFT is an enumerated type describing the AFTs available within gRIBI.
+type AFT int64
+
+const (
+	_ AFT = iota
+	AllAFTs
+	// IPv4 references the IPv4Entry AFT.
+	IPv4
+	// NextHopGroup references the NextHopGroupEntry AFT.
+	NextHopGroup
+	// NextHop references the NextHop AFT.
+	NextHop
+)
+
+// aftMap provides mapping between the AFT enumerated type within the fluent
+// package and that within the gRIBI protobuf.
+var aftMap = map[AFT]spb.AFTType{
+	AllAFTs:      spb.AFTType_ALL,
+	IPv4:         spb.AFTType_IPV4,
+	NextHopGroup: spb.AFTType_NEXTHOP_GROUP,
+	NextHop:      spb.AFTType_NEXTHOP,
+}
+
+// WithAFT specifies the AFT for which the Get request is made. The AllAFTs
+// value can be used to retrieve all AFTs.
+func (g *gRIBIGet) WithAFT(a AFT) *gRIBIGet {
+	g.pb.Aft = aftMap[a]
+	return g
+}
+
 // Modify wraps methods that trigger operations within the gRIBI Modify RPC.
 func (g *GRIBIClient) Modify() *gRIBIModify {
 	return &gRIBIModify{parent: g}
@@ -254,7 +317,7 @@ func (g *gRIBIModify) AddEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIModify
 func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entries []gRIBIEntry) (*spb.ModifyRequest, error) {
 	m := &spb.ModifyRequest{}
 	for _, e := range entries {
-		ep, err := e.proto()
+		ep, err := e.opproto()
 		if err != nil {
 			return nil, fmt.Errorf("cannot build entry protobuf, got err: %v", err)
 		}
@@ -289,8 +352,10 @@ func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entr
 // gRIBIEntry is an entry implemented for all types that can be returned
 // as a gRIBI entry.
 type gRIBIEntry interface {
-	// proto returns the specified entry as an AFTOperation protobuf.
-	proto() (*spb.AFTOperation, error)
+	// opproto returns the specified entry as an AFTOperation protobuf.
+	opproto() (*spb.AFTOperation, error)
+	// entryproto returns the entry as an AFTEntry protobuf.
+	entryproto() (*spb.AFTEntry, error)
 }
 
 // ipv4Entry is the internal representation of a gRIBI IPv4Entry.
@@ -330,13 +395,23 @@ func (i *ipv4Entry) WithNextHopGroup(u uint64) *ipv4Entry {
 	return i
 }
 
-// proto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
-func (i *ipv4Entry) proto() (*spb.AFTOperation, error) {
+func (i *ipv4Entry) opproto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: i.ni,
 		Entry: &spb.AFTOperation_Ipv4{
+			Ipv4: i.pb,
+		},
+	}, nil
+}
+
+// entryproto implements the gRIBIEntry interface, returning a gRIBI AFTEntry.
+func (i *ipv4Entry) entryproto() (*spb.AFTEntry, error) {
+	return &spb.AFTEntry{
+		NetworkInstance: i.ni,
+		Entry: &spb.AFTEntry_Ipv4{
 			Ipv4: i.pb,
 		},
 	}, nil
@@ -373,13 +448,23 @@ func (n *nextHopEntry) WithNetworkInstance(ni string) *nextHopEntry {
 
 // TODO(robjs): add additional NextHopEntry fields.
 
-// proto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
-func (n *nextHopEntry) proto() (*spb.AFTOperation, error) {
+func (n *nextHopEntry) opproto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTOperation_NextHop{
+			NextHop: n.pb,
+		},
+	}, nil
+}
+
+// entryproto implements the gRIBIEntry interface, returning a gRIBI AFTEntry.
+func (n *nextHopEntry) entryproto() (*spb.AFTEntry, error) {
+	return &spb.AFTEntry{
+		NetworkInstance: n.ni,
+		Entry: &spb.AFTEntry_NextHop{
 			NextHop: n.pb,
 		},
 	}, nil
@@ -425,13 +510,23 @@ func (n *nextHopGroupEntry) AddNextHop(index, weight uint64) *nextHopGroupEntry 
 	return n
 }
 
-// proto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
-func (n *nextHopGroupEntry) proto() (*spb.AFTOperation, error) {
+func (n *nextHopGroupEntry) opproto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTOperation_NextHopGroup{
+			NextHopGroup: n.pb,
+		},
+	}, nil
+}
+
+// entryproto implements the gRIBIEntry interface, returning a gRIBI AFTEntry.
+func (n *nextHopGroupEntry) entryproto() (*spb.AFTEntry, error) {
+	return &spb.AFTEntry{
+		NetworkInstance: n.ni,
+		Entry: &spb.AFTEntry_NextHopGroup{
 			NextHopGroup: n.pb,
 		},
 	}, nil

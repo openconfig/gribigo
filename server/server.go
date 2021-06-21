@@ -295,7 +295,6 @@ func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
 	doneCh := make(chan struct{})
 	stopCh := make(chan struct{})
 
-<<<<<<< HEAD
 	// defer a function to stop the goroutine and close all channels, since this will be called
 	// when we exit, then it will stop the goroutine that we started to do
 	// the get in the case that we exit due to some error.
@@ -308,7 +307,6 @@ func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
 		}
 		close(msgCh)
 		close(errCh)
-		close(doneCh)
 		close(stopCh)
 	}()
 
@@ -322,28 +320,10 @@ func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
 			done = true
 		case err := <-errCh:
 			return status.Errorf(codes.Internal, "cannot generate GetResponse, %v", err)
-=======
-	// defer a function to stop the goroutine, since this will be called
-	// when we exit, then it will stop the goroutine that we started to do
-	// the get in the case that we exit due to some error.
-	defer func() { stopCh <- struct{}{} }()
-	go s.doGet(req, msgCh, doneCh, stopCh, errCh)
-
-	var done bool
-	for !done {
-		select {
->>>>>>> main
 		case r := <-msgCh:
 			if err := stream.Send(r); err != nil {
 				return status.Errorf(codes.Internal, "cannot write message to client channel, %v", err)
 			}
-<<<<<<< HEAD
-=======
-		case err := <-errCh:
-			return status.Errorf(codes.Internal, "cannot generate GetResponse, %v", err)
-		case <-doneCh:
-			done = true
->>>>>>> main
 		}
 	}
 	return nil

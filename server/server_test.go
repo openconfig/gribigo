@@ -20,8 +20,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
@@ -1123,6 +1125,229 @@ func TestAddEntry(t *testing.T) {
 			}
 			if diff := cmp.Diff(got, tt.wantResponse, protocmp.Transform()); diff != "" {
 				t.Fatalf("did not get expected response, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestDoGet(t *testing.T) {
+	tests := []struct {
+		desc          string
+		inReq         *spb.GetRequest
+		inServer      *Server
+		wantResponses []*spb.GetResponse
+		wantErr       bool
+	}{{
+		desc: "single network-instance get, with empty RIB",
+		inReq: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+		},
+	}, {
+		desc: "empty network instance name",
+		inReq: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_Name{
+				Name: "",
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "all network instances",
+		inReq: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_All{
+				All: &spb.Empty{},
+			},
+		},
+		inServer: func() *Server {
+			s := New(DisableRIBCheckFn())
+			vrfNames := []string{"ONE", "EIGHT", "FOUR"}
+			for _, v := range vrfNames {
+				if err := s.masterRIB.AddNetworkInstance(v); err != nil {
+					panic(fmt.Sprintf("cannot build testcase, %v", err))
+				}
+			}
+
+			prefixes := []string{"1.1.1.1/32", "8.8.8.8/32", "8.8.4.4/32"}
+
+			for i, pfx := range prefixes {
+				if _, _, err := s.masterRIB.AddEntry(vrfNames[i], &spb.AFTOperation{
+					Id:              uint64(i),
+					NetworkInstance: vrfNames[i],
+					Op:              spb.AFTOperation_ADD,
+					Entry: &spb.AFTOperation_Ipv4{
+						Ipv4: &aftpb.Afts_Ipv4EntryKey{
+							Prefix:    pfx,
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+						},
+					},
+				}); err != nil {
+					panic(fmt.Sprintf("cannot build testcase, %v", err))
+				}
+			}
+			return s
+		}(),
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "ONE",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}, {
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "EIGHT",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "8.8.8.8/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}, {
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "FOUR",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "8.8.4.4/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc: "single network-instance get with one entry in each table",
+		inReq: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+		},
+		inServer: func() *Server {
+			// use a nil function to check the RIB so that addEntry always succeeds
+			s := New(DisableRIBCheckFn())
+
+			if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
+				Id:              1,
+				NetworkInstance: DefaultNetworkInstanceName,
+				Op:              spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot build testcase, %v", err))
+			}
+
+			if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
+				Id:              1,
+				NetworkInstance: DefaultNetworkInstanceName,
+				Op:              spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id:           1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot build testcase, %v", err))
+			}
+
+			if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
+				Id:              1,
+				NetworkInstance: DefaultNetworkInstanceName,
+				Op:              spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot build testcase, %v", err))
+			}
+
+			return s
+		}(),
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id:           1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			}},
+		}, {
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			}},
+		}, {
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			errCh := make(chan error)
+			doneCh := make(chan struct{})
+			stopCh := make(chan struct{})
+			msgCh := make(chan *spb.GetResponse)
+
+			s := tt.inServer
+			if tt.inServer == nil {
+				s = New()
+			}
+			go s.doGet(tt.inReq, msgCh, doneCh, stopCh, errCh)
+
+			var gotErr error
+			var done bool
+			got := []*spb.GetResponse{}
+			for !done {
+				select {
+				case r := <-msgCh:
+					got = append(got, r)
+				case err := <-errCh:
+					gotErr = err
+					done = true
+				case <-doneCh:
+					done = true
+				}
+			}
+
+			if (gotErr != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", gotErr, tt.wantErr)
+			}
+
+			if diff := cmp.Diff(got, tt.wantResponses,
+				cmpopts.EquateEmpty(),
+				protocmp.Transform(),
+				cmpopts.SortSlices(func(a, b *spb.GetResponse) bool {
+					return prototext.Format(a) < prototext.Format(b)
+				}),
+				protocmp.SortRepeated(func(a, b *spb.AFTEntry) bool {
+					return prototext.Format(a) < prototext.Format(b)
+				})); diff != "" {
+				t.Fatalf("did not get expected responses, diff(-got,+want):\n%s", diff)
 			}
 		})
 	}

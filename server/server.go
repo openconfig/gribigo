@@ -156,18 +156,46 @@ func hasRIBHook(opt []ServerOpt) *ribHook {
 	return nil
 }
 
+// DisableRIBCheckFn specifies that the consistency checking functions should
+// be disabled for the RIB. It is useful for a testing RIB that does not need
+// to have working references.
+func DisableRIBCheckFn() *disableCheckFn { return &disableCheckFn{} }
+
+// disableCheckFn is the internal implementation of DisableRIBCheckFn.
+type disableCheckFn struct{}
+
+// isRIBOpt implements the RIBOpt interface
+func (*disableCheckFn) isServerOpt() {}
+
+// hasDisableCheckFn checks whether the RIBOpt slice supplied contains the
+// disableCheckFn option.
+func hasDisableCheckFn(opt []ServerOpt) bool {
+	for _, o := range opt {
+		if _, ok := o.(*disableCheckFn); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // New creates a new gRIBI server.
 func New(opt ...ServerOpt) *Server {
+	ribOpt := []rib.RIBOpt{}
+	if hasDisableCheckFn(opt) {
+		ribOpt = append(ribOpt, rib.DisableRIBCheckFn())
+	}
+
 	s := &Server{
 		cs: map[string]*clientState{},
 		// TODO(robjs): when we implement support for ALL_PRIMARY then we might not
 		// want to create a new RIB by default.
-		masterRIB: rib.New(DefaultNetworkInstanceName),
+		masterRIB: rib.New(DefaultNetworkInstanceName, ribOpt...),
 	}
 
 	if v := hasRIBHook(opt); v != nil {
 		s.masterRIB.SetHook(v.fn)
 	}
+
 	return s
 }
 
@@ -258,6 +286,35 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 	s.deleteClient(cid)
 
 	return err
+}
+
+// Get implements the gRIBI Get RPC.
+func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
+	msgCh := make(chan *spb.GetResponse)
+	errCh := make(chan error)
+	doneCh := make(chan struct{})
+	stopCh := make(chan struct{})
+
+	// defer a function to stop the goroutine, since this will be called
+	// when we exit, then it will stop the goroutine that we started to do
+	// the get in the case that we exit due to some error.
+	defer func() { stopCh <- struct{}{} }()
+	go s.doGet(req, msgCh, doneCh, stopCh, errCh)
+
+	var done bool
+	for !done {
+		select {
+		case r := <-msgCh:
+			if err := stream.Send(r); err != nil {
+				return status.Errorf(codes.Internal, "cannot write message to client channel, %v", err)
+			}
+		case err := <-errCh:
+			return status.Errorf(codes.Internal, "cannot generate GetResponse, %v", err)
+		case <-doneCh:
+			done = true
+		}
+	}
+	return nil
 }
 
 // newClient creates a new client context within the server using the specified string
@@ -766,4 +823,44 @@ func checkElectionForModify(opID uint64, opElecID *spb.Uint128, election *electi
 		}, false, nil
 	}
 	return nil, true, nil
+}
+
+// doGet implents the Get RPC for the gRIBI server. It handles the input GetRequest, writing
+// the set of GetResponses to the specified msgCh. When the Get is done, the function writes to
+// doneCh such that the caller knows that the work that is being done is complete. If a message
+// is received on stopCh the function returns. Any errors that are experienced are written to
+// errCh.
+func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh, stopCh chan struct{}, errCh chan error) {
+	// Any time we return we return we tell the done channel that we're complete.
+	defer close(doneCh)
+
+	if req == nil {
+		errCh <- status.Errorf(codes.InvalidArgument, "invalid nil GetRequest received")
+		return
+	}
+
+	netInstances := []string{}
+	switch nireq := req.NetworkInstance.(type) {
+	case *spb.GetRequest_Name:
+		if nireq.Name == "" {
+			errCh <- status.Errorf(codes.InvalidArgument, `invalid string "" returned for NetworkInstance name in GetRequest`)
+			return
+		}
+		netInstances = append(netInstances, nireq.Name)
+	case *spb.GetRequest_All:
+		netInstances = s.masterRIB.KnownNetworkInstances()
+	}
+
+	for _, ni := range netInstances {
+		netInst, ok := s.masterRIB.NetworkInstanceRIB(ni)
+		if !ok {
+			errCh <- status.Errorf(codes.InvalidArgument, "invalid network instance %s specified", ni)
+			return
+		}
+
+		if err := netInst.GetRIB(msgCh, stopCh); err != nil {
+			errCh <- err
+			return
+		}
+	}
 }

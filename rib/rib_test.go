@@ -1483,3 +1483,29 @@ func TestGetRIB(t *testing.T) {
 		})
 	}
 }
+
+func TestAddNetworkInstance(t *testing.T) {
+	tests := []struct {
+		desc    string
+		inRIB   *RIB
+		inName  string
+		wantErr bool
+	}{{
+		desc:   "successfully created",
+		inRIB:  New("DEFAULT"),
+		inName: "NEW",
+	}, {
+		desc:    "existing RIB",
+		inRIB:   New("DEFAULT"),
+		inName:  "DEFAULT",
+		wantErr: true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if err := tt.inRIB.AddNetworkInstance(tt.inName); (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+		})
+	}
+}

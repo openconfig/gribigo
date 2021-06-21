@@ -27,13 +27,13 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"github.com/openconfig/gribigo/constants"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
-	"github.com/openconfig/gribigo/constants"
 )
 
 var (
@@ -173,10 +173,12 @@ func (c *Client) Dial(ctx context.Context, addr string, opts ...DialOpt) error {
 	// TODO(robjs): translate any options within the dial options here, we may
 	// want to consider just accepting some gRPC dialoptions directly.
 
+	dialOpts := []grpc.DialOption{grpc.WithBlock()}
+
 	tlsc := credentials.NewTLS(&tls.Config{
 		InsecureSkipVerify: true,
 	})
-	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(tlsc), grpc.WithBlock()}
+	dialOpts = append(dialOpts, grpc.WithTransportCredentials(tlsc))
 
 	conn, err := grpc.DialContext(ctx, addr, dialOpts...)
 	if err != nil {
@@ -954,4 +956,57 @@ func (c *Client) AwaitConverged() error {
 			return nil
 		}
 	}
+}
+
+// GetRequest is used by a client to indicate the arguments to the Get method.
+type GetRequest struct {
+	// AllNetworkInstances indicates that the Get should be performed for every
+	// network instance. AllNetworkInstances and NetworkInstance are mutually
+	// exclusive.
+	AllNetworkInstances bool
+	// NetworkInstance specifies the name of the network instance that is to be
+	// queried. AllNetworkInstances and NetworkInstance are mutually
+	// exclusive.
+	NetworkInstance string
+}
+
+// Get implements the Get RPC to the gRIBI server. It takes an input context and a
+// client.GetRequest and returns a single GetResponse with all contained results within
+// it.
+func (c *Client) Get(ctx context.Context, req *GetRequest) (*spb.GetResponse, error) {
+	sreq := &spb.GetRequest{}
+	switch {
+	case !req.AllNetworkInstances && req.NetworkInstance == "":
+		return nil, fmt.Errorf("invalid request, neither all or a specific network instance requested, got: %+v", req)
+	case req.AllNetworkInstances && req.NetworkInstance != "":
+		return nil, fmt.Errorf("invalid request, cannot request all and a specific named network instance simulatenously, got: %+v", req)
+	case req.AllNetworkInstances:
+		sreq.NetworkInstance = &spb.GetRequest_All{
+			All: &spb.Empty{},
+		}
+	default:
+		sreq.NetworkInstance = &spb.GetRequest_Name{
+			Name: req.NetworkInstance,
+		}
+	}
+
+	result := &spb.GetResponse{}
+
+	stream, err := c.c.Get(ctx, sreq)
+	if err != nil {
+		return nil, fmt.Errorf("cannot send Get RPC, %v", err)
+	}
+
+	for {
+		getres, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("error in Get RPC, %v", err)
+		}
+		result.Entry = append(result.Entry, getres.Entry...)
+
+	}
+	return result, nil
 }

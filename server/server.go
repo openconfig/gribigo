@@ -629,45 +629,35 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 
 	var wg sync.WaitGroup
 	for _, o := range ops {
-		switch o.Op {
-		case spb.AFTOperation_ADD:
-			ni := o.GetNetworkInstance()
-			if ni == "" {
-				ni = DefaultNetworkInstanceName
-			}
-
-			if _, ok := s.masterRIB.NetworkInstanceRIB(ni); !ok {
-				// this is an unknown network instance, we should not return
-				// an error to the client since we do not want the connection
-				// to be torn down.
-				log.Errorf("rejected operation %s since it is an unknown network-instance, %s", o, ni)
-				resCh <- &spb.ModifyResponse{
-					Result: []*spb.AFTResult{{
-						Id:     o.Id,
-						Status: spb.AFTResult_FAILED,
-					}},
-				}
-				return
-			}
-			wg.Add(1)
-			go func(op *spb.AFTOperation) {
-				res, err := addEntry(s.masterRIB, ni, op, cs.params.FIBAck, elec)
-				switch {
-				case err != nil:
-					errCh <- err
-				default:
-					resCh <- res
-				}
-				wg.Done()
-			}(o)
-		default:
-			errCh <- addModifyErrDetailsOrReturn(
-				status.Newf(codes.Unimplemented, "error processing operation %s, unsupported", o.Op),
-				&spb.ModifyRPCErrorDetails{
-					Reason: spb.ModifyRPCErrorDetails_UNKNOWN,
-				},
-			)
+		ni := o.GetNetworkInstance()
+		if ni == "" {
+			ni = DefaultNetworkInstanceName
 		}
+		if _, ok := s.masterRIB.NetworkInstanceRIB(ni); !ok {
+			// this is an unknown network instance, we should not return
+			// an error to the client since we do not want the connection
+			// to be torn down.
+			log.Errorf("rejected operation %s since it is an unknown network-instance, %s", o, ni)
+			resCh <- &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     o.Id,
+					Status: spb.AFTResult_FAILED,
+				}},
+			}
+			return
+		}
+
+		wg.Add(1)
+		go func(op *spb.AFTOperation) {
+			res, err := modifyEntry(s.masterRIB, ni, op, cs.params.FIBAck, elec)
+			switch {
+			case err != nil:
+				errCh <- err
+			default:
+				resCh <- res
+			}
+			wg.Done()
+		}(o)
 	}
 	wg.Wait()
 }
@@ -684,11 +674,11 @@ type electionDetails struct {
 	clientLatest *spb.Uint128
 }
 
-// addEntry adds the specified entry op to the RIB, r, within network instance ni.
-// The client's requested ACK mode by fibACK. The
-// details of the current election on the server is described in election.
-// The results are returned as a SubscribeResponse and an error which must be a status.Status.
-func addEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, election *electionDetails) (*spb.ModifyResponse, error) {
+// modifyEntry performs the specified modify operation, op, on the RIB, r, within the network
+// instance ni. The client's request ACK mode is specified by fibACK. The details of the
+// current election on the server is described in election.
+// The results are returned as a ModifyResponse and an error which must be a status.Status.
+func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, election *electionDetails) (*spb.ModifyResponse, error) {
 	if op == nil {
 		return nil, status.Newf(codes.Internal, "invalid nil operation received").Err()
 	}
@@ -726,11 +716,29 @@ func addEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, election
 		okACK = spb.AFTResult_FIB_PROGRAMMED
 	}
 
-	oks, faileds, err := r.AddEntry(ni, op)
+	var (
+		oks, faileds []*rib.OpResult
+	)
+
+	switch op.Op {
+	case spb.AFTOperation_ADD:
+		oks, faileds, err = r.AddEntry(ni, op)
+	case spb.AFTOperation_DELETE:
+		oks, faileds, err = r.DeleteEntry(ni, op)
+	//case spb.AFTOperation_REPLACE:
+	//	oks, faileds, err = r.ReplaceEntry(ni, op)
+	default:
+		return nil, status.Newf(codes.InvalidArgument, "invalid operation type supplied, %s", op.Op).Err()
+	}
 	if err != nil {
 		// this error is fatal for the connection as simply erroneous
 		// entries are just reported as failed.
-		return nil, status.Newf(codes.Internal, "cannot process input operation %s, fatal error", op).Err()
+		return nil, addModifyErrDetailsOrReturn(
+			status.Newf(codes.Unimplemented, "error processing operation %s, unsupported", op.Op),
+			&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_UNKNOWN,
+			},
+		)
 	}
 	for _, ok := range oks {
 		results = append(results, &spb.AFTResult{

@@ -364,7 +364,7 @@ func TestSTREAM(t *testing.T) {
 	seenVal := map[string]bool{}
 	meta := 0
 
-  time.Sleep(100*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	gotMu.RLock()
 	defer gotMu.RUnlock()
 	for _, s := range got {

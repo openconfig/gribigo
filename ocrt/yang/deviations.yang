@@ -55,4 +55,8 @@ module ocrt-deviations {
   deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:policy-forwarding" {
     deviate not-supported;
   }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:evpn" {
+    deviate not-supported;
+  }
 }

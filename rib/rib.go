@@ -374,6 +374,7 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 	default:
 		return nil, nil, status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
 	}
+
 	switch {
 	case err != nil:
 		fails = append(fails, &OpResult{

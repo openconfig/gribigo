@@ -15,6 +15,7 @@
 package rib
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"testing"
@@ -303,7 +304,7 @@ func TestAdd(t *testing.T) {
 	}
 }
 
-func TestDeleteEntry(t *testing.T) {
+func TestIndividualDeleteEntryFunctions(t *testing.T) {
 	type ipv4entry struct {
 		prefix   string
 		metadata []byte
@@ -1169,7 +1170,7 @@ func TestRIBAddEntry(t *testing.T) {
 			},
 		}},
 	}, {
-		desc:  "unsupported type - pbr",
+		desc:  "unsupported type - ethernet",
 		inRIB: New(defName),
 		inNI:  defName,
 		inOp: &spb.AFTOperation{
@@ -1407,6 +1408,67 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			},
 		}},
+	}, {
+		desc: "check function that always returns false",
+		inRIB: func() *RIB {
+			r := New(defName)
+			failEntry := func(_ *aft.RIB) (bool, error) {
+				return false, nil
+			}
+			r.niRIB[defName].checkFn = failEntry
+			return r
+		}(),
+		inNI: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 42},
+					},
+				},
+			},
+		},
+		// No result, and no error, since we don't have anything to return.
+	}, {
+		desc: "check function that always returns an error",
+		inRIB: func() *RIB {
+			r := New(defName)
+			failEntry := func(_ *aft.RIB) (bool, error) {
+				return false, errors.New("cannot install")
+			}
+			r.niRIB[defName].checkFn = failEntry
+			return r
+		}(),
+		inNI: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 42},
+					},
+				},
+			},
+		},
+		// error makes this entry fail.
+		wantFails: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			},
+			Error: "cannot install",
+		}},
 	}}
 
 	for _, tt := range tests {
@@ -1424,9 +1486,199 @@ func TestRIBAddEntry(t *testing.T) {
 				t.Fatalf("did not get expected OK IDs, diff(-got,+want):\n%s", diff)
 			}
 			if diff := cmp.Diff(gotFails, tt.wantFails, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
-				t.Fatalf("did not get expected OK IDs, diff(-got,+want):\n%s", diff)
+				t.Fatalf("did not get expected failed IDs, diff(-got,+want):\n%s", diff)
 			}
 
+		})
+	}
+}
+
+func TestDeleteEntry(t *testing.T) {
+	defName := "default"
+	tests := []struct {
+		desc              string
+		inRIB             *RIB
+		inNetworkInstance string
+		inOp              *spb.AFTOperation
+		wantOKs           []*OpResult
+		wantFails         []*OpResult
+		wantErr           bool
+	}{{
+		desc: "delete nexthop",
+		inRIB: func() *RIB {
+			r := New(defName)
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   42,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot set up test case, %v", err))
+			}
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   42,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   42,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc:              "delete missing NH",
+		inRIB:             New(defName),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   42,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantFails: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   42,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "delete IPv4",
+		inRIB: func() *RIB {
+			r := New(defName, DisableRIBCheckFn())
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot set up test case, %v", err))
+			}
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "delete NHG",
+		inRIB: func() *RIB {
+			r := New(defName)
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id:           1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot set up test case, %v", err))
+			}
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id:           1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id:           1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc:              "unknown type",
+		inRIB:             New(defName),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_MacEntry{
+				MacEntry: &aftpb.Afts_MacEntryKey{
+					MacAddress: "82:33:1b:e9:a4:01",
+					MacEntry:   &aftpb.Afts_MacEntry{},
+				},
+			},
+		},
+		wantErr: true,
+	}, {
+		desc:              "invalid network instance",
+		inRIB:             New(defName),
+		inNetworkInstance: "fish",
+		wantErr:           true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			gotOKs, gotFails, err := tt.inRIB.DeleteEntry(tt.inNetworkInstance, tt.inOp)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+
+			if diff := cmp.Diff(gotOKs, tt.wantOKs, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected OK IDs, diff(-got,+want):\n%s", diff)
+			}
+			if diff := cmp.Diff(gotFails, tt.wantFails, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected failed IDs, diff(-got,+want):\n%s", diff)
+			}
 		})
 	}
 }

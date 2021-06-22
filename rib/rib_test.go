@@ -304,24 +304,54 @@ func TestAdd(t *testing.T) {
 }
 
 func TestDeleteEntry(t *testing.T) {
-	type entry struct {
+	type ipv4entry struct {
 		prefix   string
 		metadata []byte
 		nhg      uint64
 		nhgni    string
 	}
+
+	type nh struct {
+		id uint64
+		ip string
+	}
+
+	type nhg struct {
+		id uint64
+		nh []uint64
+	}
+
+	type entry struct {
+		v4      *ipv4entry
+		group   *nhg
+		nexthop *nh
+	}
+
 	ribEntries := func(e []*entry) *aft.RIB {
 		a := &aft.RIB{}
 		for _, en := range e {
-			p := a.GetOrCreateAfts().GetOrCreateIpv4Entry(en.prefix)
-			if en.metadata != nil {
-				p.Metadata = en.metadata
-			}
-			if en.nhg != 0 {
-				p.NextHopGroup = ygot.Uint64(en.nhg)
-			}
-			if en.nhgni != "" {
-				p.NextHopGroupNetworkInstance = ygot.String(en.nhgni)
+			switch {
+			case en.v4 != nil:
+				p := a.GetOrCreateAfts().GetOrCreateIpv4Entry(en.v4.prefix)
+				if en.v4.metadata != nil {
+					p.Metadata = en.v4.metadata
+				}
+				if en.v4.nhg != 0 {
+					p.NextHopGroup = ygot.Uint64(en.v4.nhg)
+				}
+				if en.v4.nhgni != "" {
+					p.NextHopGroupNetworkInstance = ygot.String(en.v4.nhgni)
+				}
+			case en.group != nil:
+				n := a.GetOrCreateAfts().GetOrCreateNextHopGroup(en.group.id)
+				for _, nh := range en.group.nh {
+					n.GetOrCreateNextHop(nh)
+				}
+			case en.nexthop != nil:
+				n := a.GetOrCreateAfts().GetOrCreateNextHop(en.nexthop.id)
+				if en.nexthop.ip != "" {
+					n.IpAddress = ygot.String(en.nexthop.ip)
+				}
 			}
 		}
 		return a
@@ -337,12 +367,13 @@ func TestDeleteEntry(t *testing.T) {
 	}{{
 		desc:    "nil input",
 		inRIB:   &RIBHolder{},
+		inEntry: (*aftpb.Afts_Ipv4EntryKey)(nil),
 		wantErr: true,
 	}, {
 		desc: "delete ipv4 entry, no payload",
 		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
-				{prefix: "1.1.1.1/32"},
+				{v4: &ipv4entry{prefix: "1.1.1.1/32"}},
 			}),
 		},
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
@@ -356,7 +387,7 @@ func TestDeleteEntry(t *testing.T) {
 		desc: "delete ipv4 entry, matching payload",
 		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
-				{prefix: "1.1.1.1/32", metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+				{v4: &ipv4entry{prefix: "1.1.1.1/32", metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}}},
 			}),
 		},
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
@@ -372,9 +403,9 @@ func TestDeleteEntry(t *testing.T) {
 	}, {
 		desc: "delete ipv4 entry, mismatched payload",
 		inRIB: &RIBHolder{
-			r: ribEntries([]*entry{
-				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
-			}),
+			r: ribEntries([]*entry{{
+				v4: &ipv4entry{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
+			}}),
 		},
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
@@ -385,9 +416,67 @@ func TestDeleteEntry(t *testing.T) {
 		wantOK:      true,
 		wantPostRIB: &RIBHolder{},
 	}, {
-		desc: "delete ipv4 entry, no such entry",
+		desc:  "delete ipv4 entry, no such entry",
+		inRIB: NewRIBHolder("foo"),
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
+		},
+		wantOK: false,
+	}, {
+		desc: "delete nhg",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				group: &nhg{
+					id: 42,
+				},
+			}, {
+				group: &nhg{
+					id: 44,
+				},
+			}}),
+		},
+		inEntry: &aftpb.Afts_NextHopGroupKey{
+			Id:           42,
+			NextHopGroup: &aftpb.Afts_NextHopGroup{},
+		},
+		wantOK: true,
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				group: &nhg{
+					id: 44,
+				},
+			}}),
+		},
+	}, {
+		desc: "delete nh",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				nexthop: &nh{id: 1},
+			}, {
+				nexthop: &nh{id: 2},
+			}}),
+		},
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 2,
+		},
+		wantOK: true,
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				nexthop: &nh{id: 1},
+			}}),
+		},
+	}, {
+		desc:  "delete nhg entry, no such entry",
+		inRIB: NewRIBHolder("foo"),
+		inEntry: &aftpb.Afts_NextHopGroupKey{
+			Id: 1,
+		},
+		wantOK: false,
+	}, {
+		desc:  "delete nh entry, no such entry",
+		inRIB: NewRIBHolder("foo"),
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 42,
 		},
 		wantOK: false,
 	}}

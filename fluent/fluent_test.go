@@ -26,13 +26,13 @@ import (
 	"github.com/openconfig/gribigo/negtest"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
-	wpb "github.com/openconfig/ygot/proto/ywrapper"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
 
 func TestGRIBIClient(t *testing.T) {
@@ -97,7 +97,6 @@ func TestGRIBIClient(t *testing.T) {
 			c.Start(context.Background(), t)
 			nh := NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1)
 			c.Modify().AddEntry(t, nh)
-			c.Modify().ReplaceEntry(t, nh)
 			c.Modify().DeleteEntry(t, nh)
 			c.StartSending(context.Background(), t)
 			// NB: we don't actually check any of the return values here, we

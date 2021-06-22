@@ -840,25 +840,6 @@ func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 	return true, nil
 }
 
-// ipv4EntryProto returns a protobuf message for the specified IPv4 prefix. It returns
-// the found prefix as a Ipv4EntryKey protobuf, along with a bool indicating whether the
-// prefix was found in the RIB.
-func (r *RIBHolder) ipv4EntryProto(pfx string) (*aftpb.Afts_Ipv4EntryKey, bool, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	ribE := r.r.Afts.Ipv4Entry[pfx]
-	if ribE == nil {
-		return nil, false, nil
-	}
-
-	existingEntryProto, err := concreteIPv4Proto(ribE)
-	if err != nil {
-		return nil, true, status.Newf(codes.Internal, "invalid existing entry in RIB %v", ribE).Err()
-	}
-
-	return existingEntryProto, true, nil
-}
-
 // doDeleteIPv4 deletes pfx from the IPv4Entry RIB holding the shortest possible lock.
 func (r *RIBHolder) doDeleteIPv4(pfx string) {
 	r.mu.Lock()

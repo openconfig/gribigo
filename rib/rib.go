@@ -348,6 +348,54 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 	return nil
 }
 
+// DeleteEntry removes the entry specified by op from the network instance ni.
+func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpResult, error) {
+	niR, ok := r.NetworkInstanceRIB(ni)
+	if !ok || !niR.IsValid() {
+		return nil, nil, fmt.Errorf("invalid network instance, %s", ni)
+	}
+
+	var (
+		oks, fails []*OpResult
+		removed    bool
+		err        error
+	)
+
+	switch t := op.Entry.(type) {
+	case *spb.AFTOperation_Ipv4:
+		log.V(2).Infof("adding IPv4 prefix %s", t.Ipv4.GetPrefix())
+		removed, err = niR.DeleteIPv4(t.Ipv4)
+	case *spb.AFTOperation_NextHop:
+		log.V(2).Infof("adding NH Index %d", t.NextHop.GetIndex())
+		removed, err = niR.DeleteNextHop(t.NextHop)
+	case *spb.AFTOperation_NextHopGroup:
+		log.V(2).Infof("adding NHG ID %d", t.NextHopGroup.GetId())
+		removed, err = niR.DeleteNextHopGroup(t.NextHopGroup)
+	default:
+		return nil, nil, status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
+	}
+	switch {
+	case err != nil:
+		fails = append(fails, &OpResult{
+			ID:    op.GetId(),
+			Op:    op,
+			Error: err.Error(),
+		})
+	case removed:
+		log.V(2).Infof("operation %d deleted from RIB successfully", op.GetId())
+		oks = append(oks, &OpResult{
+			ID: op.GetId(),
+			Op: op,
+		})
+	default:
+		fails = append(fails, &OpResult{
+			ID: op.GetId(),
+			Op: op,
+		})
+	}
+	return oks, fails, nil
+}
+
 // getPending returns the current set of pending entry operations for the
 // RIB receiver.
 func (r *RIB) getPending() []*pendingEntry {
@@ -706,41 +754,90 @@ func (r *RIBHolder) doAddIPv4(pfx string, newRIB *aft.RIB) error {
 	return nil
 }
 
-// DeleteIPv4 removes the IPv4 entry e from the RIB. If e specifies only the prefix, and
-// no payload the prefix is removed if it is found in the set of entries. If the payload
-// of the entry is specified it is checked for equality, and removed only if the entries
-// match.
-func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) error {
+// DeleteIPv4 removes the IPv4 entry e from the RIB. It returns a boolean
+// indicating whether the entry has been removed, and an error if the message
+// cannot be parsed. Per the gRIBI specification, the payload of the entry is not
+// compared.
+func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, error) {
 	if e == nil {
-		return errors.New("nil entry provided")
+		return false, errors.New("nil entry provided")
 	}
 
 	if r.r == nil {
-		return errors.New("invalid RIB structure, nil")
-	}
-
-	// This is an optional check, today some servers do not implement it and return true
-	// even if the load does not match. Compliance tests should note this.
-	if e.GetIpv4Entry() != nil {
-		// We do not mind if we don't find this entry - since this shouldn't be an
-		// error.
-		existingEntryProto, _, err := r.ipv4EntryProto(e.GetPrefix())
-		if err != nil {
-			return err
-		}
-		if !proto.Equal(existingEntryProto, e) {
-			return status.Newf(codes.NotFound, "delete of an entry with non-matching, existing: %s, candidate: %s", existingEntryProto, e).Err()
-		}
+		return false, errors.New("invalid RIB structure, nil")
 	}
 
 	de := r.r.Afts.Ipv4Entry[e.GetPrefix()]
+	if de == nil {
+		// Return a failure for this operation, but there was no error.
+		return false, nil
+	}
 	r.doDeleteIPv4(e.GetPrefix())
 
 	if r.postChangeHook != nil {
 		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
 	}
 
-	return nil
+	return true, nil
+}
+
+// DeleteNextHopGroup removes the NextHopGroup entry e from the RIB. It returns a boolean
+// indicating whether the entry has been removed, and an error if the message
+// cannot be parsed. Per the gRIBI specification, the payload of the entry is not
+// compared.
+func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, error) {
+	if e == nil {
+		return false, errors.New("nil entry provided")
+	}
+
+	if r.r == nil {
+		return false, errors.New("invalid RIB structure, nil")
+	}
+
+	de := r.r.Afts.NextHopGroup[e.GetId()]
+	if de == nil {
+		// Return failed for this case, sicne there was no such NHG.
+		return false, nil
+	}
+	// TODO(robjs): implement ref counting in the RIB such that we check that this
+	// entry can actually be removed.
+	r.doDeleteNHG(e.GetId())
+
+	if r.postChangeHook != nil {
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
+	}
+
+	return true, nil
+}
+
+// DeleteNextHop removes the NextHop entry e from the RIB. It returns a boolean
+// indicating whether the entry has been removed, and an error if the message
+// cannot be parsed. Per the gRIBI specification, the payload of the entry is not
+// compared.
+func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
+	if e == nil {
+		return false, errors.New("nil entry provided")
+	}
+
+	if r.r == nil {
+		return false, errors.New("invalid RIB structure, nil")
+	}
+
+	de := r.r.Afts.NextHop[e.GetIndex()]
+	if de == nil {
+		// we mark that this operation failed, because there was no such entry. But
+		// this is not an error so that we're robust to stale deletes.
+		return false, nil
+	}
+	// TODO(robjs): implement ref counting in the RIB such that we check that this
+	// entry can actually be removed.
+	r.doDeleteNH(e.GetIndex())
+
+	if r.postChangeHook != nil {
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
+	}
+
+	return true, nil
 }
 
 // ipv4EntryProto returns a protobuf message for the specified IPv4 prefix. It returns
@@ -767,6 +864,22 @@ func (r *RIBHolder) doDeleteIPv4(pfx string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.r.Afts.Ipv4Entry, pfx)
+}
+
+// doDeleteNHG deletes the NHG with index idx from the NHG AFTm holding the shortest
+// possible lock.
+func (r *RIBHolder) doDeleteNHG(idx uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.r.Afts.NextHopGroup, idx)
+}
+
+// doDeleteNH deletes the NH with ID id from the NH AFT, holding the shortest possible
+// lock.
+func (r *RIBHolder) doDeleteNH(id uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.r.Afts.NextHop, id)
 }
 
 // AddNextHopGroup adds a NextHopGroup e to the RIBHolder receiver. It returns an error

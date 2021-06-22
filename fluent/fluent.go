@@ -226,6 +226,16 @@ func (g *GRIBIClient) Results(t testing.TB) []*client.OpResult {
 	return r
 }
 
+// Status returns the status of the client. It can be used to check whether there pending
+// operations or whether errors have occurred in the client.
+func (g *GRIBIClient) Status(t testing.TB) *client.ClientStatus {
+	s, err := g.c.Status()
+	if err != nil {
+		t.Fatalf("did not get valid status, %v", err)
+	}
+	return s
+}
+
 // TODO(robjs): add an UpdateElectionID method such that we can set the election ID
 // after it has initially been created.
 
@@ -303,11 +313,31 @@ type gRIBIModify struct {
 	parent *GRIBIClient
 }
 
-// AddEntry creates an operation adding a new entry to the server.
+// AddEntry creates an operation adding the set of entries specified to the server.
 func (g *gRIBIModify) AddEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIModify {
 	m, err := g.entriesToModifyRequest(spb.AFTOperation_ADD, entries)
 	if err != nil {
 		t.Fatalf("cannot build modify request: %v", err)
+	}
+	g.parent.c.Q(m)
+	return g
+}
+
+// DeleteEntry creates an operation deleting the set of entries specified from the server.
+func (g *gRIBIModify) DeleteEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIModify {
+	m, err := g.entriesToModifyRequest(spb.AFTOperation_DELETE, entries)
+	if err != nil {
+		t.Fatalf("cannot build modify request, %v", err)
+	}
+	g.parent.c.Q(m)
+	return g
+}
+
+// ReplaceEntry creates an operation replacing the set of entries specified on the server.
+func (g *gRIBIModify) ReplaceEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIModify {
+	m, err := g.entriesToModifyRequest(spb.AFTOperation_REPLACE, entries)
+	if err != nil {
+		t.Fatalf("cannot build modify request, %v", err)
 	}
 	g.parent.c.Q(m)
 	return g

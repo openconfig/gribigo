@@ -89,6 +89,25 @@ func TestGRIBIClient(t *testing.T) {
 			c.StartSending(context.Background(), t)
 			c.Await(context.Background(), t)
 		},
+	}, {
+		desc: "remove basic next-hop",
+		inFn: func(addr string, t testing.TB) {
+			c := NewClient()
+			c.Connection().WithTarget(addr).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
+			c.Start(context.Background(), t)
+			nh := NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1)
+			c.Modify().AddEntry(t, nh)
+			c.Modify().ReplaceEntry(t, nh)
+			c.Modify().DeleteEntry(t, nh)
+			c.StartSending(context.Background(), t)
+			// NB: we don't actually check any of the return values here, we
+			// just check that we are marked converged.
+			c.Await(context.Background(), t)
+			s := c.Status(t)
+			if len(s.SendErrs) != 0 || len(s.ReadErrs) != 0 {
+				t.Fatalf("got unexpected errors, %+v", s)
+			}
+		},
 	}}
 
 	for _, tt := range tests {

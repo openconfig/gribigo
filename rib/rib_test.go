@@ -303,7 +303,7 @@ func TestAdd(t *testing.T) {
 	}
 }
 
-func TestDeleteIPv4Entry(t *testing.T) {
+func TestDeleteEntry(t *testing.T) {
 	type entry struct {
 		prefix   string
 		metadata []byte
@@ -330,7 +330,8 @@ func TestDeleteIPv4Entry(t *testing.T) {
 	tests := []struct {
 		desc        string
 		inRIB       *RIBHolder
-		inEntry     *aftpb.Afts_Ipv4EntryKey
+		inEntry     proto.Message
+		wantOK      bool
 		wantErr     bool
 		wantPostRIB *RIBHolder
 	}{{
@@ -338,7 +339,7 @@ func TestDeleteIPv4Entry(t *testing.T) {
 		inRIB:   &RIBHolder{},
 		wantErr: true,
 	}, {
-		desc: "delete entry, no payload",
+		desc: "delete ipv4 entry, no payload",
 		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32"},
@@ -347,11 +348,12 @@ func TestDeleteIPv4Entry(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
 		},
+		wantOK: true,
 		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
 		},
 	}, {
-		desc: "delete entry, matching payload",
+		desc: "delete ipv4 entry, matching payload",
 		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
@@ -363,11 +365,12 @@ func TestDeleteIPv4Entry(t *testing.T) {
 				Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			},
 		},
+		wantOK: true,
 		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
 		},
 	}, {
-		desc: "delete entry, mismatched payload",
+		desc: "delete ipv4 entry, mismatched payload",
 		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
 				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
@@ -379,18 +382,37 @@ func TestDeleteIPv4Entry(t *testing.T) {
 				Metadata: &wpb.BytesValue{Value: []byte{2, 3, 4, 5}},
 			},
 		},
-		wantErr: true,
-		wantPostRIB: &RIBHolder{
-			r: ribEntries([]*entry{
-				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
-			}),
+		wantOK:      true,
+		wantPostRIB: &RIBHolder{},
+	}, {
+		desc: "delete ipv4 entry, no such entry",
+		inEntry: &aftpb.Afts_Ipv4EntryKey{
+			Prefix: "1.1.1.1/32",
 		},
+		wantOK: false,
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			if err := tt.inRIB.DeleteIPv4(tt.inEntry); (err != nil) != tt.wantErr {
+			var (
+				ok  bool
+				err error
+			)
+			switch v := tt.inEntry.(type) {
+			case *aftpb.Afts_Ipv4EntryKey:
+				ok, err = tt.inRIB.DeleteIPv4(v)
+			case *aftpb.Afts_NextHopGroupKey:
+				ok, err = tt.inRIB.DeleteNextHopGroup(v)
+			case *aftpb.Afts_NextHopKey:
+				ok, err = tt.inRIB.DeleteNextHop(v)
+			default:
+				t.Fatalf("unknown input entry type, %T", err)
+			}
+			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got; %v, wantErr? %v", err, tt.wantErr)
+			}
+			if ok != tt.wantOK {
+				t.Fatalf("did not get expected error status, got: %v, wantErr? %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -703,7 +725,7 @@ func TestHooks(t *testing.T) {
 							t.Fatalf("cannot add IPv4 entry %s: %v", o.IP4, err)
 						}
 					case constants.Delete:
-						if err := r.niRIB[r.defaultName].DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
+						if _, err := r.niRIB[r.defaultName].DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix: o.IP4,
 						}); err != nil {
 							t.Fatalf("cannote delete IPv4 entry %s: %v", o.IP4, err)

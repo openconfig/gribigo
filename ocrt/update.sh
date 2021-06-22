@@ -27,11 +27,11 @@ runsed() {
 }
 
 git clone https://github.com/openconfig/public.git
-go get github.com/openconfig/ygot@latest
+go get github.com/openconfig/ygot/generator@latest
 go install github.com/openconfig/ygot/generator
 
 generator -path=public -output_file=oc.go \
-    -package_name=oc -generate_fakeroot -fakeroot_name=device -compress_paths=true \
+    -package_name=ocrt -generate_fakeroot -fakeroot_name=device -compress_paths=true \
     -shorten_enum_leaf_names \
     -prefer_operational_state \
     -trim_enum_openconfig_prefix \

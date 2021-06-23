@@ -444,21 +444,23 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 	}
 
 	var (
-		oks, fails []*OpResult
-		removed    bool
-		err        error
+		oks, fails  []*OpResult
+		removed     bool
+		err         error
+		originalv4  *aft.Afts_Ipv4Entry
+		originalNHG *aft.Afts_NextHopGroup
 	)
 
 	switch t := op.Entry.(type) {
 	case *spb.AFTOperation_Ipv4:
 		log.V(2).Infof("adding IPv4 prefix %s", t.Ipv4.GetPrefix())
-		removed, err = niR.DeleteIPv4(t.Ipv4)
+		removed, originalv4, err = niR.DeleteIPv4(t.Ipv4)
 	case *spb.AFTOperation_NextHop:
 		log.V(2).Infof("adding NH Index %d", t.NextHop.GetIndex())
-		removed, err = niR.DeleteNextHop(t.NextHop)
+		removed, _, err = niR.DeleteNextHop(t.NextHop)
 	case *spb.AFTOperation_NextHopGroup:
 		log.V(2).Infof("adding NHG ID %d", t.NextHopGroup.GetId())
-		removed, err = niR.DeleteNextHopGroup(t.NextHopGroup)
+		removed, originalNHG, err = niR.DeleteNextHopGroup(t.NextHopGroup)
 	default:
 		return nil, nil, status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
 	}
@@ -471,6 +473,24 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 			Error: err.Error(),
 		})
 	case removed:
+		// Decrement the reference counts.
+		switch {
+		case originalv4 != nil:
+			referencingRIB := niR
+			if nhg := originalv4.GetNextHopGroupNetworkInstance(); nhg != "" {
+				rr, ok := r.NetworkInstanceRIB(nhg)
+				if !ok {
+					return nil, nil, status.Newf(codes.InvalidArgument, "invalid network-instance specified in IPv4 prefix %s", originalv4.GetPrefix()).Err()
+				}
+				referencingRIB = rr
+			}
+			referencingRIB.decNHGRefCount(originalv4.GetNextHopGroup())
+		case originalNHG != nil:
+			for id := range originalNHG.NextHop {
+				niR.decNHRefCount(id)
+			}
+		}
+
 		log.V(2).Infof("operation %d deleted from RIB successfully", op.GetId())
 		oks = append(oks, &OpResult{
 			ID: op.GetId(),
@@ -919,22 +939,22 @@ func (r *RIBHolder) doAddIPv4(pfx string, newRIB *aft.RIB) (bool, error) {
 }
 
 // DeleteIPv4 removes the IPv4 entry e from the RIB. It returns a boolean
-// indicating whether the entry has been removed, and an error if the message
-// cannot be parsed. Per the gRIBI specification, the payload of the entry is not
-// compared.
-func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, error) {
+// indicating whether the entry has been removed, a copy of the entry that was
+// removed  and an error if the message cannot be parsed. Per the gRIBI specification,
+// the payload of the entry is not compared.
+func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, *aft.Afts_Ipv4Entry, error) {
 	if e == nil {
-		return false, errors.New("nil entry provided")
+		return false, nil, errors.New("nil entry provided")
 	}
 
 	if r.r == nil {
-		return false, errors.New("invalid RIB structure, nil")
+		return false, nil, errors.New("invalid RIB structure, nil")
 	}
 
 	de := r.r.Afts.Ipv4Entry[e.GetPrefix()]
 	if de == nil {
 		// Return a failure for this operation, but there was no error.
-		return false, nil
+		return false, nil, nil
 	}
 
 	rr := &aft.RIB{}
@@ -944,10 +964,10 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, error) {
 		switch {
 		case err != nil:
 			// the check told us this was fatal for this entry -> we should return.
-			return false, err
+			return false, nil, err
 		case !ok:
 			// otherwise, we just didn't do this operation.
-			return false, nil
+			return false, nil, nil
 		}
 	}
 
@@ -957,30 +977,30 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, error) {
 		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
 	}
 
-	return true, nil
+	return true, de, nil
 }
 
 // DeleteNextHopGroup removes the NextHopGroup entry e from the RIB. It returns a boolean
-// indicating whether the entry has been removed, and an error if the message
-// cannot be parsed. Per the gRIBI specification, the payload of the entry is not
-// compared.
-func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, error) {
+// indicating whether the entry has been removed, a copy of the next-hop-group that was
+// removed and an error if the message cannot be parsed. Per the gRIBI specification, the
+// payload of the entry is not compared.
+func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, *aft.Afts_NextHopGroup, error) {
 	if e == nil {
-		return false, errors.New("nil entry provided")
+		return false, nil, errors.New("nil entry provided")
 	}
 
 	if r.r == nil {
-		return false, errors.New("invalid RIB structure, nil")
+		return false, nil, errors.New("invalid RIB structure, nil")
 	}
 
 	if e.GetId() == 0 {
-		return false, errors.New("invalid NHG ID 0")
+		return false, nil, errors.New("invalid NHG ID 0")
 	}
 
 	de := r.r.Afts.NextHopGroup[e.GetId()]
 	if de == nil {
 		// Return failed for this case, sicne there was no such NHG.
-		return false, fmt.Errorf("cannot delete NHG ID %d since it does not exist", e.GetId())
+		return false, nil, fmt.Errorf("cannot delete NHG ID %d since it does not exist", e.GetId())
 	}
 
 	rr := &aft.RIB{}
@@ -990,10 +1010,10 @@ func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, err
 		switch {
 		case err != nil:
 			// the check told us this was fatal for this entry -> we should return.
-			return false, err
+			return false, nil, err
 		case !ok:
 			// otherwise, we just didn't do this operation.
-			return false, nil
+			return false, nil, nil
 		}
 	}
 
@@ -1003,30 +1023,30 @@ func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, err
 		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
 	}
 
-	return true, nil
+	return true, de, nil
 }
 
 // DeleteNextHop removes the NextHop entry e from the RIB. It returns a boolean
-// indicating whether the entry has been removed, and an error if the message
-// cannot be parsed. Per the gRIBI specification, the payload of the entry is not
-// compared.
-func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
+// indicating whether the entry has been removed, a copy of the group that was
+// removed and an error if the message cannot be parsed. Per the gRIBI specification,
+// the payload of the entry is not compared.
+func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, *aft.Afts_NextHop, error) {
 	if e == nil {
-		return false, errors.New("nil entry provided")
+		return false, nil, errors.New("nil entry provided")
 	}
 
 	if r.r == nil {
-		return false, errors.New("invalid RIB structure, nil")
+		return false, nil, errors.New("invalid RIB structure, nil")
 	}
 
 	if e.GetIndex() == 0 {
-		return false, fmt.Errorf("invalid NH index 0")
+		return false, nil, fmt.Errorf("invalid NH index 0")
 	}
 
 	de := r.r.Afts.NextHop[e.GetIndex()]
 	if de == nil {
 		// we mark that this operation failed, because there was no such entry.
-		return false, fmt.Errorf("cannot delete NH Index %d since it does not exist", e.GetIndex())
+		return false, nil, fmt.Errorf("cannot delete NH Index %d since it does not exist", e.GetIndex())
 	}
 
 	rr := &aft.RIB{}
@@ -1036,10 +1056,10 @@ func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 		switch {
 		case err != nil:
 			// the check told us this was fatal for this entry -> we should return.
-			return false, err
+			return false, nil, err
 		case !ok:
 			// otherwise, we just didn't do this operation.
-			return false, nil
+			return false, nil, nil
 		}
 	}
 	r.doDeleteNH(e.GetIndex())
@@ -1048,7 +1068,7 @@ func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
 	}
 
-	return true, nil
+	return true, de, nil
 }
 
 // doDeleteIPv4 deletes pfx from the IPv4Entry RIB holding the shortest possible lock.

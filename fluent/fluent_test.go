@@ -26,13 +26,13 @@ import (
 	"github.com/openconfig/gribigo/negtest"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
-	wpb "github.com/openconfig/ygot/proto/ywrapper"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
 
 func TestGRIBIClient(t *testing.T) {
@@ -88,6 +88,24 @@ func TestGRIBIClient(t *testing.T) {
 			c.Modify().AddEntry(t, IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(1))
 			c.StartSending(context.Background(), t)
 			c.Await(context.Background(), t)
+		},
+	}, {
+		desc: "remove basic next-hop",
+		inFn: func(addr string, t testing.TB) {
+			c := NewClient()
+			c.Connection().WithTarget(addr).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
+			c.Start(context.Background(), t)
+			nh := NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1)
+			c.Modify().AddEntry(t, nh)
+			c.Modify().DeleteEntry(t, nh)
+			c.StartSending(context.Background(), t)
+			// NB: we don't actually check any of the return values here, we
+			// just check that we are marked converged.
+			c.Await(context.Background(), t)
+			s := c.Status(t)
+			if len(s.SendErrs) != 0 || len(s.ReadErrs) != 0 {
+				t.Fatalf("got unexpected errors, %+v", s)
+			}
 		},
 	}}
 

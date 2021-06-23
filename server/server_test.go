@@ -904,7 +904,7 @@ func TestDoModify(t *testing.T) {
 	}
 }
 
-func TestAddEntry(t *testing.T) {
+func TestModifyEntry(t *testing.T) {
 	defName := DefaultNetworkInstanceName
 	tests := []struct {
 		desc           string
@@ -1030,6 +1030,7 @@ func TestAddEntry(t *testing.T) {
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 4, Low: 2},
 			Id:         2,
+			Op:         spb.AFTOperation_ADD,
 			Entry: &spb.AFTOperation_Ipv4{
 				Ipv4: &aftpb.Afts_Ipv4EntryKey{
 					Prefix: "2.2.2.2/32",
@@ -1058,6 +1059,7 @@ func TestAddEntry(t *testing.T) {
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 4, Low: 2},
 			Id:         2,
+			Op:         spb.AFTOperation_ADD,
 			Entry: &spb.AFTOperation_Ipv4{
 				Ipv4: &aftpb.Afts_Ipv4EntryKey{
 					Prefix: "2.2.2.2/32",
@@ -1081,16 +1083,44 @@ func TestAddEntry(t *testing.T) {
 			}},
 		},
 	}, {
-		desc:  "ADD NHG: unimplemented",
+		desc:  "ADD NHG",
 		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
 		inNI:  defName,
 		inOp: &spb.AFTOperation{
 			ElectionId: &spb.Uint128{High: 4, Low: 2},
 			Id:         2,
+			Op:         spb.AFTOperation_ADD,
 			Entry: &spb.AFTOperation_NextHopGroup{
 				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
 					Id:           2,
 					NextHopGroup: &aftpb.Afts_NextHopGroup{},
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_RIB_PROGRAMMED,
+			}},
+		},
+	}, {
+		desc:  "ADD NH",
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
+		inNI:  defName,
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Op:         spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   2,
+					NextHop: &aftpb.Afts_NextHop{},
 				},
 			},
 		},
@@ -1119,7 +1149,7 @@ func TestAddEntry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := addEntry(tt.inRIB, tt.inNI, tt.inOp, tt.inFIBACK, tt.inElection)
+			got, err := modifyEntry(tt.inRIB, tt.inNI, tt.inOp, tt.inFIBACK, tt.inElection)
 			if err != nil {
 				checkStatusErr(t, err, tt.wantErrCode, tt.wantErrDetails)
 			}

@@ -15,6 +15,7 @@
 package rib
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"testing"
@@ -303,25 +304,55 @@ func TestAdd(t *testing.T) {
 	}
 }
 
-func TestDeleteIPv4Entry(t *testing.T) {
-	type entry struct {
+func TestIndividualDeleteEntryFunctions(t *testing.T) {
+	type ipv4entry struct {
 		prefix   string
 		metadata []byte
 		nhg      uint64
 		nhgni    string
 	}
+
+	type nh struct {
+		id uint64
+		ip string
+	}
+
+	type nhg struct {
+		id uint64
+		nh []uint64
+	}
+
+	type entry struct {
+		v4      *ipv4entry
+		group   *nhg
+		nexthop *nh
+	}
+
 	ribEntries := func(e []*entry) *aft.RIB {
 		a := &aft.RIB{}
 		for _, en := range e {
-			p := a.GetOrCreateAfts().GetOrCreateIpv4Entry(en.prefix)
-			if en.metadata != nil {
-				p.Metadata = en.metadata
-			}
-			if en.nhg != 0 {
-				p.NextHopGroup = ygot.Uint64(en.nhg)
-			}
-			if en.nhgni != "" {
-				p.NextHopGroupNetworkInstance = ygot.String(en.nhgni)
+			switch {
+			case en.v4 != nil:
+				p := a.GetOrCreateAfts().GetOrCreateIpv4Entry(en.v4.prefix)
+				if en.v4.metadata != nil {
+					p.Metadata = en.v4.metadata
+				}
+				if en.v4.nhg != 0 {
+					p.NextHopGroup = ygot.Uint64(en.v4.nhg)
+				}
+				if en.v4.nhgni != "" {
+					p.NextHopGroupNetworkInstance = ygot.String(en.v4.nhgni)
+				}
+			case en.group != nil:
+				n := a.GetOrCreateAfts().GetOrCreateNextHopGroup(en.group.id)
+				for _, nh := range en.group.nh {
+					n.GetOrCreateNextHop(nh)
+				}
+			case en.nexthop != nil:
+				n := a.GetOrCreateAfts().GetOrCreateNextHop(en.nexthop.id)
+				if en.nexthop.ip != "" {
+					n.IpAddress = ygot.String(en.nexthop.ip)
+				}
 			}
 		}
 		return a
@@ -330,31 +361,34 @@ func TestDeleteIPv4Entry(t *testing.T) {
 	tests := []struct {
 		desc        string
 		inRIB       *RIBHolder
-		inEntry     *aftpb.Afts_Ipv4EntryKey
+		inEntry     proto.Message
+		wantOK      bool
 		wantErr     bool
 		wantPostRIB *RIBHolder
 	}{{
 		desc:    "nil input",
 		inRIB:   &RIBHolder{},
+		inEntry: (*aftpb.Afts_Ipv4EntryKey)(nil),
 		wantErr: true,
 	}, {
-		desc: "delete entry, no payload",
+		desc: "delete ipv4 entry, no payload",
 		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
-				{prefix: "1.1.1.1/32"},
+				{v4: &ipv4entry{prefix: "1.1.1.1/32"}},
 			}),
 		},
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
 		},
+		wantOK: true,
 		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
 		},
 	}, {
-		desc: "delete entry, matching payload",
+		desc: "delete ipv4 entry, matching payload",
 		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{
-				{prefix: "1.1.1.1/32", metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+				{v4: &ipv4entry{prefix: "1.1.1.1/32", metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}}},
 			}),
 		},
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
@@ -363,15 +397,16 @@ func TestDeleteIPv4Entry(t *testing.T) {
 				Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			},
 		},
+		wantOK: true,
 		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
 		},
 	}, {
-		desc: "delete entry, mismatched payload",
+		desc: "delete ipv4 entry, mismatched payload",
 		inRIB: &RIBHolder{
-			r: ribEntries([]*entry{
-				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
-			}),
+			r: ribEntries([]*entry{{
+				v4: &ipv4entry{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
+			}}),
 		},
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
@@ -379,18 +414,95 @@ func TestDeleteIPv4Entry(t *testing.T) {
 				Metadata: &wpb.BytesValue{Value: []byte{2, 3, 4, 5}},
 			},
 		},
-		wantErr: true,
-		wantPostRIB: &RIBHolder{
-			r: ribEntries([]*entry{
-				{prefix: "1.1.1.1/32", metadata: []byte{1, 2, 3, 4}},
-			}),
+		wantOK:      true,
+		wantPostRIB: &RIBHolder{},
+	}, {
+		desc:  "delete ipv4 entry, no such entry",
+		inRIB: NewRIBHolder("foo"),
+		inEntry: &aftpb.Afts_Ipv4EntryKey{
+			Prefix: "1.1.1.1/32",
 		},
+		wantOK: false,
+	}, {
+		desc: "delete nhg",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				group: &nhg{
+					id: 42,
+				},
+			}, {
+				group: &nhg{
+					id: 44,
+				},
+			}}),
+		},
+		inEntry: &aftpb.Afts_NextHopGroupKey{
+			Id:           42,
+			NextHopGroup: &aftpb.Afts_NextHopGroup{},
+		},
+		wantOK: true,
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				group: &nhg{
+					id: 44,
+				},
+			}}),
+		},
+	}, {
+		desc: "delete nh",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				nexthop: &nh{id: 1},
+			}, {
+				nexthop: &nh{id: 2},
+			}}),
+		},
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 2,
+		},
+		wantOK: true,
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				nexthop: &nh{id: 1},
+			}}),
+		},
+	}, {
+		desc:  "delete nhg entry, no such entry",
+		inRIB: NewRIBHolder("foo"),
+		inEntry: &aftpb.Afts_NextHopGroupKey{
+			Id: 1,
+		},
+		wantOK: false,
+	}, {
+		desc:  "delete nh entry, no such entry",
+		inRIB: NewRIBHolder("foo"),
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 42,
+		},
+		wantOK: false,
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			if err := tt.inRIB.DeleteIPv4(tt.inEntry); (err != nil) != tt.wantErr {
+			var (
+				ok  bool
+				err error
+			)
+			switch v := tt.inEntry.(type) {
+			case *aftpb.Afts_Ipv4EntryKey:
+				ok, err = tt.inRIB.DeleteIPv4(v)
+			case *aftpb.Afts_NextHopGroupKey:
+				ok, err = tt.inRIB.DeleteNextHopGroup(v)
+			case *aftpb.Afts_NextHopKey:
+				ok, err = tt.inRIB.DeleteNextHop(v)
+			default:
+				t.Fatalf("unknown input entry type, %T", err)
+			}
+			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got; %v, wantErr? %v", err, tt.wantErr)
+			}
+			if ok != tt.wantOK {
+				t.Fatalf("did not get expected error status, got: %v, wantErr? %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -703,7 +815,7 @@ func TestHooks(t *testing.T) {
 							t.Fatalf("cannot add IPv4 entry %s: %v", o.IP4, err)
 						}
 					case constants.Delete:
-						if err := r.niRIB[r.defaultName].DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
+						if _, err := r.niRIB[r.defaultName].DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix: o.IP4,
 						}); err != nil {
 							t.Fatalf("cannote delete IPv4 entry %s: %v", o.IP4, err)
@@ -1058,7 +1170,7 @@ func TestRIBAddEntry(t *testing.T) {
 			},
 		}},
 	}, {
-		desc:  "unsupported type - pbr",
+		desc:  "unsupported type - ethernet",
 		inRIB: New(defName),
 		inNI:  defName,
 		inOp: &spb.AFTOperation{
@@ -1296,6 +1408,67 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			},
 		}},
+	}, {
+		desc: "check function that always returns false",
+		inRIB: func() *RIB {
+			r := New(defName)
+			failEntry := func(_ *aft.RIB) (bool, error) {
+				return false, nil
+			}
+			r.niRIB[defName].checkFn = failEntry
+			return r
+		}(),
+		inNI: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 42},
+					},
+				},
+			},
+		},
+		// No result, and no error, since we don't have anything to return.
+	}, {
+		desc: "check function that always returns an error",
+		inRIB: func() *RIB {
+			r := New(defName)
+			failEntry := func(_ *aft.RIB) (bool, error) {
+				return false, errors.New("cannot install")
+			}
+			r.niRIB[defName].checkFn = failEntry
+			return r
+		}(),
+		inNI: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 42},
+					},
+				},
+			},
+		},
+		// error makes this entry fail.
+		wantFails: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			},
+			Error: "cannot install",
+		}},
 	}}
 
 	for _, tt := range tests {
@@ -1313,9 +1486,199 @@ func TestRIBAddEntry(t *testing.T) {
 				t.Fatalf("did not get expected OK IDs, diff(-got,+want):\n%s", diff)
 			}
 			if diff := cmp.Diff(gotFails, tt.wantFails, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
-				t.Fatalf("did not get expected OK IDs, diff(-got,+want):\n%s", diff)
+				t.Fatalf("did not get expected failed IDs, diff(-got,+want):\n%s", diff)
 			}
 
+		})
+	}
+}
+
+func TestDeleteEntry(t *testing.T) {
+	defName := "default"
+	tests := []struct {
+		desc              string
+		inRIB             *RIB
+		inNetworkInstance string
+		inOp              *spb.AFTOperation
+		wantOKs           []*OpResult
+		wantFails         []*OpResult
+		wantErr           bool
+	}{{
+		desc: "delete nexthop",
+		inRIB: func() *RIB {
+			r := New(defName)
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   42,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot set up test case, %v", err))
+			}
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   42,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   42,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc:              "delete missing NH",
+		inRIB:             New(defName),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   42,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantFails: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   42,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "delete IPv4",
+		inRIB: func() *RIB {
+			r := New(defName, DisableRIBCheckFn())
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot set up test case, %v", err))
+			}
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "delete NHG",
+		inRIB: func() *RIB {
+			r := New(defName)
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id:           1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot set up test case, %v", err))
+			}
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id:           1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id:           1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc:              "unknown type",
+		inRIB:             New(defName),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_MacEntry{
+				MacEntry: &aftpb.Afts_MacEntryKey{
+					MacAddress: "82:33:1b:e9:a4:01",
+					MacEntry:   &aftpb.Afts_MacEntry{},
+				},
+			},
+		},
+		wantErr: true,
+	}, {
+		desc:              "invalid network instance",
+		inRIB:             New(defName),
+		inNetworkInstance: "fish",
+		wantErr:           true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			gotOKs, gotFails, err := tt.inRIB.DeleteEntry(tt.inNetworkInstance, tt.inOp)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+
+			if diff := cmp.Diff(gotOKs, tt.wantOKs, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected OK IDs, diff(-got,+want):\n%s", diff)
+			}
+			if diff := cmp.Diff(gotFails, tt.wantFails, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected failed IDs, diff(-got,+want):\n%s", diff)
+			}
 		})
 	}
 }

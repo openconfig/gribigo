@@ -1257,14 +1257,14 @@ func (r *RIBHolder) doAddNH(index uint64, newRIB *aft.RIB) (bool, error) {
 	return implicit, nil
 }
 
-// incNHGRefCount increments the reference count for the specified next-hop-group.
+// incNHRefCount increments the reference count for the specified next-hop-group.
 func (r *RIBHolder) incNHRefCount(i uint64) {
 	r.refCounts.mu.Lock()
 	defer r.refCounts.mu.Unlock()
 	r.refCounts.NextHop[i]++
 }
 
-// decNHGRefCount decrements the reference count for the specified next-hop-group.
+// decNHRefCount decrements the reference count for the specified next-hop-group.
 func (r *RIBHolder) decNHRefCount(i uint64) {
 	r.refCounts.mu.Lock()
 	defer r.refCounts.mu.Unlock()

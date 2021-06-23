@@ -484,11 +484,10 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 				}
 				referencingRIB = rr
 			}
-			referencingRIB.decNHGRefCount(originalv4.GetNextHopGroup())
+			// TODO(robjs): decrement reference counts.
+			_ = referencingRIB
 		case originalNHG != nil:
-			for id := range originalNHG.NextHop {
-				niR.decNHRefCount(id)
-			}
+			// TODO(robjs): decrement reference counts.
 		}
 
 		log.V(2).Infof("operation %d deleted from RIB successfully", op.GetId())

@@ -51,6 +51,23 @@ var unixTS = time.Now().UnixNano
 //  - a ygot.GoStruct containing the entry that has been changed.
 type RIBHookFn func(constants.OpType, int64, string, ygot.GoStruct)
 
+// RIBHolderCheckFunc is a function that is used as a check to determine whether
+// a RIB entry is eligible for a particular operation. It takes arguments of:
+//   - the operation type that is being performed.
+//   - the network instance within which the operation should be considered.
+//   - the RIB that describes the candidate changes. In the case that the operation
+//     is an ADD or REPLACE the candidate must contain the entry that would be added
+//     or replaced. In the case that it is a DELETE, the candidate contains the entry
+//     that is to be deleted.
+//
+//  The candidate contains a single entry.
+//
+// The check function must return:
+//   - a bool indicating whether the RIB operation should go ahead (true = proceed).
+//   - an error that is considered fatal for the entry (i.e., this entry should never
+//     be tried again).
+type RIBHolderCheckFunc func(constants.OpType, string, *aft.RIB) (bool, error)
+
 // RIB is a struct that stores a representation of a RIB for a network device.
 type RIB struct {
 	// nrMu protects the niRIB map.
@@ -99,18 +116,20 @@ type RIBHolder struct {
 	// implemented.
 
 	// checkFn is a function that is called for all entries before they are
-	// considered valid candidates to be merged. It can be used to check that
-	// an entry is resolvable. The argument handed to it is a candidate RIB
-	// as described by an aft.RIB structure. It returns a boolean indicating
+	// considered valid candidates to have the operation op performed for them.
+	//  It can be used to check that an entry is resolvable, or whether an
+	// entry is referenced before deleting it.
+	// The argument handed to it is a candidate RIB as described by an aft.RIB
+	// structure. It returns a boolean indicating
 	// whether the entry should be installed, or an error indicating that the
 	// entry is not valid for installation.
 	//
 	// When checkFn returns false, but no error is returned, it is expected
-	// that the client of the RIB can retry to install this entry at a later
+	// that the client of the RIB can retry to process this entry at a later
 	// point in time. If an error is returned, the checkFn is asserting that
 	// there is no way that this entry can ever be installed in the RIB,
 	// regardless of whether there are state changes.
-	checkFn func(a *aft.RIB) (bool, error)
+	checkFn func(op constants.OpType, a *aft.RIB) (bool, error)
 
 	// postChangeHook is a function that is called after each of the operations
 	// within the RIB completes, it takes arguments of the
@@ -187,13 +206,24 @@ func New(dn string, opt ...RIBOpt) *RIB {
 	rhOpt := []ribHolderOpt{}
 	checkRIB := !hasDisableCheckFn(opt)
 	if checkRIB {
-		rhOpt = append(rhOpt, RIBHolderCheckFn(r.canResolve))
+		rhOpt = append(rhOpt, RIBHolderCheckFn(r.checkFn))
 	}
 	r.ribCheck = checkRIB
 
 	r.niRIB[dn] = NewRIBHolder(dn, rhOpt...)
 
 	return r
+}
+
+// checkFn wraps canResolve and canDelete to implement a RIBHolderCheckFn
+func (r *RIB) checkFn(t constants.OpType, ni string, candidate *aft.RIB) (bool, error) {
+	switch t {
+	case constants.Add, constants.Replace:
+		return r.canResolve(ni, candidate)
+	case constants.Delete:
+		return r.canDelete(ni, candidate)
+	}
+	return false, fmt.Errorf("invalid unknown operation type, %s", t)
 }
 
 // pendingEntry describes an operation that is pending on the gRIBI server. Generally,
@@ -233,7 +263,7 @@ func (r *RIB) AddNetworkInstance(name string) error {
 
 	rhOpt := []ribHolderOpt{}
 	if r.ribCheck {
-		rhOpt = append(rhOpt, RIBHolderCheckFn(r.canResolve))
+		rhOpt = append(rhOpt, RIBHolderCheckFn(r.checkFn))
 	}
 
 	r.niRIB[name] = NewRIBHolder(name, rhOpt...)
@@ -575,6 +605,69 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 	return false, errors.New("no entries in specified candidate")
 }
 
+// canDelete takes an input deletionCandidate RIB, which contains only the entry that
+// is to be removed from the RIB and determines whether it is safe to remove
+// it from the existing set of RIBs that are stored in r. The specified netInst string is
+// used to determine the current network instance within which this entry is being
+// considered.
+//
+// canDelete returns a boolean indicating whether the entry can be removed or not
+// or an error if the candidate is found to be invalid.
+func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error) {
+	caft := deletionCandidate.GetAfts()
+	if caft == nil {
+		return false, errors.New("invalid nil candidate AFT")
+	}
+
+	if err := checkCandidate(caft); err != nil {
+		return false, err
+	}
+
+	// Throughout the following code, we know there is a single entry within the
+	// candidate RIB, since checkCandidate performs this check.
+
+	// We always check references in the local network instance and esolve in the
+	// default NI if we didn't get asked for a specific NI. We check for this before
+	// doing the delete to make sure we're working in a valid NI.
+	if netInst == "" {
+		netInst = r.defaultName
+	}
+	niRIB, ok := r.NetworkInstanceRIB(netInst)
+	if !ok {
+		return false, fmt.Errorf("invalid network-instance %s", netInst)
+	}
+
+	// IPv4 entries can always be removed, since we allow recursion to happen
+	// inside and outside of gRIBI.
+	if len(caft.Ipv4Entry) != 0 {
+		return true, nil
+	}
+
+	// Now, we need to check that nothing references a NHG. We could do this naîvely,
+	// by walking all RIBs, but this is expensive, so rather we check the refCounter
+	// within the RIB instance.
+	for id := range caft.NextHopGroup {
+		if id == 0 {
+			return false, fmt.Errorf("bad NextHopGroup ID 0")
+		}
+		// if the NHG is not referenced, then we can te it.
+		return !niRIB.nhgReferenced(id), nil
+	}
+
+	for idx := range caft.NextHop {
+		if idx == 0 {
+			return false, fmt.Errorf("bad NextHop ID 0")
+		}
+		// again if the NHG is not referenced, then we can delete it.
+		return !niRIB.nhReferenced(idx), nil
+	}
+
+	// We checked that there was 1 entry in the RIB, so we should never reach here,
+	// but return an error and keep the compiler happy.
+	return false, errors.New("no entries in specified candidate")
+
+}
+
 // checkCandidate checks whether the candidate RIB 'caft' can be processed
 // by the RIB implementation. It returns an error if it cannot.
 func checkCandidate(caft *aft.Afts) error {
@@ -604,23 +697,15 @@ type ribHolderOpt interface {
 // ribHolderCheckFn is a ribHolderOpt that provides a function that can be run for each operation to
 // determine whether it should be installed in the RIB.
 type ribHolderCheckFn struct {
-	fn func(string, *aft.RIB) (bool, error)
+	fn RIBHolderCheckFunc
 }
 
 // isRHOpt implements the ribHolderOpt function
 func (r *ribHolderCheckFn) isRHOpt() {}
 
-// RIBHolderCheckFn is an option that provides a function f - taking arguments of:
-//  * a network instance name as a string
-//  * a candidate RIB as an aft.RIB GoStruct
-// It must return:
-//  * a bool indicating whether the RIB operation should go ahead.
-//  * an error that is considered fatal for the entry (i.e., this entry should never
-//    be tried again).
-//
-// TODO(robjs): consider whether this should take an optype too - so that the same checkfn
-// can be used when we do deletes for refcounting.
-func RIBHolderCheckFn(f func(string, *aft.RIB) (bool, error)) *ribHolderCheckFn {
+// RIBHolderCheckFn is an option that provides a function f to be run for each RIB
+// change.
+func RIBHolderCheckFn(f RIBHolderCheckFunc) *ribHolderCheckFn {
 	return &ribHolderCheckFn{fn: f}
 }
 
@@ -652,8 +737,8 @@ func NewRIBHolder(name string, opts ...ribHolderOpt) *RIBHolder {
 	// If there is a check function - regenerate it so that it
 	// always operates on the local name.
 	if fn != nil {
-		checkFn := func(r *aft.RIB) (bool, error) {
-			return fn.fn(name, r)
+		checkFn := func(op constants.OpType, r *aft.RIB) (bool, error) {
+			return fn.fn(op, name, r)
 		}
 		r.checkFn = checkFn
 	}
@@ -772,7 +857,7 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, bool, error) {
 	}
 
 	if r.checkFn != nil {
-		ok, err := r.checkFn(nr)
+		ok, err := r.checkFn(constants.Add, nr)
 		if err != nil {
 			// This entry can never be installed, so return the error
 			// to the caller directly -- signalling to them not to retry.
@@ -851,6 +936,21 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, error) {
 		// Return a failure for this operation, but there was no error.
 		return false, nil
 	}
+
+	rr := &aft.RIB{}
+	rr.GetOrCreateAfts().GetOrCreateIpv4Entry(e.GetPrefix())
+	if r.checkFn != nil {
+		ok, err := r.checkFn(constants.Delete, rr)
+		switch {
+		case err != nil:
+			// the check told us this was fatal for this entry -> we should return.
+			return false, err
+		case !ok:
+			// otherwise, we just didn't do this operation.
+			return false, nil
+		}
+	}
+
 	r.doDeleteIPv4(e.GetPrefix())
 
 	if r.postChangeHook != nil {
@@ -873,13 +973,30 @@ func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, err
 		return false, errors.New("invalid RIB structure, nil")
 	}
 
+	if e.GetId() == 0 {
+		return false, errors.New("invalid NHG ID 0")
+	}
+
 	de := r.r.Afts.NextHopGroup[e.GetId()]
 	if de == nil {
 		// Return failed for this case, sicne there was no such NHG.
-		return false, nil
+		return false, fmt.Errorf("cannot delete NHG ID %d since it does not exist", e.GetId())
 	}
-	// TODO(robjs): implement ref counting in the RIB such that we check that this
-	// entry can actually be removed.
+
+	rr := &aft.RIB{}
+	rr.GetOrCreateAfts().GetOrCreateNextHopGroup(e.GetId())
+	if r.checkFn != nil {
+		ok, err := r.checkFn(constants.Delete, rr)
+		switch {
+		case err != nil:
+			// the check told us this was fatal for this entry -> we should return.
+			return false, err
+		case !ok:
+			// otherwise, we just didn't do this operation.
+			return false, nil
+		}
+	}
+
 	r.doDeleteNHG(e.GetId())
 
 	if r.postChangeHook != nil {
@@ -902,11 +1019,28 @@ func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 		return false, errors.New("invalid RIB structure, nil")
 	}
 
+	if e.GetIndex() == 0 {
+		return false, fmt.Errorf("invalid NH index 0")
+	}
+
 	de := r.r.Afts.NextHop[e.GetIndex()]
 	if de == nil {
-		// we mark that this operation failed, because there was no such entry. But
-		// this is not an error so that we're robust to stale deletes.
-		return false, nil
+		// we mark that this operation failed, because there was no such entry.
+		return false, fmt.Errorf("cannot delete NH Index %d since it does not exist", e.GetIndex())
+	}
+
+	rr := &aft.RIB{}
+	rr.GetOrCreateAfts().GetOrCreateNextHop(e.GetIndex())
+	if r.checkFn != nil {
+		ok, err := r.checkFn(constants.Delete, rr)
+		switch {
+		case err != nil:
+			// the check told us this was fatal for this entry -> we should return.
+			return false, err
+		case !ok:
+			// otherwise, we just didn't do this operation.
+			return false, nil
+		}
 	}
 
 	r.doDeleteNH(e.GetIndex())
@@ -961,7 +1095,7 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, bool, 
 	}
 
 	if r.checkFn != nil {
-		ok, err := r.checkFn(nr)
+		ok, err := r.checkFn(constants.Add, nr)
 		if err != nil {
 			// Entry can never be installed (see the documentation in
 			// the AddIPv4 function for additional details).
@@ -1017,6 +1151,18 @@ func (r *RIBHolder) incNHGRefCount(i uint64) {
 	r.refCounts.NextHopGroup[i]++
 }
 
+// decNHGRefCount decrements the reference count for the specified next-hop-group.
+func (r *RIBHolder) decNHGRefCount(i uint64) {
+	r.refCounts.mu.Lock()
+	defer r.refCounts.mu.Unlock()
+	if r.refCounts.NextHopGroup[i] == 0 {
+		// prevent the refcount from rolling back - this is an error, since it
+		// means the implementation did not add references correctly.
+		return
+	}
+	r.refCounts.NextHopGroup[i]--
+}
+
 // nhgReferenced indicates whether the next-hop-group has a refCount > 0.
 func (r *RIBHolder) nhgReferenced(i uint64) bool {
 	r.refCounts.mu.RLock()
@@ -1043,7 +1189,7 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey) (bool, bool, error) {
 		return false, false, fmt.Errorf("invalid NextHopGroup, %v", err)
 	}
 	if r.checkFn != nil {
-		ok, err := r.checkFn(nr)
+		ok, err := r.checkFn(constants.Add, nr)
 		if err != nil {
 			// Entry can never be installed (see the documentation in
 			// the AddIPv4 function for additional details).
@@ -1097,6 +1243,18 @@ func (r *RIBHolder) incNHRefCount(i uint64) {
 	r.refCounts.mu.Lock()
 	defer r.refCounts.mu.Unlock()
 	r.refCounts.NextHop[i]++
+}
+
+// decNHGRefCount decrements the reference count for the specified next-hop-group.
+func (r *RIBHolder) decNHRefCount(i uint64) {
+	r.refCounts.mu.Lock()
+	defer r.refCounts.mu.Unlock()
+	if r.refCounts.NextHop[i] == 0 {
+		// prevent the refcount from rolling back - this is an error, since it
+		// means the implementation did not add references correctly.
+		return
+	}
+	r.refCounts.NextHop[i]--
 }
 
 // nhReferenced indicates whether the next-hop-group has a refCount > 0.

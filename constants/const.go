@@ -33,6 +33,16 @@ const (
 	Replace
 )
 
+// String returns a string name for the OpType.
+func (o OpType) String() string {
+	names := map[OpType]string{
+		Add:     "Add",
+		Delete:  "Delete",
+		Replace: "Replace",
+	}
+	return names[o]
+}
+
 // aftopMap maps from the gRIBI proto AFT operation to an OpType.
 var aftopMap = map[spb.AFTOperation_Operation]OpType{
 	spb.AFTOperation_ADD:     Add,

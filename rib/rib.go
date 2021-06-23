@@ -908,7 +908,6 @@ func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 		// this is not an error so that we're robust to stale deletes.
 		return false, nil
 	}
-
 	r.doDeleteNH(e.GetIndex())
 
 	if r.postChangeHook != nil {

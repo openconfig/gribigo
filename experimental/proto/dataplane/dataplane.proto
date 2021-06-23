@@ -1,0 +1,170 @@
+// Copyright 2021 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+// Package Dataplane provides RPCs that make dataplane requests to a service over
+// gRPC. Individual one-shot packets can be specified, or flows consisting of
+// a stream of packets. Each packet is responded to with the routing decision
+// made for the packet based on however the dataplane is programmed.
+//
+// The service is intended to work alongside:
+//   - topology descriptions such as KNE, where the dataplane may respond with
+//     an abstract port that it has been informed of.
+//   - gNMI + OpenConfig -- where the dataplane may respond with an interface
+//     that is defined within the configuration of the device which was set
+//     over gNMI.
+package dataplane;
+
+option go_package = "github.com/openconfig/gribigo/experimental/proto/dataplane";
+
+service Dataplane {
+    // Packet is a unary request/response RPC via which the client asks "what would
+    // you do with this packet?". The packet input to the system is described by
+    // the PacketRequest, and the output packet is described by PacketResponse.
+    rpc Packet(PacketRequest) returns (PacketResponse);
+
+    // Flow is a stream of input packets received from the client which are to be
+    // forwarded by the server, for each packet the server responds with a PacketResponse
+    // that specifies how the packet would be routed.
+    rpc Flow(stream PacketRequest) returns (stream PacketResponse);
+
+    // Wire is a bidirectional stream which - rather than operating on the metadata of
+    // a packet - actually does the relevant manipulations for the packet, and returns
+    // the output packet that would be sent with the context that the packet would be
+    // formatted. Both the client and the server can send such packets.
+    rpc Wire(stream PacketDefinition) returns (stream PacketDefinition);
+
+    // DISCUSS:
+    //  - don't propose to include something like "RoutingDecision" here since this
+    //    is something that can be retrieved from AFT telemetry.
+}
+
+// PacketRequest describes a packet according to its header fields.
+message PacketRequest {
+    // id is a unique identifier for this packet, such that the client
+    // can relate an output packet back to a specified input packet.
+    uint64 id = 1;
+
+    // input describes where the packet is received on the device.
+    Interface input = 2;
+
+    // hdr is the set of packet headers the packet contains.
+    PacketHeader hdr = 3;
+}
+
+// Interface specifies details relating to the context on the device that
+// the packet is forwarded.
+// This message is explicitly /not/ a oneof such that if the gRPC service
+// might be aware of multiple contexts all of them can be completed.
+message Interface {
+    // topology_intf is an identifier describing a reference in a topology
+    // description that the dataplane is aware of - e.g., if a KNE protobuf is
+    // provided, this interface might be an identifier that is used as an abstract
+    // identifier within that context.
+    //
+    // DISCUSS: what does this specification look like.
+    TODO topology_intf = 1;
+    // oc_intf is an OpenConfig-specified interface, i.e., interface with optional
+    //  subinterface.
+    OpenConfigInterface oc_intf = 2;
+}
+
+// OpenConfigInterface describes an OpenConfig schema interface, which may consist of
+// an interface plus a subinterface index. Subinterfaces may optionally be supplied,
+// or the receiver can determine which subinterface a packet arrives at based on
+// the header context (e.g., VLAN etc.).
+//
+// DISCUSS: can likely remove the subinterface here.
+message OpenConfigInterface {
+    string interface = 1;
+    uint32 subinterface = 2;
+}
+
+// PacketHeader is a common message describing L2, L3, L4 headers.
+message PacketHeader {
+    L2Headers l2 = 2;
+    // Layer 2.5 headers - used for encapsulations (e.g., MPLS)
+    L25Headers l25 = 25;
+    // Layer 3 headers -- if the packet is encapsulated (e.g., IP-in-IP, GRE, GUE...)
+    // these headers can be repeated. The order provides the stack of headers.
+    repeated L3Headers l3 = 3;
+    L4Headers l4 = 4;
+}
+
+message L2Headers {
+    // Ethernet headers.
+    TODO ethernet = 1;
+}
+
+message L25Headers {
+    // Stack of MPLS headers.
+    repeated TODO mpls_label_stack = 1;
+}
+
+message L3Headers {
+    oneof af {
+        // IPv4 header fields.
+        TODO ipv4 = 1;
+        // IPv6 header fields.
+        TODO ipv6 = 2;
+    }
+}
+
+message L4Headers {
+    oneof proto {
+        // TCP header fields.
+        TODO tcp = 1;
+        // UDP header fields.
+        TODO udp = 2;
+    }
+}
+
+// TODO is a placeholder message.
+message TODO {}
+
+// PacketResponse is a message that is used as a response to any input
+// packet.
+message PacketResponse {
+    // ID is the identifier for the input packet that was 'forwarded'.
+    uint64 id = 1;
+    // hdr is the packet headers /after/ the device has forwarded the packet.
+    PacketHeader hdr = 2;
+    // Output describes where the packet is being punted out of. This allows
+    // multiplexing of multiple interfaces to one gRPC client-server stream.
+    Interface out = 3;
+}
+
+// Packet is an encapsulated packet that would be incident on an interface withib
+// the system.
+message PacketDefinition {
+    // intf is the context for the packet.
+    Interface intf = 1;
+
+    oneof type {
+        // abstract is an abstract packet that is described solely in terms of this
+        // protobuf definition.
+        AbstractPacket abstract = 2;
+        // raw is a real, organic, free-range packet which has been serialised to bytes.
+        bytes raw = 3;
+    }
+}
+
+// AbstractPacket is a abstract definition of a packet - that has been synthetically
+// manufactured in a lab environment.
+message AbstractPacket {
+    PacketHeader hdr = 1;
+    // DISCUSS: do we need this here?
+    TODO data = 2;
+}

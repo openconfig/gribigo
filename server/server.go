@@ -725,8 +725,6 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 		oks, faileds, err = r.AddEntry(ni, op)
 	case spb.AFTOperation_DELETE:
 		oks, faileds, err = r.DeleteEntry(ni, op)
-	//case spb.AFTOperation_REPLACE:
-	//	oks, faileds, err = r.ReplaceEntry(ni, op)
 	default:
 		return nil, status.Newf(codes.InvalidArgument, "invalid operation type supplied, %s", op.Op).Err()
 	}

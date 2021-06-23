@@ -1169,18 +1169,6 @@ func (r *RIBHolder) incNHGRefCount(i uint64) {
 	r.refCounts.NextHopGroup[i]++
 }
 
-// decNHGRefCount decrements the reference count for the specified next-hop-group.
-func (r *RIBHolder) decNHGRefCount(i uint64) {
-	r.refCounts.mu.Lock()
-	defer r.refCounts.mu.Unlock()
-	if r.refCounts.NextHopGroup[i] == 0 {
-		// prevent the refcount from rolling back - this is an error, since it
-		// means the implementation did not add references correctly.
-		return
-	}
-	r.refCounts.NextHopGroup[i]--
-}
-
 // nhgReferenced indicates whether the next-hop-group has a refCount > 0.
 func (r *RIBHolder) nhgReferenced(i uint64) bool {
 	r.refCounts.mu.RLock()
@@ -1261,18 +1249,6 @@ func (r *RIBHolder) incNHRefCount(i uint64) {
 	r.refCounts.mu.Lock()
 	defer r.refCounts.mu.Unlock()
 	r.refCounts.NextHop[i]++
-}
-
-// decNHGRefCount decrements the reference count for the specified next-hop-group.
-func (r *RIBHolder) decNHRefCount(i uint64) {
-	r.refCounts.mu.Lock()
-	defer r.refCounts.mu.Unlock()
-	if r.refCounts.NextHop[i] == 0 {
-		// prevent the refcount from rolling back - this is an error, since it
-		// means the implementation did not add references correctly.
-		return
-	}
-	r.refCounts.NextHop[i]--
 }
 
 // nhReferenced indicates whether the next-hop-group has a refCount > 0.

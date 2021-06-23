@@ -21,8 +21,10 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/aft"
+	"github.com/openconfig/gribigo/afthelper"
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/gnmit"
+	"github.com/openconfig/gribigo/ocrt"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/sysrib"
 	"github.com/openconfig/ygot/ygot"
@@ -138,7 +140,17 @@ func (*tlsCreds) isDevOpt() {}
 func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 	d := &Device{}
 
-	if jcfg := optDeviceCfg(opts); jcfg != nil {
+	jcfg := optDeviceCfg(opts)
+	switch jcfg {
+	case nil:
+		dev := &ocrt.Device{}
+		dev.GetOrCreateNetworkInstance("DEFAULT").Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
+		sr, err := sysrib.NewSysRIB(dev)
+		if err != nil {
+			return nil, fmt.Errorf("cannot build system RIB, %v", err)
+		}
+		d.sysRIB = sr
+	default:
 		sr, err := sysrib.NewSysRIBFromJSON(jcfg)
 		if err != nil {
 			return nil, fmt.Errorf("cannot build system RIB, %v", err)
@@ -168,6 +180,27 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 		// here we just write to something that the server has access to.
 	}
 
+	ribAddfn := func(ribs map[string]*aft.RIB, optype constants.OpType, netinst, prefix string) {
+		if optype != constants.Add {
+			// TODO(robjs): handle replace and delete :-)
+			return
+		}
+		nhs, err := afthelper.NextHopAddrsForPrefix(ribs, netinst, prefix)
+		if err != nil {
+			log.Errorf("cannot add netinst:prefix %s:%s to the RIB, %v", netinst, prefix, err)
+			return
+		}
+		nhSum := []*afthelper.NextHopSummary{}
+		for _, nh := range nhs {
+			nhSum = append(nhSum, nh)
+		}
+
+		d.sysRIB.AddRoute(netinst, &sysrib.Route{
+			Prefix:   prefix,
+			NextHops: nhSum,
+		})
+	}
+
 	gr := optGRIBIAddr(opts)
 	gn := optGNMIAddr(opts)
 
@@ -176,7 +209,10 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 		return nil, fmt.Errorf("must specific TLS credentials to start a server")
 	}
 
-	gRIBIStop, err := d.startgRIBI(ctx, gr.host, gr.port, creds, server.WithRIBHook(ribHookfn))
+	gRIBIStop, err := d.startgRIBI(ctx, gr.host, gr.port, creds,
+		server.WithPostChangeRIBHook(ribHookfn),
+		server.WithRIBResolvedEntryHook(ribAddfn),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("cannot start gRIBI server, %v", err)
 	}

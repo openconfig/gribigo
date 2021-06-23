@@ -476,6 +476,23 @@ func (n *nextHopEntry) WithNetworkInstance(ni string) *nextHopEntry {
 	return n
 }
 
+// WithIPAddress specifies an IP address to be used for the next-hop. The IP
+// address is resolved within the network instance specified by WithNextHopNetworkInstance.
+func (n *nextHopEntry) WithIPAddress(addr string) *nextHopEntry {
+	n.pb.NextHop.IpAddress = &wpb.StringValue{Value: addr}
+	return n
+}
+
+// WithNextHopNetworkInstance specifies the network instance within which the next-hop
+// should be resolved. If it is not specified, the next-hop is resolved in the network
+// instance that the next-hop is installed in. If no other parameters are specified, the
+// lookup uses the input packet within the specified network instance to determine the
+// next-hop.
+func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
+	n.pb.NextHop.NetworkInstance = &wpb.StringValue{Value: ni}
+	return n
+}
+
 // TODO(robjs): add additional NextHopEntry fields.
 
 // opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID

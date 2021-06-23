@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/openconfig/gribigo/afthelper"
 	oc "github.com/openconfig/gribigo/ocrt"
 	"github.com/openconfig/ygot/ygot"
 )
@@ -200,8 +201,10 @@ func TestRoutesFromConfig(t *testing.T) {
 
 func TestEgressInterface(t *testing.T) {
 	tests := []struct {
-		desc          string
-		inCfg         *oc.Device
+		desc  string
+		inCfg *oc.Device
+		// keyed by network-instance
+		inAddRoutes   map[string][]*Route
 		inNI          string
 		inIP          net.IPNet
 		wantInterface []*Interface
@@ -282,6 +285,69 @@ func TestEgressInterface(t *testing.T) {
 			{Name: "eth2", Subinterface: 2},
 			{Name: "eth1", Subinterface: 1},
 		},
+	}, {
+		desc: "recursive route onto connected route",
+		inCfg: func() *oc.Device {
+			d := &oc.Device{}
+			d.GetOrCreateInterface("eth0").
+				GetOrCreateSubinterface(0).
+				GetOrCreateIpv4().
+				GetOrCreateAddress("192.0.2.1").
+				PrefixLength = ygot.Uint8(24)
+			d.GetOrCreateNetworkInstance("DEFAULT").
+				Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
+			return d
+		}(),
+		inAddRoutes: map[string][]*Route{
+			"DEFAULT": {{
+				Prefix: "8.8.8.8/32",
+				NextHops: []*afthelper.NextHopSummary{{
+					Address:         "192.0.2.1",
+					NetworkInstance: "DEFAULT",
+				}},
+			}},
+		},
+		inNI: "DEFAULT",
+		inIP: mustCIDR("8.8.8.8/32"),
+		wantInterface: []*Interface{
+			{Name: "eth0", Subinterface: 0},
+		},
+	}, {
+		desc: "recursive route onto two connected route",
+		inCfg: func() *oc.Device {
+			d := &oc.Device{}
+			d.GetOrCreateInterface("eth0").
+				GetOrCreateSubinterface(0).
+				GetOrCreateIpv4().
+				GetOrCreateAddress("192.0.2.1").
+				PrefixLength = ygot.Uint8(24)
+			d.GetOrCreateInterface("eth1").
+				GetOrCreateSubinterface(42).
+				GetOrCreateIpv4().
+				GetOrCreateAddress("172.16.12.1").
+				PrefixLength = ygot.Uint8(16)
+			d.GetOrCreateNetworkInstance("DEFAULT").
+				Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
+			return d
+		}(),
+		inAddRoutes: map[string][]*Route{
+			"DEFAULT": {{
+				Prefix: "8.8.8.8/32",
+				NextHops: []*afthelper.NextHopSummary{{
+					Address:         "192.0.2.1",
+					NetworkInstance: "DEFAULT",
+				}, {
+					Address:         "172.16.12.4",
+					NetworkInstance: "DEFAULT",
+				}},
+			}},
+		},
+		inNI: "DEFAULT",
+		inIP: mustCIDR("8.8.8.8/32"),
+		wantInterface: []*Interface{
+			{Name: "eth0", Subinterface: 0},
+			{Name: "eth1", Subinterface: 42},
+		},
 	}}
 
 	for _, tt := range tests {
@@ -290,6 +356,14 @@ func TestEgressInterface(t *testing.T) {
 			if err != nil {
 				t.Fatalf("could not build RIB, %v", err)
 			}
+			for ni, routes := range tt.inAddRoutes {
+				for _, rt := range routes {
+					if err := r.AddRoute(ni, rt); err != nil {
+						t.Fatalf("cannot add route %s to NI %s, err: %v", rt.Prefix, ni, err)
+					}
+				}
+			}
+
 			got, err := r.EgressInterface(tt.inNI, &tt.inIP)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
@@ -299,6 +373,66 @@ func TestEgressInterface(t *testing.T) {
 				return a.Name < b.Name
 			})); diff != "" {
 				t.Fatalf("did not get expected interface set, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+var (
+	defaultNIName = "DEFAULT"
+)
+
+func baseCfg() *oc.Device {
+	d := &oc.Device{}
+	d.GetOrCreateNetworkInstance(defaultNIName).Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
+	return d
+}
+
+func TestAddRoute(t *testing.T) {
+	tests := []struct {
+		desc              string
+		inCfg             *oc.Device
+		inNetworkInstance string
+		inRoute           *Route
+		wantErr           bool
+	}{{
+		desc:              "connected route, default NI",
+		inCfg:             baseCfg(),
+		inNetworkInstance: defaultNIName,
+		inRoute: &Route{
+			Prefix: "8.8.8.8/32",
+			Connected: &Interface{
+				Name:         "eth0",
+				Subinterface: 0,
+			},
+		},
+	}, {
+		desc:              "next-hop route, default NI",
+		inCfg:             baseCfg(),
+		inNetworkInstance: defaultNIName,
+		inRoute: &Route{
+			Prefix: "2.0.0.0/8",
+			NextHops: []*afthelper.NextHopSummary{{
+				Weight:          32,
+				Address:         "1.1.1.1",
+				NetworkInstance: defaultNIName,
+			}, {
+				Weight:          32,
+				Address:         "3.3.3.3",
+				NetworkInstance: defaultNIName,
+			}},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			s, err := NewSysRIB(tt.inCfg)
+			if err != nil {
+				t.Fatalf("cannot create new system RIB, got err: %v", err)
+			}
+
+			if err := s.AddRoute(tt.inNetworkInstance, tt.inRoute); (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error status, got: %v, wantErr? %v", err, tt.wantErr)
 			}
 		})
 	}

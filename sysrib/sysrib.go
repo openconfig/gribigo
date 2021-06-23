@@ -25,6 +25,7 @@ import (
 
 	"github.com/kentik/patricia"
 	"github.com/kentik/patricia/string_tree"
+	"github.com/openconfig/gribigo/afthelper"
 	oc "github.com/openconfig/gribigo/ocrt"
 	"github.com/openconfig/ygot/ytypes"
 )
@@ -49,6 +50,9 @@ type Route struct {
 	Prefix string `json:"prefix"`
 	// Connected indicates that the route is directly connected.
 	Connected *Interface `json:"connected"`
+	// NextHops is the set of IP nexthops that the route uses if
+	// it is not a connected route.
+	NextHops []*afthelper.NextHopSummary `json:"nexthops"`
 }
 
 // toString marshals the route to a string for storage in the tree.
@@ -87,7 +91,7 @@ func NewSysRIB(cfg *oc.Device) (*SysRIB, error) {
 	return sr, nil
 }
 
-// AddRoute adds a route, rm to the network instance, ni, in the sysRIB.
+// AddRoute adds a route, r, to the network instance, ni, in the sysRIB.
 // It returns an error if it cannot be added.
 func (sr *SysRIB) AddRoute(ni string, r *Route) error {
 	if _, ok := sr.NI[ni]; !ok {
@@ -136,7 +140,6 @@ type Interface struct {
 // TODO(robjs): support determining the NI based solely on the input interface.
 // TODO(robjs): support a better description of a packet using the formats that ONDATRA
 // 				uses.
-// TODO(robjs): support non-connected routes.
 // TODO(robjs): support WCMP
 //
 // This is really a POC that we can emulate our FIB for basic IPv4 routes.
@@ -169,10 +172,25 @@ func (r *SysRIB) EgressInterface(inputNI string, ip *net.IPNet) ([]*Interface, e
 			return nil, fmt.Errorf("invalid tag for prefix %s with tag data %s", ip, tag)
 		}
 
-		egressIfs = append(egressIfs, cr.Connected)
+		if cr.Connected != nil {
+			egressIfs = append(egressIfs, cr.Connected)
+			continue
+		}
+
+		// This isn't a connected route, check whether we can resolve the next-hops.
+		for _, nh := range cr.NextHops {
+			_, nhop, err := net.ParseCIDR(fmt.Sprintf("%s/32", nh.Address))
+			if err != nil {
+				return nil, fmt.Errorf("can't parse %s/32 into CIDR, %v", nh.Address, err)
+			}
+			recursiveNHIfs, err := r.EgressInterface(nh.NetworkInstance, nhop)
+			if err != nil {
+				return nil, fmt.Errorf("for nexthop %s, can't resolve: %v", nh.Address, err)
+			}
+			egressIfs = append(egressIfs, recursiveNHIfs...)
+		}
 	}
 	return egressIfs, nil
-
 }
 
 // niConnected is a description of a set of connected routes within a network instance.

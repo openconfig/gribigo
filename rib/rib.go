@@ -1042,7 +1042,6 @@ func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, error) {
 			return false, nil
 		}
 	}
-
 	r.doDeleteNH(e.GetIndex())
 
 	if r.postChangeHook != nil {

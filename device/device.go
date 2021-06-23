@@ -30,6 +30,7 @@ import (
 	"github.com/openconfig/ygot/ygot"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	spb "github.com/openconfig/gribi/v1/proto/service"
@@ -166,11 +167,13 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 		case err != nil:
 			log.Errorf("invalid notifications, %v", err)
 		default:
-			go d.gnmiSrv.TargetUpdate(&gpb.SubscribeResponse{
+			u := &gpb.SubscribeResponse{
 				Response: &gpb.SubscribeResponse_Update{
 					Update: n,
 				},
-			})
+			}
+			log.V(2).Infof("sending gNMI Notification, %s", prototext.Format(u))
+			go d.gnmiSrv.TargetUpdate(u)
 		}
 
 		// server.WithFIBProgrammedCheck()

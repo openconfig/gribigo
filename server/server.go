@@ -193,7 +193,7 @@ func New(opt ...ServerOpt) *Server {
 	}
 
 	if v := hasRIBHook(opt); v != nil {
-		s.masterRIB.SetHook(v.fn)
+		s.masterRIB.SetPostChangeHook(v.fn)
 	}
 
 	return s

@@ -1240,47 +1240,6 @@ func TestModifyEntry(t *testing.T) {
 			}},
 		},
 	}, {
-		desc: "DELETE NH",
-		inRIB: func() *rib.RIB {
-			r := rib.New(defName)
-			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
-				Id: 3,
-				Op: spb.AFTOperation_ADD,
-				Entry: &spb.AFTOperation_NextHop{
-					NextHop: &aftpb.Afts_NextHopKey{
-						Index:   2,
-						NextHop: &aftpb.Afts_NextHop{},
-					},
-				},
-			}); err != nil {
-				panic(fmt.Sprintf("cannot build test case, got err: %v", err))
-			}
-			return r
-		}(),
-		inNI: defName,
-		inOp: &spb.AFTOperation{
-			ElectionId: &spb.Uint128{High: 4, Low: 2},
-			Id:         2,
-			Op:         spb.AFTOperation_DELETE,
-			Entry: &spb.AFTOperation_NextHop{
-				NextHop: &aftpb.Afts_NextHopKey{
-					Index: 2,
-				},
-			},
-		},
-		inElection: &electionDetails{
-			master:       "this-client",
-			ID:           &spb.Uint128{High: 4, Low: 2},
-			client:       "this-client",
-			clientLatest: &spb.Uint128{High: 4, Low: 2},
-		},
-		wantResponse: &spb.ModifyResponse{
-			Result: []*spb.AFTResult{{
-				Id:     2,
-				Status: spb.AFTResult_RIB_PROGRAMMED,
-			}},
-		},
-	}, {
 		desc: "DELETE NH failed due to refcount",
 		inRIB: func() *rib.RIB {
 			r := rib.New(defName)

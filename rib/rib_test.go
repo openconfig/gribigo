@@ -48,14 +48,15 @@ const (
 
 func TestAdd(t *testing.T) {
 	tests := []struct {
-		desc          string
-		inRIBHolder   *RIBHolder
-		inType        ribType
-		inEntry       proto.Message
-		wantInstalled bool
-		wantImplicit  bool
-		wantRIB       *aft.RIB
-		wantErr       bool
+		desc              string
+		inRIBHolder       *RIBHolder
+		inType            ribType
+		inEntry           proto.Message
+		inExplicitReplace bool
+		wantInstalled     bool
+		wantReplace       bool
+		wantRIB           *aft.RIB
+		wantErr           bool
 	}{{
 		desc:        "ipv4 prefix only",
 		inRIBHolder: NewRIBHolder("DEFAULT"),
@@ -124,7 +125,7 @@ func TestAdd(t *testing.T) {
 				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
 					Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 				},
-			}); err != nil {
+			}, false); err != nil {
 				panic(err)
 			}
 			return r
@@ -137,7 +138,7 @@ func TestAdd(t *testing.T) {
 			},
 		},
 		wantInstalled: true,
-		wantImplicit:  true,
+		wantReplace:   true,
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
@@ -182,7 +183,7 @@ func TestAdd(t *testing.T) {
 			if _, _, err := r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 				Id:           1,
 				NextHopGroup: &aftpb.Afts_NextHopGroup{},
-			}); err != nil {
+			}, false); err != nil {
 				panic(err)
 			}
 			return r
@@ -193,7 +194,7 @@ func TestAdd(t *testing.T) {
 			NextHopGroup: &aftpb.Afts_NextHopGroup{},
 		},
 		wantInstalled: true,
-		wantImplicit:  true,
+		wantReplace:   true,
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
@@ -210,7 +211,7 @@ func TestAdd(t *testing.T) {
 			if _, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index:   1,
 				NextHop: &aftpb.Afts_NextHop{},
-			}); err != nil {
+			}, false); err != nil {
 				panic(err)
 			}
 			return r
@@ -221,12 +222,107 @@ func TestAdd(t *testing.T) {
 			NextHop: &aftpb.Afts_NextHop{},
 		},
 		wantInstalled: true,
-		wantImplicit:  true,
+		wantReplace:   true,
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHop: map[uint64]*aft.Afts_NextHop{
 					1: {
 						Index: ygot.Uint64(1),
+					},
+				},
+			},
+		},
+	}, {
+		desc: "nhg explicit replace",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			if _, _, err := r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id:           1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{},
+			}, false); err != nil {
+				panic(err)
+			}
+			return r
+		}(),
+		inType: nhg,
+		inEntry: &aftpb.Afts_NextHopGroupKey{
+			Id: 1,
+			NextHopGroup: &aftpb.Afts_NextHopGroup{
+				Color: &wpb.UintValue{Value: 42},
+			},
+		},
+		inExplicitReplace: true,
+		wantInstalled:     true,
+		wantReplace:       true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
+					1: {
+						Id:    ygot.Uint64(1),
+						Color: ygot.Uint64(42),
+					},
+				},
+			},
+		},
+	}, {
+		desc: "nh explicit replace",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			if _, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index:   1,
+				NextHop: &aftpb.Afts_NextHop{},
+			}, false); err != nil {
+				panic(err)
+			}
+			return r
+		}(),
+		inType: nh,
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 1,
+			NextHop: &aftpb.Afts_NextHop{
+				IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
+			},
+		},
+		inExplicitReplace: true,
+		wantInstalled:     true,
+		wantReplace:       true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {
+						Index:     ygot.Uint64(1),
+						IpAddress: ygot.String("1.2.3.4"),
+					},
+				},
+			},
+		},
+	}, {
+		desc: "ipv4 explicit replace",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			if _, _, err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+				Prefix: "22.32.42.52/32",
+				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+					Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+				},
+			}, false); err != nil {
+				panic(err)
+			}
+			return r
+		}(),
+		inType: ipv4,
+		inEntry: &aftpb.Afts_Ipv4EntryKey{
+			Prefix:    "22.32.42.52/32",
+			Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+		},
+		inExplicitReplace: true,
+		wantInstalled:     true,
+		wantReplace:       true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+					"22.32.42.52/32": {
+						Prefix: ygot.String("22.32.42.52/32"),
 					},
 				},
 			},
@@ -319,43 +415,43 @@ func TestAdd(t *testing.T) {
 			case ipv4:
 				// special case for nil test
 				if tt.inEntry == nil {
-					_, _, err := r.AddIPv4(nil)
+					_, _, err := r.AddIPv4(nil, false)
 					if (err != nil) != tt.wantErr {
 						t.Fatalf("got unexpected error adding IPv4 entry, got: %v, wantErr? %v", err, tt.wantErr)
 					}
 					return
 				}
-				gotInstalled, gotImplicit, err := r.AddIPv4(tt.inEntry.(*aftpb.Afts_Ipv4EntryKey))
+				gotInstalled, gotImplicit, err := r.AddIPv4(tt.inEntry.(*aftpb.Afts_Ipv4EntryKey), tt.inExplicitReplace)
 				if (err != nil) != tt.wantErr {
 					t.Fatalf("got unexpected error adding IPv4 entry, got: %v, wantErr? %v", err, tt.wantErr)
 				}
 				if gotInstalled != tt.wantInstalled {
 					t.Fatalf("did not get expected installed IPv4 bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
 				}
-				if gotImplicit != tt.wantImplicit {
-					t.Fatalf("did not get expected implicit IPv4 bool, got: %v, want: %v", gotImplicit, tt.wantImplicit)
+				if gotImplicit != tt.wantReplace {
+					t.Fatalf("did not get expected implicit IPv4 bool, got: %v, want: %v", gotImplicit, tt.wantReplace)
 				}
 			case nhg:
-				gotInstalled, gotImplicit, err := r.AddNextHopGroup(tt.inEntry.(*aftpb.Afts_NextHopGroupKey))
+				gotInstalled, gotImplicit, err := r.AddNextHopGroup(tt.inEntry.(*aftpb.Afts_NextHopGroupKey), tt.wantReplace)
 				if (err != nil) != tt.wantErr {
 					t.Fatalf("got unexpected error adding NHG entry, got: %v, wantErr? %v", err, tt.wantErr)
 				}
 				if gotInstalled != tt.wantInstalled {
 					t.Fatalf("did not get expected installed NHG bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
 				}
-				if gotImplicit != tt.wantImplicit {
-					t.Fatalf("did not get expected implicit NHG bool, got: %v, want: %v", gotImplicit, tt.wantImplicit)
+				if gotImplicit != tt.wantReplace {
+					t.Fatalf("did not get expected implicit NHG bool, got: %v, want: %v", gotImplicit, tt.wantReplace)
 				}
 			case nh:
-				gotInstalled, gotImplicit, err := r.AddNextHop(tt.inEntry.(*aftpb.Afts_NextHopKey))
+				gotInstalled, gotImplicit, err := r.AddNextHop(tt.inEntry.(*aftpb.Afts_NextHopKey), tt.inExplicitReplace)
 				if (err != nil) != tt.wantErr {
 					t.Fatalf("got unexpected error adding NH entry, got: %v, wantErr? %v", err, tt.wantErr)
 				}
 				if gotInstalled != tt.wantInstalled {
 					t.Fatalf("did not get expected installed NH bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
 				}
-				if gotImplicit != tt.wantImplicit {
-					t.Fatalf("did not get expected implicit NH bool, got: %v, want: %v", gotImplicit, tt.wantImplicit)
+				if gotImplicit != tt.wantReplace {
+					t.Fatalf("did not get expected implicit NH bool, got: %v, want: %v", gotImplicit, tt.wantReplace)
 				}
 			default:
 				t.Fatalf("unsupported test type in Add, %v", tt.inType)
@@ -430,6 +526,7 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		inRIB       *RIBHolder
 		inEntry     proto.Message
 		wantOK      bool
+		wantOrig    ygot.GoStruct
 		wantErr     bool
 		wantPostRIB *RIBHolder
 	}{{
@@ -447,7 +544,8 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
 		},
-		wantOK: true,
+		wantOK:   true,
+		wantOrig: &aft.Afts_Ipv4Entry{Prefix: ygot.String("1.1.1.1/32")},
 		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
 		},
@@ -465,6 +563,10 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 			},
 		},
 		wantOK: true,
+		wantOrig: &aft.Afts_Ipv4Entry{
+			Prefix:   ygot.String("1.1.1.1/32"),
+			Metadata: aft.Binary{0, 1, 2, 3, 4, 5, 6, 7},
+		},
 		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
 		},
@@ -481,7 +583,11 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 				Metadata: &wpb.BytesValue{Value: []byte{2, 3, 4, 5}},
 			},
 		},
-		wantOK:      true,
+		wantOK: true,
+		wantOrig: &aft.Afts_Ipv4Entry{
+			Prefix:   ygot.String("1.1.1.1/32"),
+			Metadata: aft.Binary{1, 2, 3, 4},
+		},
 		wantPostRIB: &RIBHolder{},
 	}, {
 		desc:  "delete ipv4 entry, no such entry",
@@ -508,6 +614,9 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 			NextHopGroup: &aftpb.Afts_NextHopGroup{},
 		},
 		wantOK: true,
+		wantOrig: &aft.Afts_NextHopGroup{
+			Id: ygot.Uint64(42),
+		},
 		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{{
 				group: &nhg{
@@ -528,6 +637,9 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 			Index: 2,
 		},
 		wantOK: true,
+		wantOrig: &aft.Afts_NextHop{
+			Index: ygot.Uint64(2),
+		},
 		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{{
 				nexthop: &nh{id: 1},
@@ -539,29 +651,32 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		inEntry: &aftpb.Afts_NextHopGroupKey{
 			Id: 1,
 		},
-		wantOK: false,
+		wantOK:  false,
+		wantErr: true,
 	}, {
 		desc:  "delete nh entry, no such entry",
 		inRIB: NewRIBHolder("foo"),
 		inEntry: &aftpb.Afts_NextHopKey{
 			Index: 42,
 		},
-		wantOK: false,
+		wantOK:  false,
+		wantErr: true,
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			var (
-				ok  bool
-				err error
+				ok      bool
+				err     error
+				gotOrig ygot.GoStruct
 			)
 			switch v := tt.inEntry.(type) {
 			case *aftpb.Afts_Ipv4EntryKey:
-				ok, err = tt.inRIB.DeleteIPv4(v)
+				ok, gotOrig, err = tt.inRIB.DeleteIPv4(v)
 			case *aftpb.Afts_NextHopGroupKey:
-				ok, err = tt.inRIB.DeleteNextHopGroup(v)
+				ok, gotOrig, err = tt.inRIB.DeleteNextHopGroup(v)
 			case *aftpb.Afts_NextHopKey:
-				ok, err = tt.inRIB.DeleteNextHop(v)
+				ok, gotOrig, err = tt.inRIB.DeleteNextHop(v)
 			default:
 				t.Fatalf("unknown input entry type, %T", err)
 			}
@@ -570,6 +685,11 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 			}
 			if ok != tt.wantOK {
 				t.Fatalf("did not get expected error status, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+			if ok {
+				if diff := cmp.Diff(gotOrig, tt.wantOrig); diff != "" {
+					t.Fatalf("did not get expected original entry, diff(-got,+want):\n%s", diff)
+				}
 			}
 		})
 	}
@@ -833,7 +953,7 @@ func TestHooks(t *testing.T) {
 						if _, _, err := r.niRIB[r.defaultName].AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix:    o.IP4,
 							Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
-						}); err != nil {
+						}, false); err != nil {
 							t.Fatalf("cannot pre-add IPv4 entry %s: %v", o.IP4, err)
 						}
 					}
@@ -843,7 +963,7 @@ func TestHooks(t *testing.T) {
 						if _, _, err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
-						}); err != nil {
+						}, false); err != nil {
 							t.Fatalf("cannot add NHG entry %d, %v", o.NHG, err)
 						}
 					}
@@ -853,7 +973,7 @@ func TestHooks(t *testing.T) {
 						if _, _, err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},
-						}); err != nil {
+						}, false); err != nil {
 							t.Fatalf("cannot add NH entry %d, %v", o.NH, err)
 						}
 					}
@@ -878,11 +998,11 @@ func TestHooks(t *testing.T) {
 							Ipv4Entry: &aftpb.Afts_Ipv4Entry{
 								NextHopGroup: &wpb.UintValue{Value: 1},
 							},
-						}); err != nil {
+						}, false); err != nil {
 							t.Fatalf("cannot add IPv4 entry %s: %v", o.IP4, err)
 						}
 					case constants.Delete:
-						if _, err := r.niRIB[r.defaultName].DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
+						if _, _, err := r.niRIB[r.defaultName].DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
 							Prefix: o.IP4,
 						}); err != nil {
 							t.Fatalf("cannote delete IPv4 entry %s: %v", o.IP4, err)
@@ -894,7 +1014,7 @@ func TestHooks(t *testing.T) {
 						if _, _, err := r.niRIB[r.defaultName].AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 							Id:           o.NHG,
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
-						}); err != nil {
+						}, false); err != nil {
 							t.Fatalf("cannot add NHG entry %d, %v", o.NHG, err)
 						}
 					}
@@ -904,7 +1024,7 @@ func TestHooks(t *testing.T) {
 						if _, _, err := r.niRIB[r.defaultName].AddNextHop(&aftpb.Afts_NextHopKey{
 							Index:   o.NH,
 							NextHop: &aftpb.Afts_NextHop{},
-						}); err != nil {
+						}, false); err != nil {
 							t.Fatalf("cannot add NH entry %d, %v", o.NH, err)
 						}
 					}
@@ -937,7 +1057,6 @@ func TestHooks(t *testing.T) {
 }
 
 func TestCanResolve(t *testing.T) {
-	defName := "DEFAULT"
 	tests := []struct {
 		desc             string
 		inRIB            *RIB
@@ -1202,7 +1321,6 @@ func sortResultSlice(s []*OpResult) {
 }
 
 func TestRIBAddEntry(t *testing.T) {
-	defName := "default"
 	tests := []struct {
 		desc               string
 		inRIB              *RIB
@@ -1521,7 +1639,7 @@ func TestRIBAddEntry(t *testing.T) {
 		desc: "check function that always returns false",
 		inRIB: func() *RIB {
 			r := New(defName)
-			failEntry := func(_ *aft.RIB) (bool, error) {
+			failEntry := func(_ constants.OpType, _ *aft.RIB) (bool, error) {
 				return false, nil
 			}
 			r.niRIB[defName].checkFn = failEntry
@@ -1544,7 +1662,7 @@ func TestRIBAddEntry(t *testing.T) {
 		desc: "check function that always returns an error",
 		inRIB: func() *RIB {
 			r := New(defName)
-			failEntry := func(_ *aft.RIB) (bool, error) {
+			failEntry := func(_ constants.OpType, _ *aft.RIB) (bool, error) {
 				return false, errors.New("cannot install")
 			}
 			r.niRIB[defName].checkFn = failEntry
@@ -1911,15 +2029,16 @@ func TestRIBAddEntry(t *testing.T) {
 }
 
 func TestDeleteEntry(t *testing.T) {
-	defName := "default"
 	tests := []struct {
-		desc              string
-		inRIB             *RIB
-		inNetworkInstance string
-		inOp              *spb.AFTOperation
-		wantOKs           []*OpResult
-		wantFails         []*OpResult
-		wantErr           bool
+		desc                   string
+		inRIB                  *RIB
+		inNetworkInstance      string
+		inOp                   *spb.AFTOperation
+		wantOKs                []*OpResult
+		wantFails              []*OpResult
+		wantErr                bool
+		wantReferenceCheckPre  func(*RIB) error
+		wantReferenceCheckPost func(*RIB) error
 	}{{
 		desc: "delete nexthop",
 		inRIB: func() *RIB {
@@ -1983,6 +2102,7 @@ func TestDeleteEntry(t *testing.T) {
 					},
 				},
 			},
+			Error: "cannot delete NH Index 42 since it does not exist",
 		}},
 	}, {
 		desc: "delete IPv4",
@@ -2081,10 +2201,350 @@ func TestDeleteEntry(t *testing.T) {
 		inRIB:             New(defName),
 		inNetworkInstance: "fish",
 		wantErr:           true,
+	}, {
+		desc:              "cannot remove NH that is referenced",
+		inRIB:             mustChainRIB(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+				},
+			},
+		},
+		wantFails: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 1,
+					},
+				},
+			},
+		}},
+	}, {
+		desc:              "cannot remove NHG that is referenced",
+		inRIB:             mustChainRIB(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+				},
+			},
+		},
+		wantFails: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 1,
+					},
+				},
+			},
+		}},
+	}, {
+		desc:              "badly formed NHG",
+		inRIB:             mustChainRIB(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{},
+			},
+		},
+		wantFails: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{},
+				},
+			},
+			Error: "invalid NHG ID 0",
+		}},
+	}, {
+		desc:              "NHG that doesn't exist",
+		inRIB:             mustChainRIB(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 512,
+				},
+			},
+		},
+		wantFails: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 512,
+					},
+				},
+			},
+			Error: "cannot delete NHG ID 512 since it does not exist",
+		}},
+	}, {
+		desc:              "reference check after one referring entry removed - default NI",
+		inRIB:             mustTwoEntryRIB(defName),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "2.2.2.2/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "2.2.2.2/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			},
+		}},
+		wantReferenceCheckPre: func(r *RIB) error {
+			niR, ok := r.NetworkInstanceRIB(defName)
+			if !ok {
+				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", defName))
+			}
+
+			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
+			nhChecks := map[uint64]uint64{
+				1: 1,
+				2: 1,
+			}
+			// nhgChecks is keyed by the NHG Index and has a value of the expected reference count.
+			nhgChecks := map[uint64]uint64{
+				1: 2,
+			}
+
+			for nh, wantRef := range nhChecks {
+				if got, want := niR.refCounts.NextHop[nh], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NH %d, got: %d, want: %d", nh, got, want)
+				}
+			}
+			for nhg, wantRef := range nhgChecks {
+				if got, want := niR.refCounts.NextHopGroup[nhg], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NHG %d, got: %d, want: %d", nhg, got, want)
+				}
+			}
+			return nil
+		},
+		wantReferenceCheckPost: func(r *RIB) error {
+			niR, ok := r.NetworkInstanceRIB(defName)
+			if !ok {
+				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", defName))
+			}
+
+			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
+			nhChecks := map[uint64]uint64{
+				1: 1,
+				2: 1,
+			}
+			// nhgChecks is keyed by the NHG Index and has a value of the expected reference count.
+			nhgChecks := map[uint64]uint64{
+				1: 1,
+			}
+
+			for nh, wantRef := range nhChecks {
+				if got, want := niR.refCounts.NextHop[nh], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NH %d, got: %d, want: %d", nh, got, want)
+				}
+			}
+			for nhg, wantRef := range nhgChecks {
+				if got, want := niR.refCounts.NextHopGroup[nhg], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NHG %d, got: %d, want: %d", nhg, got, want)
+				}
+			}
+			return nil
+		},
+	}, {
+		desc:              "reference check after one referring entry removed - NHG+NI in VRF",
+		inRIB:             mustTwoEntryRIB("VRF-42"),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix:    "2.2.2.2/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "2.2.2.2/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			},
+		}},
+		wantReferenceCheckPre: func(r *RIB) error {
+			niR, ok := r.NetworkInstanceRIB("VRF-42")
+			if !ok {
+				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", "VRF-42"))
+			}
+
+			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
+			nhChecks := map[uint64]uint64{
+				1: 1,
+				2: 1,
+			}
+			// nhgChecks is keyed by the NHG Index and has a value of the expected reference count.
+			nhgChecks := map[uint64]uint64{
+				1: 2,
+			}
+
+			for nh, wantRef := range nhChecks {
+				if got, want := niR.refCounts.NextHop[nh], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NH %d, got: %d, want: %d", nh, got, want)
+				}
+			}
+			for nhg, wantRef := range nhgChecks {
+				if got, want := niR.refCounts.NextHopGroup[nhg], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NHG %d, got: %d, want: %d", nhg, got, want)
+				}
+			}
+			return nil
+		},
+		wantReferenceCheckPost: func(r *RIB) error {
+			niR, ok := r.NetworkInstanceRIB("VRF-42")
+			if !ok {
+				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", "VRF-42"))
+			}
+
+			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
+			nhChecks := map[uint64]uint64{
+				1: 1,
+				2: 1,
+			}
+			// nhgChecks is keyed by the NHG Index and has a value of the expected reference count.
+			nhgChecks := map[uint64]uint64{
+				1: 1,
+			}
+
+			for nh, wantRef := range nhChecks {
+				if got, want := niR.refCounts.NextHop[nh], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NH %d, got: %d, want: %d", nh, got, want)
+				}
+			}
+			for nhg, wantRef := range nhgChecks {
+				if got, want := niR.refCounts.NextHopGroup[nhg], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NHG %d, got: %d, want: %d", nhg, got, want)
+				}
+			}
+			return nil
+		},
+	}, {
+		desc:              "reference check after one referring NHG removed from NHs",
+		inRIB:             mustSharedNHRIB(defName),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id:           2,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id:           2,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			},
+		}},
+		wantReferenceCheckPre: func(r *RIB) error {
+			niR, ok := r.NetworkInstanceRIB(defName)
+			if !ok {
+				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", defName))
+			}
+
+			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
+			nhChecks := map[uint64]uint64{
+				1: 2,
+				2: 2,
+			}
+			// nhgChecks is keyed by the NHG Index and has a value of the expected reference count.
+			nhgChecks := map[uint64]uint64{
+				1: 1, // NHG 1 is referenced by 1.1.1.1/32
+				2: 0, // NHG 2 is unreferencded so that it can be removed.
+			}
+
+			for nh, wantRef := range nhChecks {
+				if got, want := niR.refCounts.NextHop[nh], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NH %d, got: %d, want: %d", nh, got, want)
+				}
+			}
+			for nhg, wantRef := range nhgChecks {
+				if got, want := niR.refCounts.NextHopGroup[nhg], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NHG %d, got: %d, want: %d", nhg, got, want)
+				}
+			}
+			return nil
+		},
+		wantReferenceCheckPost: func(r *RIB) error {
+			niR, ok := r.NetworkInstanceRIB(defName)
+			if !ok {
+				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", defName))
+			}
+
+			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
+			nhChecks := map[uint64]uint64{
+				1: 1,
+				2: 1,
+			}
+			// nhgChecks is keyed by the NHG Index and has a value of the expected reference count.
+			nhgChecks := map[uint64]uint64{
+				1: 1,
+			}
+
+			for nh, wantRef := range nhChecks {
+				if got, want := niR.refCounts.NextHop[nh], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NH %d, got: %d, want: %d", nh, got, want)
+				}
+			}
+			for nhg, wantRef := range nhgChecks {
+				if got, want := niR.refCounts.NextHopGroup[nhg], wantRef; got != want {
+					return fmt.Errorf("did not get expected references for NHG %d, got: %d, want: %d", nhg, got, want)
+				}
+			}
+			return nil
+		},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
+			if tt.wantReferenceCheckPre != nil {
+				if err := tt.wantReferenceCheckPre(tt.inRIB); err != nil {
+					t.Fatalf("invalid reference checks before operation, %v", err)
+				}
+			}
+
 			gotOKs, gotFails, err := tt.inRIB.DeleteEntry(tt.inNetworkInstance, tt.inOp)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
@@ -2095,6 +2555,12 @@ func TestDeleteEntry(t *testing.T) {
 			}
 			if diff := cmp.Diff(gotFails, tt.wantFails, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
 				t.Fatalf("did not get expected failed IDs, diff(-got,+want):\n%s", diff)
+			}
+
+			if tt.wantReferenceCheckPost != nil {
+				if err := tt.wantReferenceCheckPost(tt.inRIB); err != nil {
+					t.Fatalf("invalid reference checks after operation, %v", err)
+				}
 			}
 		})
 	}
@@ -2387,4 +2853,343 @@ func TestAddNetworkInstance(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCanDelete(t *testing.T) {
+	tests := []struct {
+		desc           string
+		inRIB          *RIB
+		inNetInst      string
+		inDelCandidate *aft.RIB
+		want           bool
+		wantErr        bool
+	}{{
+		desc: "can delete IPv4 - always OK",
+		inRIB: func() *RIB {
+			r := New(defName)
+
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot build testcase, got err: %v", err))
+			}
+
+			return r
+		}(),
+		inNetInst: defName,
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			return r
+		}(),
+		want: true,
+	}, {
+		desc:      "cannot delete referenced NHG",
+		inRIB:     mustChainRIB(),
+		inNetInst: defName,
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		want: false,
+	}, {
+		desc:      "cannot delete referenced NH",
+		inRIB:     mustChainRIB(),
+		inNetInst: defName,
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateNextHop(1)
+			return r
+		}(),
+		want: false,
+	}, {
+		desc:      "nil candidate",
+		inRIB:     New(defName),
+		inNetInst: defName,
+		wantErr:   true,
+	}, {
+		desc:  "empty candidate",
+		inRIB: New(defName),
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts()
+			return r
+		}(),
+		inNetInst: defName,
+		wantErr:   true,
+	}, {
+		desc:  "bad NI name",
+		inRIB: New(defName),
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.2.3.4/32")
+			return r
+		}(),
+		inNetInst: "pollock",
+		wantErr:   true,
+	}, {
+		desc: "can delete IPv4 - rewritten NI name",
+		inRIB: func() *RIB {
+			r := New(defName)
+
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot build testcase, got err: %v", err))
+			}
+
+			return r
+		}(),
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			return r
+		}(),
+		want: true,
+	}, {
+		desc:  "badly formed NHG",
+		inRIB: New(defName),
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateNextHopGroup(0)
+			return r
+		}(),
+		wantErr: true,
+	}, {
+		desc:  "badly formed NH",
+		inRIB: New(defName),
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateNextHop(0)
+			return r
+		}(),
+		wantErr: true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := tt.inRIB.canDelete(tt.inNetInst, tt.inDelCandidate)
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+
+			if got != tt.want {
+				t.Fatalf("did not get expected canDelete, got: %v, want: %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// defName is the default network instance name used in tests.
+const (
+	defName string = "DEFAULT"
+)
+
+// mustChainRIB returns a RIB that has an IPv4 -> NHG -> NH, and panics if it cannot.
+func mustChainRIB() *RIB {
+	r := New(defName)
+
+	if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+		Id: 1,
+		Entry: &spb.AFTOperation_Ipv4{
+			Ipv4: &aftpb.Afts_Ipv4EntryKey{
+				Prefix: "1.1.1.1/32",
+				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+					NextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			},
+		},
+	}); err != nil {
+		panic(fmt.Sprintf("cannot build testcase, can't add ipv4, got err: %v", err))
+	}
+
+	if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+		Id: 2,
+		Entry: &spb.AFTOperation_NextHopGroup{
+			NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+					}, {
+						Index:   2,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+					}},
+				},
+			},
+		},
+	}); err != nil {
+		panic(fmt.Sprintf("cannot build testcase, can't add nhg, got err: %v", err))
+	}
+
+	for _, idx := range []uint64{1, 2} {
+		if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+			Id: idx + 2,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   idx,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}); err != nil {
+			panic(fmt.Sprintf("cannot build testcase, can't add nh, got err: %v", err))
+		}
+	}
+	return r
+}
+
+// mustTwoEntryRIB returns a RIB that has two IPv4 entries referring to the same -> NHG -> NH, and panics if it cannot.
+// The NHG and NHs are created in the network instance specified by nhNI.
+func mustTwoEntryRIB(nhNI string) *RIB {
+	r := New(defName)
+
+	if nhNI != defName {
+		if err := r.AddNetworkInstance(nhNI); err != nil {
+			panic(fmt.Sprintf("cannot create network instance %s, %v", nhNI, err))
+		}
+	}
+
+	for _, idx := range []uint64{1, 2} {
+		if _, _, err := r.AddEntry(nhNI, &spb.AFTOperation{
+			Id: idx + 2,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   idx,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}); err != nil {
+			panic(fmt.Sprintf("cannot build testcase, can't add nh, got err: %v", err))
+		}
+	}
+
+	if _, _, err := r.AddEntry(nhNI, &spb.AFTOperation{
+		Id: 2,
+		Entry: &spb.AFTOperation_NextHopGroup{
+			NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+					}, {
+						Index:   2,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+					}},
+				},
+			},
+		},
+	}); err != nil {
+		panic(fmt.Sprintf("cannot build testcase, can't add nhg, got err: %v", err))
+	}
+
+	for i, pfx := range []string{"1.1.1.1/32", "2.2.2.2/32"} {
+		if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+			Id: 20 + uint64(i),
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: pfx,
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup:                &wpb.UintValue{Value: uint64(i)},
+						NextHopGroupNetworkInstance: &wpb.StringValue{Value: nhNI},
+					},
+				},
+			},
+		}); err != nil {
+			panic(fmt.Sprintf("cannot build testcase, can't add ipv4, got err: %v", err))
+		}
+	}
+
+	if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+		Id: 1,
+		Entry: &spb.AFTOperation_Ipv4{
+			Ipv4: &aftpb.Afts_Ipv4EntryKey{
+				Prefix: "1.1.1.1/32",
+				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+					NextHopGroup:                &wpb.UintValue{Value: 1},
+					NextHopGroupNetworkInstance: &wpb.StringValue{Value: nhNI},
+				},
+			},
+		},
+	}); err != nil {
+		panic(fmt.Sprintf("cannot build testcase, can't add ipv4, got err: %v", err))
+	}
+
+	return r
+}
+
+// mustSharedNHRIB returns a RIB that has one IPv4 entry that points to a NHG that shares
+// two NHs with another NHG (unreferenced).
+func mustSharedNHRIB(nhNI string) *RIB {
+	r := New(defName)
+
+	for _, idx := range []uint64{1, 2} {
+		if _, _, err := r.AddEntry(nhNI, &spb.AFTOperation{
+			Id: idx + 2,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   idx,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}); err != nil {
+			panic(fmt.Sprintf("cannot build testcase, can't add nh, got err: %v", err))
+		}
+	}
+
+	for _, id := range []uint64{1, 2} {
+		if _, _, err := r.AddEntry(nhNI, &spb.AFTOperation{
+			Id: 10 + id,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: id,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index:   1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+						}, {
+							Index:   2,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+						}},
+					},
+				},
+			},
+		}); err != nil {
+			panic(fmt.Sprintf("cannot build testcase, can't add nhg, got err: %v", err))
+		}
+	}
+
+	for i, pfx := range []string{"1.1.1.1/32"} {
+		if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+			Id: 20 + uint64(i),
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: pfx,
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup:                &wpb.UintValue{Value: uint64(i) + 1},
+						NextHopGroupNetworkInstance: &wpb.StringValue{Value: nhNI},
+					},
+				},
+			},
+		}); err != nil {
+			panic(fmt.Sprintf("cannot build testcase, can't add ipv4, got err: %v", err))
+		}
+	}
+
+	return r
 }

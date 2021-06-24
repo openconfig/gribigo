@@ -275,6 +275,8 @@ func TestSTREAM(t *testing.T) {
 
 	clientCtx, cancel := context.WithCancel(context.Background())
 	var sendErr, recvErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func(ctx context.Context, cfn func()) {
 		defer cfn()
 		conn, err := grpc.Dial(addr, grpc.WithInsecure())
@@ -321,6 +323,7 @@ func TestSTREAM(t *testing.T) {
 
 			j++
 			if j == len(planets)+4 { // we also get original update, meta/sync and meta/connected + sync_response
+				wg.Done()
 				return
 			}
 		}
@@ -364,9 +367,7 @@ func TestSTREAM(t *testing.T) {
 	seenVal := map[string]bool{}
 	meta := 0
 
-	time.Sleep(100 * time.Millisecond)
-	gotMu.RLock()
-	defer gotMu.RUnlock()
+	wg.Wait()
 	for _, s := range got {
 		if s.T == SYNC {
 			if len(seenVal) < 1 || meta != 2 { // seen hello, meta/sync, meta/connected

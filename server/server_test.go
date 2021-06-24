@@ -1145,6 +1145,205 @@ func TestModifyEntry(t *testing.T) {
 		inRIB:       &rib.RIB{},
 		inNI:        "fish",
 		wantErrCode: codes.Internal,
+	}, {
+		desc:  "ADD NHG",
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
+		inNI:  defName,
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Op:         spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id:           2,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{},
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_RIB_PROGRAMMED,
+			}},
+		},
+	}, {
+		desc: "DELETE NH",
+		inRIB: func() *rib.RIB {
+			r := rib.New(defName)
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 3,
+				Op: spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   2,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot build test case, got err: %v", err))
+			}
+			return r
+		}(),
+		inNI: defName,
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Op:         spb.AFTOperation_DELETE,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 2,
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_RIB_PROGRAMMED,
+			}},
+		},
+	}, {
+		desc:  "DELETE Missing NHG",
+		inRIB: rib.New(defName),
+		inNI:  defName,
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Op:         spb.AFTOperation_DELETE,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 2,
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_FAILED,
+			}},
+		},
+	}, {
+		desc: "DELETE NH failed due to refcount",
+		inRIB: func() *rib.RIB {
+			r := rib.New(defName)
+			if _, fails, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 3,
+				Op: spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   2,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			}); err != nil || len(fails) != 0 {
+				panic(fmt.Sprintf("cannot build test case, can't add NH, got err: %v, fails: %v", err, fails[0]))
+			}
+
+			if _, fails, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 3,
+				Op: spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 2,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index:   2,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+							}},
+						},
+					},
+				},
+			}); err != nil || len(fails) != 0 {
+				panic(fmt.Sprintf("cannot build test case, can't add NHG, got err: %v, fails: %v", err, fails[0]))
+
+			}
+
+			return r
+		}(),
+		inNI: defName,
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Op:         spb.AFTOperation_DELETE,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 2,
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_FAILED,
+			}},
+		},
+	}, {
+		desc: "REPLACE NH",
+		inRIB: func() *rib.RIB {
+			r := rib.New(defName)
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 3,
+				Op: spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   2,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("cannot build test case, got err: %v", err))
+			}
+			return r
+		}(),
+		inNI: defName,
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Op:         spb.AFTOperation_REPLACE,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 2,
+					NextHop: &aftpb.Afts_NextHop{
+						IpAddress: &wpb.StringValue{Value: "NOT VALID"},
+					},
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_FAILED,
+			}},
+		},
 	}}
 
 	for _, tt := range tests {

@@ -721,7 +721,10 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 	)
 
 	switch op.Op {
-	case spb.AFTOperation_ADD:
+	case spb.AFTOperation_ADD, spb.AFTOperation_REPLACE:
+		// AddEntry handles replaces, since an ADD can be an explicit replace. It checks
+		// whether the entry was an explicit replace from the op, and if so errors if the
+		// entry does not already exist.
 		oks, faileds, err = r.AddEntry(ni, op)
 	case spb.AFTOperation_DELETE:
 		oks, faileds, err = r.DeleteEntry(ni, op)

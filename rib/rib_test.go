@@ -2893,7 +2893,7 @@ func TestResolvedEntryHook(t *testing.T) {
 			op.Op = spb.AFTOperation_ADD
 
 			if _, _, err := r.AddEntry(defName, op); err != nil {
-				panic(fmt.Sprintf("cannot add entry %s, %v", prototext.Format(op), err))
+				t.Fatalf("cannot add entry %s, %v", prototext.Format(op), err)
 			}
 		}
 

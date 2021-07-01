@@ -22,9 +22,11 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"sync"
 
 	"github.com/kentik/patricia"
 	"github.com/kentik/patricia/string_tree"
+	"github.com/openconfig/gribigo/afthelper"
 	oc "github.com/openconfig/gribigo/ocrt"
 	"github.com/openconfig/ygot/ytypes"
 )
@@ -32,6 +34,8 @@ import (
 // SysRIB is a RIB data structure that can be used to resolve routing entries to their egress interfaces.
 // Currently it supports only IPv4 entries.
 type SysRIB struct {
+	// mu protects the map of network instance RIBs.
+	mu sync.RWMutex
 	// NI is the list of network instances (aka VRFs)
 	NI        map[string]*NIRIB
 	defaultNI string
@@ -49,6 +53,9 @@ type Route struct {
 	Prefix string `json:"prefix"`
 	// Connected indicates that the route is directly connected.
 	Connected *Interface `json:"connected"`
+	// NextHops is the set of IP nexthops that the route uses if
+	// it is not a connected route.
+	NextHops []*afthelper.NextHopSummary `json:"nexthops"`
 }
 
 // toString marshals the route to a string for storage in the tree.
@@ -87,9 +94,11 @@ func NewSysRIB(cfg *oc.Device) (*SysRIB, error) {
 	return sr, nil
 }
 
-// AddRoute adds a route, rm to the network instance, ni, in the sysRIB.
+// AddRoute adds a route, r, to the network instance, ni, in the sysRIB.
 // It returns an error if it cannot be added.
 func (sr *SysRIB) AddRoute(ni string, r *Route) error {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
 	if _, ok := sr.NI[ni]; !ok {
 		return fmt.Errorf("cannot find network instance %s", ni)
 	}
@@ -129,6 +138,24 @@ type Interface struct {
 	Subinterface uint32 `json:"subinterface"`
 }
 
+// entryForCIDR returns the RIB entry for the IP address specified by ip within
+// the specified network instance. It returns a bool indicating whether the
+// entry was found, a slice of strings which contains its tags, and an optional
+// error.
+func (r *SysRIB) entryForCIDR(ni string, ip *net.IPNet) (bool, []string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	rib, ok := r.NI[ni]
+	if !ok {
+		return false, nil, fmt.Errorf("cannot find a RIB for network instance %s", ni)
+	}
+	addr, _, err := patricia.ParseFromIPAddr(ip)
+	if err != nil {
+		return false, nil, fmt.Errorf("cannot parse IP to lookup, %s: %v", ip, err)
+	}
+	return rib.IPv4.FindDeepestTags(*addr)
+}
+
 // EgressInterface looks up the IP destination address ip in the routes for network instance
 // named inputNI. It returns a slice of the interfaces that the packet would be forwarded
 // via.
@@ -136,7 +163,6 @@ type Interface struct {
 // TODO(robjs): support determining the NI based solely on the input interface.
 // TODO(robjs): support a better description of a packet using the formats that ONDATRA
 // 				uses.
-// TODO(robjs): support non-connected routes.
 // TODO(robjs): support WCMP
 //
 // This is really a POC that we can emulate our FIB for basic IPv4 routes.
@@ -145,15 +171,8 @@ func (r *SysRIB) EgressInterface(inputNI string, ip *net.IPNet) ([]*Interface, e
 	if inputNI == "" {
 		inputNI = r.defaultNI
 	}
-	rib, ok := r.NI[inputNI]
-	if !ok {
-		return nil, fmt.Errorf("cannot find a RIB for network instance %s", inputNI)
-	}
-	addr, _, err := patricia.ParseFromIPAddr(ip)
-	if err != nil {
-		return nil, fmt.Errorf("cannot parse IP to lookup, %s: %v", ip, err)
-	}
-	found, tags, err := rib.IPv4.FindDeepestTags(*addr)
+
+	found, tags, err := r.entryForCIDR(inputNI, ip)
 	if err != nil {
 		return nil, fmt.Errorf("cannot lookup IP %s", ip)
 	}
@@ -169,10 +188,25 @@ func (r *SysRIB) EgressInterface(inputNI string, ip *net.IPNet) ([]*Interface, e
 			return nil, fmt.Errorf("invalid tag for prefix %s with tag data %s", ip, tag)
 		}
 
-		egressIfs = append(egressIfs, cr.Connected)
+		if cr.Connected != nil {
+			egressIfs = append(egressIfs, cr.Connected)
+			continue
+		}
+
+		// This isn't a connected route, check whether we can resolve the next-hops.
+		for _, nh := range cr.NextHops {
+			_, nhop, err := net.ParseCIDR(fmt.Sprintf("%s/32", nh.Address))
+			if err != nil {
+				return nil, fmt.Errorf("can't parse %s/32 into CIDR, %v", nh.Address, err)
+			}
+			recursiveNHIfs, err := r.EgressInterface(nh.NetworkInstance, nhop)
+			if err != nil {
+				return nil, fmt.Errorf("for nexthop %s, can't resolve: %v", nh.Address, err)
+			}
+			egressIfs = append(egressIfs, recursiveNHIfs...)
+		}
 	}
 	return egressIfs, nil
-
 }
 
 // niConnected is a description of a set of connected routes within a network instance.

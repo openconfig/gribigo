@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -25,9 +26,11 @@ import (
 	"github.com/openconfig/gnmi/errdiff"
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/gribigo/aft"
+	"github.com/openconfig/gribigo/afthelper"
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/ygot/testutil"
 	"github.com/openconfig/ygot/ygot"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -981,11 +984,11 @@ func TestHooks(t *testing.T) {
 			}
 
 			if tt.storeFn {
-				r.SetHook(store)
+				r.SetPostChangeHook(store)
 			}
 
 			if tt.gnmiFn {
-				r.SetHook(gnmiNoti)
+				r.SetPostChangeHook(gnmiNoti)
 			}
 
 			for _, o := range tt.inOps {
@@ -2850,6 +2853,156 @@ func TestAddNetworkInstance(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			if err := tt.inRIB.AddNetworkInstance(tt.inName); (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolvedEntryHook(t *testing.T) {
+	defName := "DEFAULT"
+
+	baseRIB := func() *RIB {
+		r := New(defName)
+		ops := []*spb.AFTOperation{{
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						IpAddress: &wpb.StringValue{Value: "1.1.1.1"},
+					},
+				},
+			},
+		}, {
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 32},
+							},
+						}},
+					},
+				},
+			},
+		}}
+
+		for i, op := range ops {
+			op.Id = uint64(i)
+			op.Op = spb.AFTOperation_ADD
+
+			if _, _, err := r.AddEntry(defName, op); err != nil {
+				t.Fatalf("cannot add entry %s, %v", prototext.Format(op), err)
+			}
+		}
+
+		return r
+	}
+
+	gotCh := make(chan interface{})
+	tests := []struct {
+		desc        string
+		inRIB       *RIB
+		inOperation *spb.AFTOperation
+		inHook      ResolvedEntryFn
+		checkFn     func() error
+	}{{
+		desc:  "simple check that the hook was called",
+		inRIB: baseRIB(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "10.0.0.0/8",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inHook: func(_ map[string]*aft.RIB, _ constants.OpType, netinst, prefix string) {
+			gotCh <- fmt.Sprintf("%s->%s", netinst, prefix)
+		},
+		checkFn: func() error {
+			got := <-gotCh
+			gotS, ok := got.(string)
+			if !ok {
+				return fmt.Errorf("got wrong type of result, got: %T, want: string", got)
+			}
+			if got, want := gotS, fmt.Sprintf("%s->10.0.0.0/8", defName); got != want {
+				return fmt.Errorf("did not get expected result, got: %v, want: %v", got, want)
+			}
+			return nil
+		},
+	}, {
+		desc:  "aft helper",
+		inRIB: baseRIB(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "10.0.0.0/8",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inHook: func(ribs map[string]*aft.RIB, op constants.OpType, netinst, prefix string) {
+			summ, err := afthelper.NextHopAddrsForPrefix(ribs, netinst, prefix)
+			if err != nil {
+				gotCh <- err
+			}
+			gotCh <- summ
+		},
+		checkFn: func() error {
+			got := <-gotCh
+			switch t := got.(type) {
+			case error:
+				return fmt.Errorf("got error, %v", t)
+			case map[string]*afthelper.NextHopSummary:
+				want := map[string]*afthelper.NextHopSummary{
+					"1.1.1.1": {
+						Weight:          32,
+						Address:         "1.1.1.1",
+						NetworkInstance: "DEFAULT",
+					},
+				}
+				if diff := cmp.Diff(got, want); diff != "" {
+					return fmt.Errorf("got diff, %s", diff)
+				}
+			}
+			return nil
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+
+			tt.inRIB.SetResolvedEntryHook(tt.inHook)
+
+			var (
+				wg       sync.WaitGroup
+				checkErr error
+			)
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := tt.checkFn(); err != nil {
+					checkErr = err
+				}
+			}()
+
+			if _, fails, err := tt.inRIB.AddEntry(defName, tt.inOperation); err != nil || len(fails) != 0 {
+				t.Fatalf("did not successfully add entry, error: %v, fails: %v", err, fails)
+			}
+			wg.Wait()
+			if checkErr != nil {
+				t.Fatalf("%v", checkErr)
 			}
 		})
 	}

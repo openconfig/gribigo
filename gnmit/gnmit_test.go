@@ -370,7 +370,7 @@ func TestSTREAM(t *testing.T) {
 	wg.Wait()
 	for _, s := range got {
 		if s.T == SYNC {
-			if len(seenVal) < 1 || meta != 2 { // seen hello, meta/sync, meta/connected
+			if len(seenVal) < 1 || meta < 1 { // seen hello, may see meta/sync, meta/connected
 				t.Fatalf("did not get expected set of updates from client before sync, got: %d %s, want: 3 values, sync (updates %v, meta = %d)", len(got), got, seenVal, meta)
 			}
 		}

@@ -25,11 +25,11 @@ import (
 // NextHopSummary provides a summary of an next-hop for a particular entry.
 type NextHopSummary struct {
 	// Weight is the share of traffic that the next-hop gets.
-	Weight uint64
+	Weight uint64 `json:"weight"`
 	// Address is the IP address of the next-hop.
-	Address string
+	Address string `json:"address"`
 	// NetworkInstance is the network instance within which the address was resolved.
-	NetworkInstance string
+	NetworkInstance string `json:"network-instance"`
 }
 
 // NextHopAddrsForPrefix unrolls the prefix specified within the network-instance netInst from the

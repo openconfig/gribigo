@@ -131,25 +131,51 @@ type ServerOpt interface {
 	isServerOpt()
 }
 
-// WithRIBHook specifies that the given function that is of type rib.RIBHook function
+// WithPostChangeRIBHook specifies that the given function that is of type rib.RIBHook function
 // should be executed after each change in the RIB.
-func WithRIBHook(fn rib.RIBHookFn) *ribHook {
-	return &ribHook{fn: fn}
+func WithPostChangeRIBHook(fn rib.RIBHookFn) *postChangeRibHook {
+	return &postChangeRibHook{fn: fn}
 }
 
 // ribHook is the internal implementation of the WithRIBHook option.
-type ribHook struct {
+type postChangeRibHook struct {
 	fn rib.RIBHookFn
 }
 
-// isServerOpt implemenets the ServerOpt interface.
-func (*ribHook) isServerOpt() {}
+// isServerOpt implements the ServerOpt interface.
+func (*postChangeRibHook) isServerOpt() {}
 
-// hasRIBHook extracts the ribHook option from the supplied ServerOpt, returning nil
+// hasPostChangeRIBHook extracts the ribHook option from the supplied ServerOpt, returning nil
 // if one is not found. It will return only the first argument if multiple are specified.
-func hasRIBHook(opt []ServerOpt) *ribHook {
+func hasPostChangeRIBHook(opt []ServerOpt) *postChangeRibHook {
 	for _, o := range opt {
-		if v, ok := o.(*ribHook); ok {
+		if v, ok := o.(*postChangeRibHook); ok {
+			return v
+		}
+	}
+	return nil
+}
+
+// WithResolvedEntryHook is a Server option that allows a function to be run for
+// each entry that can be fully resolved within the RIB (e.g., IPv4Entry).
+func WithRIBResolvedEntryHook(fn rib.ResolvedEntryFn) *resolvedEntryHook {
+	return &resolvedEntryHook{fn: fn}
+}
+
+// resolvedEntryHook is the internal implementation of the WithRIBResolvedEntryHook
+// option.
+type resolvedEntryHook struct {
+	fn rib.ResolvedEntryFn
+}
+
+// isServerOpt implements the ServerOpt interface.
+func (r *resolvedEntryHook) isServerOpt() {}
+
+// hasResolvedEntryHook returns the resolvedEntryHook from the specified options
+// if one exists. It will return only the first argument if multiple are specified.
+func hasResolvedEntryHook(opt []ServerOpt) *resolvedEntryHook {
+	for _, o := range opt {
+		if v, ok := o.(*resolvedEntryHook); ok {
 			return v
 		}
 	}
@@ -192,8 +218,12 @@ func New(opt ...ServerOpt) *Server {
 		masterRIB: rib.New(DefaultNetworkInstanceName, ribOpt...),
 	}
 
-	if v := hasRIBHook(opt); v != nil {
+	if v := hasPostChangeRIBHook(opt); v != nil {
 		s.masterRIB.SetPostChangeHook(v.fn)
+	}
+
+	if v := hasResolvedEntryHook(opt); v != nil {
+		s.masterRIB.SetResolvedEntryHook(v.fn)
 	}
 
 	return s

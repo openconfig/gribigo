@@ -205,7 +205,7 @@ func addIPv4Internal(addr string, t testing.TB, wantACK fluent.ProgrammingResult
 	c := fluent.NewClient()
 	ops := []func(){
 		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
 		},
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))

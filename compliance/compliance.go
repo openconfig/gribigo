@@ -456,7 +456,6 @@ func AddIPv4ToMultipleNHsSingleRequest(addr string, t testing.TB) {
 	}
 
 	validateBaseTopologyEntries(doOps(c, addr, t, ops, fluent.InstalledInFIB, false), t)
-
 }
 
 // AddIPv4ToMultipleNHsMultipleRequests creates an IPv4 entry which references a NHG containing
@@ -468,5 +467,4 @@ func AddIPv4ToMultipleNHsMultipleRequests(addr string, t testing.TB) {
 		func() { baseTopologyEntries(c, t) },
 	}
 	validateBaseTopologyEntries(doOps(c, addr, t, ops, fluent.InstalledInFIB, false), t)
-
 }

@@ -187,9 +187,12 @@ func (g *GRIBIClient) Start(ctx context.Context, t testing.TB) {
 	g.ctx = ctx
 }
 
+// Stop specifies that the gRIBI client should stop sending operations,
+// and subsequently disconnect from the server.
 func (g *GRIBIClient) Stop(t testing.TB) {
+	g.c.StopSending()
 	if err := g.c.Close(); err != nil {
-		t.Fatalf("cannot disconnect from client, %v", err)
+		t.Fatalf("cannot disconnect from server, %v", err)
 	}
 }
 
@@ -473,6 +476,12 @@ func (n *nextHopEntry) WithIndex(i uint64) *nextHopEntry {
 // is being created.
 func (n *nextHopEntry) WithNetworkInstance(ni string) *nextHopEntry {
 	n.ni = ni
+	return n
+}
+
+// WithIPAddress specifies the IP address that should be used for the next-hop.
+func (n *nextHopEntry) WithIPAddress(ip string) *nextHopEntry {
+	n.pb.NextHop.IpAddress = &wpb.StringValue{Value: ip}
 	return n
 }
 

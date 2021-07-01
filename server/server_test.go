@@ -846,6 +846,107 @@ func TestDoModify(t *testing.T) {
 				}},
 			},
 		}},
+	}, {
+		desc: "ipv4 to one next-hop group containing two next-hops",
+		inServer: func() *Server {
+			s := New()
+			s.cs["testclient"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+				},
+				lastElecID: &spb.Uint128{High: 42, Low: 42},
+			}
+			s.curElecID = &spb.Uint128{High: 42, Low: 42}
+			s.curMaster = "testclient"
+			return s
+		}(),
+		inCID: "testclient",
+		inOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: "",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}, {
+			Id:              2,
+			NetworkInstance: "",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   2,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}, {
+			Id:              3,
+			NetworkInstance: "",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index:   1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+						}, {
+							Index:   2,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+						}},
+					},
+				},
+			},
+		}, {
+			Id:              4,
+			NetworkInstance: "",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.0.0.0/8",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     1,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+			},
+		}, {
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     2,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+			},
+		}, {
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     3,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+			},
+		}, {
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     4,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+			},
+		}},
 	}}
 
 	type recvMsg struct {
@@ -887,6 +988,10 @@ func TestDoModify(t *testing.T) {
 			}
 			sort.Slice(got, lessFn)
 			sort.Slice(tt.wantMsg, lessFn)
+
+			if len(got) != len(tt.wantMsg) {
+				t.Fatalf("did not get expected number of messages, got: %d, want: %d", len(got), len(tt.wantMsg))
+			}
 
 			for i := 0; i < len(tt.wantMsg); i++ {
 				wantMsg := tt.wantMsg[i]

@@ -600,6 +600,12 @@ func (c *Client) StartSending() {
 	c.qs.sendq = []*spb.ModifyRequest{}
 }
 
+// StopSending toggles the client to stop sending messages to the server, meaning
+// that entries that are enqueued will be stored until StartSending is called.
+func (c *Client) StopSending() {
+	c.qs.sending.Store(false)
+}
+
 // handleModifyRequest performs any required post-processing after having sent a
 // ModifyRequest onto the gRPC channel to the server. Particularly, this ensures
 // that pending transactions are enqueued into the pending queue where they have

@@ -428,6 +428,13 @@ func (i *ipv4Entry) WithNextHopGroup(u uint64) *ipv4Entry {
 	return i
 }
 
+// WithNextHopGroupNetworkInstance specifies the network-instance within which
+// the next-hop-group for the IPv4 entry should be resolved.
+func (i *ipv4Entry) WithNextHopGroupNetworkInstance(n string) *ipv4Entry {
+	i.pb.Ipv4Entry.NextHopGroupNetworkInstance = &wpb.StringValue{Value: n}
+	return i
+}
+
 // opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.

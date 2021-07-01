@@ -531,7 +531,7 @@ func (o *OpResult) String() string {
 	}
 
 	if v := o.OperationID; v != 0 {
-		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Status: %s }", v, o.ProgrammingResult))
+		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, o.Details.Type, o.ProgrammingResult))
 	}
 
 	if v := o.SessionParameters; v != nil {

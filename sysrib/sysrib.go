@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"sync"
 
 	"github.com/kentik/patricia"
 	"github.com/kentik/patricia/string_tree"
@@ -33,6 +34,8 @@ import (
 // SysRIB is a RIB data structure that can be used to resolve routing entries to their egress interfaces.
 // Currently it supports only IPv4 entries.
 type SysRIB struct {
+	// mu protects the map of network instance RIBs.
+	mu sync.RWMutex
 	// NI is the list of network instances (aka VRFs)
 	NI        map[string]*NIRIB
 	defaultNI string
@@ -94,6 +97,8 @@ func NewSysRIB(cfg *oc.Device) (*SysRIB, error) {
 // AddRoute adds a route, r, to the network instance, ni, in the sysRIB.
 // It returns an error if it cannot be added.
 func (sr *SysRIB) AddRoute(ni string, r *Route) error {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
 	if _, ok := sr.NI[ni]; !ok {
 		return fmt.Errorf("cannot find network instance %s", ni)
 	}
@@ -133,6 +138,24 @@ type Interface struct {
 	Subinterface uint32 `json:"subinterface"`
 }
 
+// entryForCIDR returns the RIB entry for the IP address specified by ip within
+// the specified network instance. It returns a bool indicating whether the
+// entry was found, a slice of strings which contains its tags, and an optional
+// error.
+func (r *SysRIB) entryForCIDR(ni string, ip *net.IPNet) (bool, []string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	rib, ok := r.NI[ni]
+	if !ok {
+		return false, nil, fmt.Errorf("cannot find a RIB for network instance %s", ni)
+	}
+	addr, _, err := patricia.ParseFromIPAddr(ip)
+	if err != nil {
+		return false, nil, fmt.Errorf("cannot parse IP to lookup, %s: %v", ip, err)
+	}
+	return rib.IPv4.FindDeepestTags(*addr)
+}
+
 // EgressInterface looks up the IP destination address ip in the routes for network instance
 // named inputNI. It returns a slice of the interfaces that the packet would be forwarded
 // via.
@@ -148,15 +171,8 @@ func (r *SysRIB) EgressInterface(inputNI string, ip *net.IPNet) ([]*Interface, e
 	if inputNI == "" {
 		inputNI = r.defaultNI
 	}
-	rib, ok := r.NI[inputNI]
-	if !ok {
-		return nil, fmt.Errorf("cannot find a RIB for network instance %s", inputNI)
-	}
-	addr, _, err := patricia.ParseFromIPAddr(ip)
-	if err != nil {
-		return nil, fmt.Errorf("cannot parse IP to lookup, %s: %v", ip, err)
-	}
-	found, tags, err := rib.IPv4.FindDeepestTags(*addr)
+
+	found, tags, err := r.entryForCIDR(inputNI, ip)
 	if err != nil {
 		return nil, fmt.Errorf("cannot lookup IP %s", ip)
 	}

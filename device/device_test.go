@@ -24,6 +24,7 @@ import (
 	log "github.com/golang/glog"
 	"github.com/google/go-cmp/cmp"
 	"github.com/openconfig/gribigo/compliance"
+	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/ocrt"
 	"github.com/openconfig/gribigo/sysrib"
 	"github.com/openconfig/gribigo/testcommon"
@@ -85,7 +86,9 @@ func TestDevice(t *testing.T) {
 	case err := <-errCh:
 		t.Fatalf("got unexpected error from device, got: %v", err)
 	case addr := <-devCh:
-		compliance.AddIPv4EntryRIBACK(addr, t)
+		c := fluent.NewClient()
+		c.Connection().WithTarget(addr)
+		compliance.AddIPv4EntryRIBACK(c, t)
 
 		_, cidr, err := net.ParseCIDR("1.1.1.1/32")
 		if err != nil {

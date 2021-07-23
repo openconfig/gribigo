@@ -189,8 +189,21 @@ func (c *Client) Dial(ctx context.Context, addr string, opts ...DialOpt) error {
 	return nil
 }
 
+// UseStub instructs the client to use the gRPC stub implementing the
+// GRIBIClient service.
+func (c *Client) UseStub(stub spb.GRIBIClient) error {
+	if c.c != nil {
+		return errors.New("client already has a stub")
+	}
+	c.c = stub
+	return nil
+}
+
 // Close disconnects the underlying gRPC connection to the gRIBI server.
 func (c *Client) Close() error {
+	if c.conn == nil {
+		return nil
+	}
 	return c.conn.Close()
 }
 

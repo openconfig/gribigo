@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/openconfig/gribigo/device"
+	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/negtest"
 	"github.com/openconfig/gribigo/testcommon"
 )
@@ -40,9 +41,12 @@ func TestCompliance(t *testing.T) {
 				t.Fatalf("cannot start server, %v", err)
 			}
 
+			c := fluent.NewClient()
+			c.Connection().WithTarget(d.GRIBIAddr())
+
 			if tt.FatalMsg != "" {
 				if got := negtest.ExpectFatal(t, func(t testing.TB) {
-					tt.In.Fn(d.GRIBIAddr(), t)
+					tt.In.Fn(c, t)
 				}); !strings.Contains(got, tt.FatalMsg) {
 					t.Fatalf("did not get expected fatal error, got: %s, want: %s", got, tt.FatalMsg)
 				}
@@ -51,14 +55,14 @@ func TestCompliance(t *testing.T) {
 
 			if tt.ErrorMsg != "" {
 				if got := negtest.ExpectError(t, func(t testing.TB) {
-					tt.In.Fn(d.GRIBIAddr(), t)
+					tt.In.Fn(c, t)
 				}); !strings.Contains(got, tt.ErrorMsg) {
 					t.Fatalf("did not get expected error, got: %s, want: %s", got, tt.ErrorMsg)
 				}
 			}
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
-			tt.In.Fn(d.GRIBIAddr(), t)
+			tt.In.Fn(c, t)
 		})
 	}
 }

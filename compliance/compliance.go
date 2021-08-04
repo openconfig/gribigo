@@ -487,15 +487,14 @@ func AddIPv4ToMultipleNHsMultipleRequests(c *fluent.GRIBIClient, t testing.TB) {
 }
 
 // DeleteIPv4Entry deletes an IPv4 entry from the server's RIB.
-func DeleteIPv4Entry(addr string, t testing.TB) {
-	c := fluent.NewClient()
+func DeleteIPv4Entry(c *fluent.GRIBIClient, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
 			c.Modify().DeleteEntry(t, fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName))
 		},
 	}
-	res := doOps(c, addr, t, ops, fluent.InstalledInFIB, false)
+	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
 	validateBaseTopologyEntries(res, t)
 
 	chk.HasResult(t, res,
@@ -510,15 +509,14 @@ func DeleteIPv4Entry(addr string, t testing.TB) {
 
 // DeleteReferencedNHGFailure attempts to delete a NextHopGroup entry that is referenced
 // from the RIB, and expects a failure.
-func DeleteReferencedNHGFailure(addr string, t testing.TB) {
-	c := fluent.NewClient()
+func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
 			c.Modify().DeleteEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName))
 		},
 	}
-	res := doOps(c, addr, t, ops, fluent.InstalledInFIB, false)
+	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
 	validateBaseTopologyEntries(res, t)
 
 	chk.HasResult(t, res,
@@ -532,8 +530,7 @@ func DeleteReferencedNHGFailure(addr string, t testing.TB) {
 
 // DeleteReferencedNHFailure attempts to delete a NH entry that is referened from the RIB
 // and expects a failure.
-func DeleteReferencedNHFailure(addr string, t testing.TB) {
-	c := fluent.NewClient()
+func DeleteReferencedNHFailure(c *fluent.GRIBIClient, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -543,7 +540,7 @@ func DeleteReferencedNHFailure(addr string, t testing.TB) {
 			c.Modify().DeleteEntry(t, fluent.NextHopEntry().WithIndex(2).WithNetworkInstance(server.DefaultNetworkInstanceName))
 		},
 	}
-	res := doOps(c, addr, t, ops, fluent.InstalledInFIB, false)
+	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
 	validateBaseTopologyEntries(res, t)
 
 	for _, i := range []uint64{1, 2} {
@@ -559,8 +556,7 @@ func DeleteReferencedNHFailure(addr string, t testing.TB) {
 
 // DeleteNextHopGroup attempts to delete a NHG entry that is not referenced and expects
 // success.
-func DeleteNextHopGroup(addr string, t testing.TB) {
-	c := fluent.NewClient()
+func DeleteNextHopGroup(c *fluent.GRIBIClient, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -571,7 +567,7 @@ func DeleteNextHopGroup(addr string, t testing.TB) {
 		},
 	}
 
-	res := doOps(c, addr, t, ops, fluent.InstalledInFIB, false)
+	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
 	validateBaseTopologyEntries(res, t)
 
 	chk.HasResult(t, res,
@@ -596,8 +592,7 @@ func DeleteNextHopGroup(addr string, t testing.TB) {
 //
 // TODO(robjs): When traffic and AFT validation is added, ensure that a partial delete
 // scenario keeps traffic routed via the remaining NH.
-func DeleteNextHop(addr string, t testing.TB) {
-	c := fluent.NewClient()
+func DeleteNextHop(c *fluent.GRIBIClient, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -610,7 +605,7 @@ func DeleteNextHop(addr string, t testing.TB) {
 		},
 	}
 
-	res := doOps(c, addr, t, ops, fluent.InstalledInFIB, false)
+	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
 	validateBaseTopologyEntries(res, t)
 
 	for _, i := range []uint64{1, 2} {

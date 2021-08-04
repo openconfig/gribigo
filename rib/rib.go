@@ -51,6 +51,19 @@ var unixTS = time.Now().UnixNano
 //  - a ygot.GoStruct containing the entry that has been changed.
 type RIBHookFn func(constants.OpType, int64, string, ygot.GoStruct)
 
+// ResolvedEntryFn is a function that is called for all entries that can be fully
+// resolved within the RIB. Fully resolved in this case is defined as an input
+// packet match criteria set of next-hops.
+//
+// It takes arguments of:
+//  - the set of RIBs that were stored in the RIB as a map keyed by the name of
+//    a network instance, with a RIB represented as a ygot-generated AFT struct.
+//  - the prefix that was impacted.
+//  - the OpType that the entry was subject to (add/replace/delete).
+//  - a string indicating the network instance that the operation was within
+//  - a string indicating the prefix that was impacted
+type ResolvedEntryFn func(ribs map[string]*aft.RIB, optype constants.OpType, netinst, prefix string)
+
 // RIBHolderCheckFunc is a function that is used as a check to determine whether
 // a RIB entry is eligible for a particular operation. It takes arguments of:
 //   - the operation type that is being performed.
@@ -97,6 +110,11 @@ type RIB struct {
 	// same AddXXX methods can be used along with network instance the operation
 	// referred to. The map is keyed by the operation ID.
 	pendingEntries map[uint64]*pendingEntry
+
+	// resolvedEntryHook is a function that is called for all entries that
+	// can be fully resolved in the RIB. In the current implementation it
+	// is called only for IPv4 entries.
+	resolvedEntryHook ResolvedEntryFn
 }
 
 // RIBHolder is a container for a set of RIBs.
@@ -237,12 +255,20 @@ type pendingEntry struct {
 	op *spb.AFTOperation
 }
 
-// SetHook assigns the supplied hook to all network instance RIBs within
+// SetPostChangeHook assigns the supplied hook to all network instance RIBs within
 // the RIB structure.
-func (r *RIB) SetHook(fn RIBHookFn) {
+func (r *RIB) SetPostChangeHook(fn RIBHookFn) {
 	for _, nir := range r.niRIB {
+		nir.mu.Lock()
 		nir.postChangeHook = fn
+		nir.mu.Unlock()
 	}
+}
+
+// SetResolvedEntryHook asssigns the supplied hook to all network instance RIBs within
+// the RIB structure.
+func (r *RIB) SetResolvedEntryHook(fn ResolvedEntryFn) {
+	r.resolvedEntryHook = fn
 }
 
 // NetworkInstanceRIB returns the RIB for the network instance with name s.
@@ -431,6 +457,14 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 			ID: op.GetId(),
 			Op: op,
 		})
+
+		// call the resolved entry hook if this was an IPv4 prefix.
+		if v4Prefix != "" {
+			if err := r.callResolvedEntryHook(constants.Add, ni, v4Prefix); err != nil {
+				return fmt.Errorf("cannot run resolvedEntyHook, %v", err)
+			}
+		}
+
 		// we may now have made some other pending entry be possible to install,
 		// so try them all out.
 		for _, e := range r.getPending() {
@@ -447,6 +481,40 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 	}
 
 	return nil
+}
+
+// callResolvedEntryHook calls the resolvedEntryHook based on the operation optype on
+// prefix prefix within the network instance netinst occurring. It returns an error
+// if the hook cannot be called. Any error from the hook must be handled externally.
+func (r *RIB) callResolvedEntryHook(optype constants.OpType, netinst, prefix string) error {
+	if r.resolvedEntryHook == nil {
+		return nil
+	}
+
+	ribs, err := r.copyRIBs()
+	if err != nil {
+		return err
+	}
+	go r.resolvedEntryHook(ribs, optype, netinst, prefix)
+	return nil
+}
+
+// copyRIBs returns a map, keyed by network instance name, with the value of the ygot-generated
+// AFT struct, of the set of RIBs stored by the instance r. A DeepCopy of the RIBs is returned,
+// along with an error that indicates whether the entries could be copied.
+func (r *RIB) copyRIBs() (map[string]*aft.RIB, error) {
+	rib := map[string]*aft.RIB{}
+	for name, niR := range r.niRIB {
+		// this is likely expensive on very large RIBs, but with today's implementatiom
+		// it seems acceptable, since we then allow the caller not to have to figure out
+		// any locking since they have their own RIB to work on.
+		dupRIB, err := ygot.DeepCopy(niR.r)
+		if err != nil {
+			return nil, fmt.Errorf("cannot copy RIB for NI %s, %v", name, err)
+		}
+		rib[name] = dupRIB.(*aft.RIB)
+	}
+	return rib, nil
 }
 
 // DeleteEntry removes the entry specified by op from the network instance ni.
@@ -477,6 +545,9 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 	default:
 		return nil, nil, status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
 	}
+
+	// TODO(robjs): after merging chain --> #60, then make sure that the hook
+	// is called for deletes of IPv4 prefixes to clean up.
 
 	switch {
 	case err != nil:

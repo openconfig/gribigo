@@ -53,6 +53,9 @@ type GRIBIClient struct {
 type gRIBIConnection struct {
 	// targetAddr stores the address that is to be dialed by the client.
 	targetAddr string
+	// stub is a gRPC GRIBIClient stub implementation that could be used
+	// alternatively in lieu of targetAddr.
+	stub spb.GRIBIClient
 	// redundMode specifies the redundancy mode that the client is using,
 	// this is set only at initialisation time and cannot be changed during
 	// the lifetime of the session.
@@ -79,6 +82,9 @@ func NewClient() *GRIBIClient {
 // Connection allows any parameters relating to gRIBI connections to be set through
 // the gRIBI fluent API.
 func (g *GRIBIClient) Connection() *gRIBIConnection {
+	if g.connection != nil {
+		return g.connection
+	}
 	c := &gRIBIConnection{parent: g}
 	g.connection = c
 	return c
@@ -89,6 +95,15 @@ func (g *GRIBIClient) Connection() *gRIBIConnection {
 // form of address:port.
 func (g *gRIBIConnection) WithTarget(addr string) *gRIBIConnection {
 	g.targetAddr = addr
+	g.stub = nil
+	return g
+}
+
+// WithStub specifies the gRPC GRIBIClient stub for use with this
+// connection, in lieu of a gRIBI target (server) address.
+func (g *gRIBIConnection) WithStub(stub spb.GRIBIClient) *gRIBIConnection {
+	g.targetAddr = ""
+	g.stub = stub
 	return g
 }
 
@@ -149,8 +164,8 @@ func (g *gRIBIConnection) WithInitialElectionID(low, high uint64) *gRIBIConnecti
 // testing.TB.
 func (g *GRIBIClient) Start(ctx context.Context, t testing.TB) {
 	t.Helper()
-	if g.connection.targetAddr == "" {
-		t.Fatalf("cannot dial without specifying target address")
+	if c := g.connection; c.targetAddr == "" && c.stub == nil {
+		t.Fatalf("cannot dial without specifying target address or stub")
 	}
 
 	opts := []client.Opt{}
@@ -179,9 +194,14 @@ func (g *GRIBIClient) Start(ctx context.Context, t testing.TB) {
 	}
 	g.c = c
 
-	log.V(2).Infof("dialing %s", g.connection.targetAddr)
-	if err := c.Dial(ctx, g.connection.targetAddr); err != nil {
-		t.Fatalf("cannot dial target, %v", err)
+	if g.connection.stub != nil {
+		log.V(2).Infof("using stub %#v", g.connection.stub)
+		c.UseStub(g.connection.stub)
+	} else {
+		log.V(2).Infof("dialing %s", g.connection.targetAddr)
+		if err := c.Dial(ctx, g.connection.targetAddr); err != nil {
+			t.Fatalf("cannot dial target, %v", err)
+		}
 	}
 
 	g.ctx = ctx
@@ -479,9 +499,20 @@ func (n *nextHopEntry) WithNetworkInstance(ni string) *nextHopEntry {
 	return n
 }
 
-// WithIPAddress specifies the IP address that should be used for the next-hop.
-func (n *nextHopEntry) WithIPAddress(ip string) *nextHopEntry {
-	n.pb.NextHop.IpAddress = &wpb.StringValue{Value: ip}
+// WithIPAddress specifies an IP address to be used for the next-hop. The IP
+// address is resolved within the network instance specified by WithNextHopNetworkInstance.
+func (n *nextHopEntry) WithIPAddress(addr string) *nextHopEntry {
+	n.pb.NextHop.IpAddress = &wpb.StringValue{Value: addr}
+	return n
+}
+
+// WithNextHopNetworkInstance specifies the network instance within which the next-hop
+// should be resolved. If it is not specified, the next-hop is resolved in the network
+// instance that the next-hop is installed in. If no other parameters are specified, the
+// lookup uses the input packet within the specified network instance to determine the
+// next-hop.
+func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
+	n.pb.NextHop.NetworkInstance = &wpb.StringValue{Value: ni}
 	return n
 }
 

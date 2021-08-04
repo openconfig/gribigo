@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/openconfig/gribigo/compliance"
+	"github.com/openconfig/gribigo/fluent"
 )
 
 var (
@@ -35,6 +36,8 @@ func TestDemo(t *testing.T) {
 	if *addr == "" {
 		t.Fatalf("must specify an address")
 	}
-	compliance.AddIPv4EntryRIBACK(*addr, t)
+	c := fluent.NewClient()
+	c.Connection().WithTarget(*addr)
+	compliance.AddIPv4EntryRIBACK(c, t)
 	time.Sleep(2 * time.Second)
 }

@@ -142,6 +142,16 @@ var (
 			Fn:        DeleteNextHop,
 			ShortName: "Delete NH entry successfully",
 		},
+	}, {
+		In: Test{
+			Fn:        AddIPv4Metadata,
+			ShortName: "Add Metadata for IPv4 entry",
+		},
+	}, {
+		In: Test{
+			Fn:        AddIPv4EntryDifferentNINHG,
+			ShortName: "Add IPv4 Entry that references a NHG in a different network instance",
+		},
 	}}
 )
 
@@ -323,6 +333,93 @@ func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB) {
 	)
 
 	// TODO(robjs): add gNMI subscription using generated telemetry library.
+}
+
+// AddIPv4Metadata adds an IPv4 Entry (and its dependencies) with metadata alongside the
+// entry.
+func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB) {
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.IPv4Entry().
+				WithPrefix("1.1.1.1/32").
+				WithNetworkInstance(server.DefaultNetworkInstanceName).
+				WithNextHopGroup(1).
+				WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
+			)
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithIPAddress("2.2.2.2"))
+		},
+	}
+
+	res := doOps(c, t, ops, fluent.InstalledInRIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("1.1.1.1/32").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// AddIPv4EntryDifferentNINHG adds an IPv4 entry that references a next-hop-group within a
+// different network instance, and validates that the entry is successfully installed.
+func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, t testing.TB) {
+	// TODO(robjs): Server needs to be initialised with >1 VRF.
+	t.Skip()
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.IPv4Entry().
+				WithPrefix("1.1.1.1/32").
+				WithNetworkInstance("NON-DEFAULT").
+				WithNextHopGroup(1).
+				WithNextHopGroupNetworkInstance(server.DefaultNetworkInstanceName))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithIPAddress("2.2.2.2"))
+		},
+	}
+
+	res := doOps(c, t, ops, fluent.InstalledInRIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			WithOperationType(constants.Add).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			WithOperationType(constants.Add).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("1.1.1.1/32").
+			WithProgrammingResult(fluent.InstalledInRIB).
+			WithOperationType(constants.Add).
+			AsResult(),
+		chk.IgnoreOperationID())
 }
 
 // doOps performs the series of operations in ops using the context

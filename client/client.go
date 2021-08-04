@@ -544,7 +544,19 @@ func (o *OpResult) String() string {
 	}
 
 	if v := o.OperationID; v != 0 {
-		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, o.Details.Type, o.ProgrammingResult))
+    var key string
+    switch {
+    case o.Details.NextHopIndex != 0:
+      key = fmt.Sprintf("NH %d", o.Details.NextHopIndex)
+    case o.Details.NextHopGroupID != 0:
+      key = fmt.Sprintf("NHG %d", o.Details.NextHopGroupID)
+    case o.Details.IPv4Prefix != "":
+      key = o.Details.IPv4Prefix
+    default:
+      key = "unknown"
+    }
+
+		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Key: %s, Status: %s }", v, o.Details.Type, key, o.ProgrammingResult))
 	}
 
 	if v := o.SessionParameters; v != nil {

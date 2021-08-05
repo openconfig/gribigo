@@ -104,13 +104,20 @@ var (
 	}}
 )
 
+// awaitTimeout calls a fluent client Await, adding a timeout to the context.
+func awaitTimeout(ctx context.Context, c *fluent.GRIBIClient, t testing.TB, timeout time.Duration) error {
+	subctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return c.Await(subctx, t)
+}
+
 // ModifyConnection is a test that opens a Modify RPC. It determines
 // that there is no response from the server.
 func ModifyConnection(c *fluent.GRIBIClient, t testing.TB) {
 	c.Start(context.Background(), t)
 	defer c.Stop(t)
 	c.StartSending(context.Background(), t)
-	c.Await(context.Background(), t)
+	awaitTimeout(context.Background(), c, t, time.Minute)
 	// We get results, and just expected that there are none, because we did not
 	// send anything to the server.
 	if r := c.Results(t); len(r) != 0 {
@@ -127,7 +134,7 @@ func ModifyConnectionWithElectionID(c *fluent.GRIBIClient, t testing.TB) {
 	c.Start(context.Background(), t)
 	defer c.Stop(t)
 	c.StartSending(context.Background(), t)
-	err := c.Await(context.Background(), t)
+	err := awaitTimeout(context.Background(), c, t, time.Minute)
 	if err != nil {
 		t.Fatalf("got unexpected error on client, %v", err)
 	}
@@ -155,7 +162,7 @@ func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB) 
 	c.Start(context.Background(), t)
 	defer c.Stop(t)
 	c.StartSending(context.Background(), t)
-	err := c.Await(context.Background(), t)
+	err := awaitTimeout(context.Background(), c, t, time.Minute)
 	if err == nil {
 		t.Fatalf("did not get expected error from server, got: nil")
 	}
@@ -305,7 +312,7 @@ func doOps(c *fluent.GRIBIClient, t testing.TB, ops []func(), wantACK fluent.Pro
 	c.Start(ctx, t)
 	defer c.Stop(t)
 	c.StartSending(ctx, t)
-	if err := c.Await(ctx, t); err != nil {
+	if err := awaitTimeout(ctx, c, t, time.Minute); err != nil {
 		t.Fatalf("got unexpected error from server - session negotiation, got: %v, want: nil", err)
 	}
 
@@ -320,7 +327,7 @@ func doOps(c *fluent.GRIBIClient, t testing.TB, ops []func(), wantACK fluent.Pro
 		fn()
 	}
 
-	if err := c.Await(ctx, t); err != nil {
+	if err := awaitTimeout(ctx, c, t, time.Minute); err != nil {
 		t.Fatalf("got unexpected error from server - entries, got: %v, want: nil", err)
 	}
 	return c.Results(t)

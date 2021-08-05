@@ -229,7 +229,7 @@ func (g *GRIBIClient) StartSending(ctx context.Context, t testing.TB) {
 // being hit by the client. It returns an error in the case that there were errors
 // reported.
 func (g *GRIBIClient) Await(ctx context.Context, t testing.TB) error {
-	if err := g.c.AwaitConverged(); err != nil {
+	if err := g.c.AwaitConverged(ctx); err != nil {
 		return err
 	}
 	return nil

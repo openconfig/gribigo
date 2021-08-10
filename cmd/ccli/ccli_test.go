@@ -15,37 +15,87 @@
 package ccli
 
 import (
+	"context"
+	"crypto/tls"
 	"flag"
+	"os"
 	"strings"
 	"testing"
 
 	log "github.com/golang/glog"
+
 	"github.com/openconfig/gribigo/compliance"
 	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/negtest"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+
+	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 var (
-	addr = flag.String("addr", "", "address of the gRIBI server in the format hostname:port")
+	addr       = flag.String("addr", "", "address of the gRIBI server in the format hostname:port")
+	insecure   = flag.Bool("insecure", false, "dial insecure gRPC (no TLS)")
+	skipverify = flag.Bool("skipverify", true, "allow self-signed TLS certificate; not needed for -insecure")
+	username   = flag.String("username", os.Getenv("USER"), "username to be sent as gRPC metadata")
+	password   = flag.String("password", "", "password to be sent as gRPC metadata")
 )
 
+// flagCred implements credentials.PerRPCCredentials by populating the
+// username and password metadata from flags.
+type flagCred struct{}
+
+// GetRequestMetadata is needed by credentials.PerRPCCredentials.
+func (flagCred) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
+	return map[string]string{
+		"username": *username,
+		"password": *password,
+	}, nil
+}
+
+// RequireTransportSecurity is needed by credentials.PerRPCCredentials.
+func (flagCred) RequireTransportSecurity() bool {
+	return false
+}
+
 func TestCompliance(t *testing.T) {
-	flag.Parse()
 	if *addr == "" {
-		log.Errorf("must specify gRIBI server address, got: %v", *addr)
-		return
+		log.Errorf("Must specify gRIBI server address, got: %v", *addr)
+		return // Test is part of CI, so do not fail here.
 	}
 
-	c := fluent.NewClient()
-	c.Connection().WithTarget(*addr)
+	dialOpts := []grpc.DialOption{grpc.WithBlock()}
+	if *insecure {
+		dialOpts = append(dialOpts, grpc.WithInsecure())
+	} else if *skipverify {
+		tlsc := credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: *skipverify,
+		})
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(tlsc))
+	}
+
+	if *password != "" {
+		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(flagCred{}))
+	}
+
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, *addr, dialOpts...)
+	if err != nil {
+		t.Fatalf("Could not dial gRPC: %v", err)
+	}
+	defer conn.Close()
+	stub := spb.NewGRIBIClient(conn)
 
 	for _, tt := range compliance.TestSuite {
 		t.Run(tt.In.ShortName, func(t *testing.T) {
+			c := fluent.NewClient()
+			c.Connection().WithStub(stub)
+
 			if tt.FatalMsg != "" {
 				if got := negtest.ExpectFatal(t, func(t testing.TB) {
 					tt.In.Fn(c, t)
 				}); !strings.Contains(got, tt.FatalMsg) {
-					t.Fatalf("did not get expected fatal error, got: %s, want: %s", got, tt.FatalMsg)
+					t.Fatalf("Did not get expected fatal error, got: %s, want: %s", got, tt.FatalMsg)
 				}
 				return
 			}
@@ -54,7 +104,7 @@ func TestCompliance(t *testing.T) {
 				if got := negtest.ExpectError(t, func(t testing.TB) {
 					tt.In.Fn(c, t)
 				}); !strings.Contains(got, tt.ErrorMsg) {
-					t.Fatalf("did not get expected error, got: %s, want: %s", got, tt.ErrorMsg)
+					t.Fatalf("Did not get expected error, got: %s, want: %s", got, tt.ErrorMsg)
 				}
 			}
 

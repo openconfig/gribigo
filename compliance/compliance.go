@@ -47,6 +47,8 @@ type Test struct {
 	Description string
 	// ShortName is a short description of the test for use in test output.
 	ShortName string
+	// Reference is a unique reference to external data (e.g., test plans) used for the test.
+	Reference string
 }
 
 // TestSpec is a description of a test.
@@ -79,11 +81,13 @@ var (
 	}, {
 		In: Test{
 			Fn:        AddIPv4EntryRIBACK,
+			Reference: "TE-2.1.1.1",
 			ShortName: "Add IPv4 entry that can be programmed on the server - with RIB ACK",
 		},
 	}, {
 		In: Test{
 			Fn:        AddIPv4EntryFIBACK,
+			Reference: "TE-2.1.1.2",
 			ShortName: "Add IPv4 entry that can be programmed on the server - with FIB ACK",
 		},
 	}, {
@@ -100,6 +104,43 @@ var (
 		In: Test{
 			Fn:        AddIPv4EntryRandom,
 			ShortName: "Add IPv4 entries that are resolved by NHG and NH, in random order",
+		},
+	}, {
+		In: Test{
+			Fn:        AddIPv4ToMultipleNHsSingleRequest,
+			ShortName: "Add IPv4 entries that are resolved to a next-hop-group containing multiple next-hops (single ModifyRequest)",
+			Reference: "TE-2.1.2.1",
+		},
+	}, {
+		In: Test{
+			Fn:        AddIPv4ToMultipleNHsMultipleRequests,
+			ShortName: "Add IPv4 entries that are resolved to a next-hop-group containing multiple next-hops (multiple ModifyRequests)",
+			Reference: "TE-2.1.2.2",
+		},
+	}, {
+		In: Test{
+			Fn:        DeleteIPv4Entry,
+			ShortName: "Delete IPv4 entry within default network instance",
+		},
+	}, {
+		In: Test{
+			Fn:        DeleteReferencedNHGFailure,
+			ShortName: "Delete NHG entry that is referenced - failure",
+		},
+	}, {
+		In: Test{
+			Fn:        DeleteReferencedNHFailure,
+			ShortName: "Delete NH entry that is referenced - failure",
+		},
+	}, {
+		In: Test{
+			Fn:        DeleteNextHopGroup,
+			ShortName: "Delete NHG entry successfully",
+		},
+	}, {
+		In: Test{
+			Fn:        DeleteNextHop,
+			ShortName: "Delete NH entry successfully",
 		},
 	}}
 )
@@ -241,8 +282,6 @@ func addIPv4Internal(c *fluent.GRIBIClient, t testing.TB, wantACK fluent.Program
 			WithProgrammingResult(wantACK).
 			AsResult(),
 	)
-
-	// TODO(robjs): add gNMI subscription using generated telemetry library.
 }
 
 // addIPv4Random adds an IPv4 Entry, shuffling the order of the entries, and
@@ -363,4 +402,243 @@ func addNextHopGroupInternal(c *fluent.GRIBIClient, t testing.TB, wantACK fluent
 			WithProgrammingResult(wantACK).
 			AsResult(),
 	)
+}
+
+// For the following tests, the base topology shown below is assumed.
+//
+//   Topology:             ________
+//                        |        |
+//        -----port1----- |  DUT   |-----port2----
+//          192.0.2.0/31  |        |  192.0.2.2/31
+//                        |        |
+//                        |        |----port3-----
+//                        |        |  192.0.2.4/31
+//                        |________|
+//
+//       -------------------1.0.0.0/8-------------->
+//
+// As the dataplane implementation is added, the input configuration
+// within the test will cover the configuration of these ports, however,
+// at this time the diagram above is illustrative for tracking the tests.
+
+// baseTopologyEntries creates the entries shown in the diagram above using
+// separate ModifyRequests for each entry.
+func baseTopologyEntries(c *fluent.GRIBIClient, t testing.TB) {
+	c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
+	c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(2).WithIPAddress("192.0.2.5"))
+	c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(1).AddNextHop(1, 1).AddNextHop(2, 1))
+	c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(1))
+}
+
+// validateBaseEntries checks that the entries in the base topology are correctly
+// installed.
+func validateBaseTopologyEntries(res []*client.OpResult, t testing.TB) {
+	// Check for next-hops 1 and 2.
+	for _, nhopID := range []uint64{1, 2} {
+		chk.HasResult(t, res,
+			fluent.OperationResult().
+				WithNextHopOperation(nhopID).
+				WithProgrammingResult(fluent.InstalledInFIB).
+				WithOperationType(constants.Add).
+				AsResult(),
+			chk.IgnoreOperationID(),
+		)
+	}
+
+	// Check for next-hop-group 1.
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			WithOperationType(constants.Add).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	// Check for 1/8.
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("1.0.0.0/8").
+			WithProgrammingResult(fluent.InstalledInFIB).
+			WithOperationType(constants.Add).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+}
+
+// AddIPv4ToMultipleNHsSingleRequest creates an IPv4 entry which references a NHG containing
+// 2 NHs within a single ModifyRequest, validating that they are installed in the FIB.
+func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, t testing.TB) {
+
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"),
+				fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(2).WithIPAddress("192.0.2.5"),
+				fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(1).AddNextHop(1, 1).AddNextHop(2, 1),
+				fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(1))
+		},
+	}
+
+	validateBaseTopologyEntries(doOps(c, t, ops, fluent.InstalledInFIB, false), t)
+}
+
+// AddIPv4ToMultipleNHsMultipleRequests creates an IPv4 entry which references a NHG containing
+// 2 NHs within multiple ModifyReqests, validating that they are installed in the FIB.
+func AddIPv4ToMultipleNHsMultipleRequests(c *fluent.GRIBIClient, t testing.TB) {
+
+	ops := []func(){
+		func() { baseTopologyEntries(c, t) },
+	}
+	validateBaseTopologyEntries(doOps(c, t, ops, fluent.InstalledInFIB, false), t)
+}
+
+// DeleteIPv4Entry deletes an IPv4 entry from the server's RIB.
+func DeleteIPv4Entry(c *fluent.GRIBIClient, t testing.TB) {
+	ops := []func(){
+		func() { baseTopologyEntries(c, t) },
+		func() {
+			c.Modify().DeleteEntry(t, fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName))
+		},
+	}
+	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
+	validateBaseTopologyEntries(res, t)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("1.0.0.0/8").
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+}
+
+// DeleteReferencedNHGFailure attempts to delete a NextHopGroup entry that is referenced
+// from the RIB, and expects a failure.
+func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, t testing.TB) {
+	ops := []func(){
+		func() { baseTopologyEntries(c, t) },
+		func() {
+			c.Modify().DeleteEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName))
+		},
+	}
+	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
+	validateBaseTopologyEntries(res, t)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// DeleteReferencedNHFailure attempts to delete a NH entry that is referened from the RIB
+// and expects a failure.
+func DeleteReferencedNHFailure(c *fluent.GRIBIClient, t testing.TB) {
+	ops := []func(){
+		func() { baseTopologyEntries(c, t) },
+		func() {
+			c.Modify().DeleteEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(server.DefaultNetworkInstanceName))
+		},
+		func() {
+			c.Modify().DeleteEntry(t, fluent.NextHopEntry().WithIndex(2).WithNetworkInstance(server.DefaultNetworkInstanceName))
+		},
+	}
+	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
+	validateBaseTopologyEntries(res, t)
+
+	for _, i := range []uint64{1, 2} {
+		chk.HasResult(t, res,
+			fluent.OperationResult().
+				WithNextHopOperation(i).
+				WithOperationType(constants.Delete).
+				WithProgrammingResult(fluent.ProgrammingFailed).
+				AsResult(),
+			chk.IgnoreOperationID())
+	}
+}
+
+// DeleteNextHopGroup attempts to delete a NHG entry that is not referenced and expects
+// success.
+func DeleteNextHopGroup(c *fluent.GRIBIClient, t testing.TB) {
+	ops := []func(){
+		func() { baseTopologyEntries(c, t) },
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName),
+				fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName),
+			)
+		},
+	}
+
+	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
+	validateBaseTopologyEntries(res, t)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("1.0.0.0/8").
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// DeleteNextHop attempts to delete the NH entris within the base topology and expects
+// success.
+//
+// TODO(robjs): When traffic and AFT validation is added, ensure that a partial delete
+// scenario keeps traffic routed via the remaining NH.
+func DeleteNextHop(c *fluent.GRIBIClient, t testing.TB) {
+	ops := []func(){
+		func() { baseTopologyEntries(c, t) },
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName),
+				fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName),
+				fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(server.DefaultNetworkInstanceName),
+				fluent.NextHopEntry().WithIndex(2).WithNetworkInstance(server.DefaultNetworkInstanceName),
+			)
+		},
+	}
+
+	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
+	validateBaseTopologyEntries(res, t)
+
+	for _, i := range []uint64{1, 2} {
+		chk.HasResult(t, res,
+			fluent.OperationResult().
+				WithNextHopOperation(i).
+				WithOperationType(constants.Delete).
+				WithProgrammingResult(fluent.InstalledInFIB).
+				AsResult(),
+			chk.IgnoreOperationID())
+
+	}
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("1.0.0.0/8").
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
 }

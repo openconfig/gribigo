@@ -207,9 +207,12 @@ func (g *GRIBIClient) Start(ctx context.Context, t testing.TB) {
 	g.ctx = ctx
 }
 
+// Stop specifies that the gRIBI client should stop sending operations,
+// and subsequently disconnect from the server.
 func (g *GRIBIClient) Stop(t testing.TB) {
+	g.c.StopSending()
 	if err := g.c.Close(); err != nil {
-		t.Fatalf("cannot disconnect from client, %v", err)
+		t.Fatalf("cannot disconnect from server, %v", err)
 	}
 }
 
@@ -442,6 +445,13 @@ func (i *ipv4Entry) WithNetworkInstance(n string) *ipv4Entry {
 // WithNextHopGroup specifies the next-hop group that the IPv4Entry points to.
 func (i *ipv4Entry) WithNextHopGroup(u uint64) *ipv4Entry {
 	i.pb.Ipv4Entry.NextHopGroup = &wpb.UintValue{Value: u}
+	return i
+}
+
+// WithNextHopGroupNetworkInstance specifies the network-instance within which
+// the next-hop-group for the IPv4 entry should be resolved.
+func (i *ipv4Entry) WithNextHopGroupNetworkInstance(n string) *ipv4Entry {
+	i.pb.Ipv4Entry.NextHopGroupNetworkInstance = &wpb.StringValue{Value: n}
 	return i
 }
 

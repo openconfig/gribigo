@@ -51,6 +51,12 @@ func periodic(period time.Duration, fn func()) {
 	}
 }
 
+// GNMIServer implements the gNMI server interface.
+type GNMIServer struct {
+	// The subscribe Server implements only Subscribe for gNMI.
+	*subscribe.Server
+}
+
 // New returns a new collector that listens on the specified addr (in the form host:port),
 // supporting a single downstream target named hostname. sendMeta controls whether the
 // metadata *other* than meta/sync and meta/connected is sent by the collector.
@@ -91,7 +97,12 @@ func New(ctx context.Context, addr string, hostname string, sendMeta bool, opts 
 	if err != nil {
 		return nil, "", fmt.Errorf("could not instantiate gNMI server: %v", err)
 	}
-	gpb.RegisterGNMIServer(srv, subscribeSrv)
+
+	gnmiserver := &GNMIServer{
+		Server: subscribeSrv, // use the 'subscribe' implementation.
+	}
+
+	gpb.RegisterGNMIServer(srv, gnmiserver)
 	// Forward streaming updates to clients.
 	c.cache.SetClient(subscribeSrv.Update)
 	// Register listening port and start serving.

@@ -26,6 +26,7 @@ import (
 	"github.com/openconfig/gribigo/rib"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/prototext"
 	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
@@ -657,7 +658,6 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 	elec.clientLatest = cs.lastElecID
 	elec.client = cid
 
-	var wg sync.WaitGroup
 	for _, o := range ops {
 		ni := o.GetNetworkInstance()
 		if ni == "" {
@@ -677,19 +677,26 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 			return
 		}
 
-		wg.Add(1)
-		go func(op *spb.AFTOperation) {
-			res, err := modifyEntry(s.masterRIB, ni, op, cs.params.FIBAck, elec)
-			switch {
-			case err != nil:
-				errCh <- err
-			default:
-				resCh <- res
-			}
-			wg.Done()
-		}(o)
+		// We do not try and modify entries within the operation in parallel
+		// with each other since this may cause us to duplicate ACK on particular
+		// operations - for example, if there are two next-hops that are within a
+		// single next-hop-group, then both of them will cause the NHG to be
+		// installed in the RIB. If we do this then we might end up ACKing
+		// one twice if there was >1 different entry that mde a NHG resolvable.
+		// For a SINGLE_PRIMARY client serialising into a single Modify channel
+		// ensures that we do not end up with this occuring - but going forward
+		// for ALL_PRIMARY this situation will need to handled likely by creating
+		// some form of lock on each transaction as it is attempted, or building
+		// a more intelligent RIB structure to track missing dependencies.
+		res, err := modifyEntry(s.masterRIB, ni, o, cs.params.FIBAck, elec)
+		switch {
+		case err != nil:
+			errCh <- err
+		default:
+			resCh <- res
+		}
 	}
-	wg.Wait()
+
 }
 
 // electionDetails provides a summary of a single election from the perspective of one client.
@@ -755,6 +762,7 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 		// AddEntry handles replaces, since an ADD can be an explicit replace. It checks
 		// whether the entry was an explicit replace from the op, and if so errors if the
 		// entry does not already exist.
+		log.V(2).Infof("calling AddEntry for operation ID %d", op.GetId())
 		oks, faileds, err = r.AddEntry(ni, op)
 	case spb.AFTOperation_DELETE:
 		oks, faileds, err = r.DeleteEntry(ni, op)
@@ -772,6 +780,7 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 		)
 	}
 	for _, ok := range oks {
+		log.V(2).Infof("received OK for %d in operation %s", ok.ID, prototext.Format(op))
 		results = append(results, &spb.AFTResult{
 			Id:     ok.ID,
 			Status: okACK,

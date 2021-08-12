@@ -400,10 +400,10 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 		refdNHGID = t.Ipv4.GetIpv4Entry().GetNextHopGroup().GetValue()
 		v4Prefix = t.Ipv4.GetPrefix()
 
-		log.V(2).Infof("adding IPv4 prefix %s", t.Ipv4.GetPrefix())
+		log.V(2).Infof("[op %d] attempting to add IPv4 prefix %s", op.GetId(), t.Ipv4.GetPrefix())
 		installed, replaced, err = niR.AddIPv4(t.Ipv4, explicitReplace)
 	case *spb.AFTOperation_NextHop:
-		log.V(2).Infof("adding NH Index %d", t.NextHop.GetIndex())
+		log.V(2).Infof("[op %d] attempting to add NH Index %d", op.GetId(), t.NextHop.GetIndex())
 		installed, replaced, err = niR.AddNextHop(t.NextHop, explicitReplace)
 	case *spb.AFTOperation_NextHopGroup:
 		nhgID = t.NextHopGroup.GetId()
@@ -412,7 +412,7 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 			refdNextHops = append(refdNextHops, v.GetIndex())
 		}
 
-		log.V(2).Infof("adding NHG ID %d", t.NextHopGroup.GetId())
+		log.V(2).Infof("[op %d] attempting to add NHG ID %d", op.GetId(), t.NextHopGroup.GetId())
 		installed, replaced, err = niR.AddNextHopGroup(t.NextHopGroup, explicitReplace)
 	default:
 		return status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
@@ -450,7 +450,9 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 		// we don't retry if it was somewhere further up the stack.
 		installStack[op.GetId()] = true
 		log.V(2).Infof("operation %d installed in RIB successfully", op.GetId())
+
 		r.rmPending(op.GetId())
+
 		*oks = append(*oks, &OpResult{
 			ID: op.GetId(),
 			Op: op,
@@ -464,7 +466,7 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 		}
 
 		// we may now have made some other pending entry be possible to install,
-		// so try them all out!
+		// so try them all out.
 		for _, e := range r.getPending() {
 			err := r.addEntryInternal(e.ni, e.op, oks, fails, installStack)
 			if err != nil {

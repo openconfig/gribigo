@@ -544,7 +544,7 @@ func (o *OpResult) String() string {
 	}
 
 	if v := o.OperationID; v != 0 {
-		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Status: %s }", v, o.ProgrammingResult))
+		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, o.Details.Type, o.ProgrammingResult))
 	}
 
 	if v := o.SessionParameters; v != nil {
@@ -611,6 +611,12 @@ func (c *Client) StartSending() {
 		c.q(m)
 	}
 	c.qs.sendq = []*spb.ModifyRequest{}
+}
+
+// StopSending toggles the client to stop sending messages to the server, meaning
+// that entries that are enqueued will be stored until StartSending is called.
+func (c *Client) StopSending() {
+	c.qs.sending.Store(false)
 }
 
 // handleModifyRequest performs any required post-processing after having sent a

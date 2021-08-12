@@ -544,17 +544,17 @@ func (o *OpResult) String() string {
 	}
 
 	if v := o.OperationID; v != 0 {
-    var key string
-    switch {
-    case o.Details.NextHopIndex != 0:
-      key = fmt.Sprintf("NH %d", o.Details.NextHopIndex)
-    case o.Details.NextHopGroupID != 0:
-      key = fmt.Sprintf("NHG %d", o.Details.NextHopGroupID)
-    case o.Details.IPv4Prefix != "":
-      key = o.Details.IPv4Prefix
-    default:
-      key = "unknown"
-    }
+		var key string
+		switch {
+		case o.Details.NextHopIndex != 0:
+			key = fmt.Sprintf("NextHop %d", o.Details.NextHopIndex)
+		case o.Details.NextHopGroupID != 0:
+			key = fmt.Sprintf("NextHopGroup %d", o.Details.NextHopGroupID)
+		case o.Details.IPv4Prefix != "":
+			key = o.Details.IPv4Prefix
+		default:
+			key = "unknown"
+		}
 
 		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Key: %s, Status: %s }", v, o.Details.Type, key, o.ProgrammingResult))
 	}
@@ -959,9 +959,16 @@ type ClientErr struct {
 func (c *ClientErr) Error() string { return fmt.Sprintf("errors: send: %v, recv: %v", c.Send, c.Recv) }
 
 // AwaitConverged waits until the client is converged and writes to the supplied
-// channel. The function blocks until such time as the client returns.
-func (c *Client) AwaitConverged() error {
+// channel. The function blocks until such time as the client returns or when the
+// context is done.
+func (c *Client) AwaitConverged(ctx context.Context) error {
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		// we need to check here that no-one is doing an operation that we might care about
 		// impacting convergence. this is:
 		//  - sending a message
@@ -986,6 +993,7 @@ func (c *Client) AwaitConverged() error {
 		if done {
 			return nil
 		}
+		time.Sleep(100 * time.Millisecond) // avoid busy looping.
 	}
 }
 

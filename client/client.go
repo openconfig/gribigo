@@ -534,6 +534,9 @@ type OpDetailsResults struct {
 
 // String returns a string for an OpResult for debugging purposes.
 func (o *OpResult) String() string {
+	if o == nil {
+		return "<nil>"
+	}
 	buf := &bytes.Buffer{}
 	buf.WriteString("<")
 	buf.WriteString(fmt.Sprintf("%d (%d nsec):", o.Timestamp, o.Latency))

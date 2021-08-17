@@ -1098,3 +1098,27 @@ func TestGet(t *testing.T) {
 		})
 	}
 }
+
+func TestOpResultString(t *testing.T) {
+	tests := []struct {
+		desc     string
+		inResult *OpResult
+		want     string
+	}{{
+		desc:     "nil input",
+		inResult: nil,
+		want:     "<nil>",
+	}, {
+		desc:     "all fields nil",
+		inResult: &OpResult{},
+		want:     "<0 (0 nsec):>",
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if got := tt.inResult.String(); got != tt.want {
+				t.Fatalf("did not get expected string, got: %s, want: %s", got, tt.want)
+			}
+		})
+	}
+}

@@ -33,6 +33,12 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+// init statically sets the first Election ID used by the compliance tests to 1, since 0
+// is an invalid value.
+func init() {
+	electionID.Store(1)
+}
+
 // electionID is a atomically updated uint64 that we use for the election ID in the tests
 // this ensures that we do not have tests that specify an election ID that is older than
 // the last tests', and thus fail due to the state of the server.

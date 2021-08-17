@@ -1112,6 +1112,12 @@ func TestOpResultString(t *testing.T) {
 		desc:     "all fields nil",
 		inResult: &OpResult{},
 		want:     "<0 (0 nsec):>",
+	}, {
+		desc: "nil type in details",
+		inResult: &OpResult{
+			OperationID: 42,
+		},
+		want: "<0 (0 nsec): AFTOperation { ID: 42, Type: Unknown, Status: UNSET }>",
 	}}
 
 	for _, tt := range tests {

@@ -537,6 +537,7 @@ func (o *OpResult) String() string {
 	if o == nil {
 		return "<nil>"
 	}
+
 	buf := &bytes.Buffer{}
 	buf.WriteString("<")
 	buf.WriteString(fmt.Sprintf("%d (%d nsec):", o.Timestamp, o.Latency))
@@ -547,7 +548,11 @@ func (o *OpResult) String() string {
 	}
 
 	if v := o.OperationID; v != 0 {
-		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, o.Details.Type, o.ProgrammingResult))
+		typ := "Unknown"
+		if o.Details != nil {
+			typ = fmt.Sprintf("%s", o.Details.Type)
+		}
+		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, typ, o.ProgrammingResult))
 	}
 
 	if v := o.SessionParameters; v != nil {

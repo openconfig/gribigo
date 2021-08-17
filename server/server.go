@@ -600,6 +600,12 @@ func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyRespons
 		})
 	}
 
+	// If the election ID that we received is 0, then this is an invalid value
+	// in the input message, return an error to the client.
+	if inputID, zero := uint128.New(elecID.Low, elecID.High), uint128.New(0, 0); zero.Cmp(inputID) == 0 {
+		return nil, status.Newf(codes.InvalidArgument, "client ID %s, zero is an invalid election ID", id).Err()
+	}
+
 	// At this point, we store the latest election ID that we've seen from this
 	// client, even if it does not win the election. This allows us to check
 	// that the client has the same election ID as it has reported to us in

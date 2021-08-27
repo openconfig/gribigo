@@ -27,6 +27,7 @@ import (
 	"github.com/openconfig/gribigo/constants"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
@@ -337,7 +338,7 @@ type gRIBIModify struct {
 }
 
 // AddEntry creates an operation adding the set of entries specified to the server.
-func (g *gRIBIModify) AddEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIModify {
+func (g *gRIBIModify) AddEntry(t testing.TB, entries ...GRIBIEntry) *gRIBIModify {
 	m, err := g.entriesToModifyRequest(spb.AFTOperation_ADD, entries)
 	if err != nil {
 		t.Fatalf("cannot build modify request: %v", err)
@@ -347,7 +348,7 @@ func (g *gRIBIModify) AddEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIModify
 }
 
 // DeleteEntry creates an operation deleting the set of entries specified from the server.
-func (g *gRIBIModify) DeleteEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIModify {
+func (g *gRIBIModify) DeleteEntry(t testing.TB, entries ...GRIBIEntry) *gRIBIModify {
 	m, err := g.entriesToModifyRequest(spb.AFTOperation_DELETE, entries)
 	if err != nil {
 		t.Fatalf("cannot build modify request, %v", err)
@@ -357,7 +358,7 @@ func (g *gRIBIModify) DeleteEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIMod
 }
 
 // ReplaceEntry creates an operation replacing the set of entries specified on the server.
-func (g *gRIBIModify) ReplaceEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIModify {
+func (g *gRIBIModify) ReplaceEntry(t testing.TB, entries ...GRIBIEntry) *gRIBIModify {
 	m, err := g.entriesToModifyRequest(spb.AFTOperation_REPLACE, entries)
 	if err != nil {
 		t.Fatalf("cannot build modify request, %v", err)
@@ -367,7 +368,7 @@ func (g *gRIBIModify) ReplaceEntry(t testing.TB, entries ...gRIBIEntry) *gRIBIMo
 }
 
 // entriesToModifyRequest creates a ModifyRequest from a set of input entries.
-func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entries []gRIBIEntry) (*spb.ModifyRequest, error) {
+func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entries []GRIBIEntry) (*spb.ModifyRequest, error) {
 	m := &spb.ModifyRequest{}
 	for _, e := range entries {
 		ep, err := e.opproto()
@@ -402,12 +403,12 @@ func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entr
 	return m, nil
 }
 
-// gRIBIEntry is an entry implemented for all types that can be returned
+// GRIBIEntry is an entry implemented for all types that can be returned
 // as a gRIBI entry.
-type gRIBIEntry interface {
-	// opproto returns the specified entry as an AFTOperation protobuf.
+type GRIBIEntry interface {
+	// opproto builds the entry as a new AFTOperation protobuf.
 	opproto() (*spb.AFTOperation, error)
-	// entryproto returns the entry as an AFTEntry protobuf.
+	// entryproto builds the entry as a new AFTEntry protobuf.
 	entryproto() (*spb.AFTEntry, error)
 }
 
@@ -455,24 +456,24 @@ func (i *ipv4Entry) WithNextHopGroupNetworkInstance(n string) *ipv4Entry {
 	return i
 }
 
-// opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// opproto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
 func (i *ipv4Entry) opproto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: i.ni,
 		Entry: &spb.AFTOperation_Ipv4{
-			Ipv4: i.pb,
+			Ipv4: proto.Clone(i.pb).(*aftpb.Afts_Ipv4EntryKey),
 		},
 	}, nil
 }
 
-// entryproto implements the gRIBIEntry interface, returning a gRIBI AFTEntry.
+// entryproto implements the GRIBIEntry interface, building a gRIBI AFTEntry.
 func (i *ipv4Entry) entryproto() (*spb.AFTEntry, error) {
 	return &spb.AFTEntry{
 		NetworkInstance: i.ni,
 		Entry: &spb.AFTEntry_Ipv4{
-			Ipv4: i.pb,
+			Ipv4: proto.Clone(i.pb).(*aftpb.Afts_Ipv4EntryKey),
 		},
 	}, nil
 }
@@ -525,24 +526,24 @@ func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
 
 // TODO(robjs): add additional NextHopEntry fields.
 
-// opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// opproto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
 func (n *nextHopEntry) opproto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTOperation_NextHop{
-			NextHop: n.pb,
+			NextHop: proto.Clone(n.pb).(*aftpb.Afts_NextHopKey),
 		},
 	}, nil
 }
 
-// entryproto implements the gRIBIEntry interface, returning a gRIBI AFTEntry.
+// entryproto implements the GRIBIEntry interface, building a gRIBI AFTEntry.
 func (n *nextHopEntry) entryproto() (*spb.AFTEntry, error) {
 	return &spb.AFTEntry{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTEntry_NextHop{
-			NextHop: n.pb,
+			NextHop: proto.Clone(n.pb).(*aftpb.Afts_NextHopKey),
 		},
 	}, nil
 }
@@ -587,24 +588,24 @@ func (n *nextHopGroupEntry) AddNextHop(index, weight uint64) *nextHopGroupEntry 
 	return n
 }
 
-// opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// opproto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
 func (n *nextHopGroupEntry) opproto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTOperation_NextHopGroup{
-			NextHopGroup: n.pb,
+			NextHopGroup: proto.Clone(n.pb).(*aftpb.Afts_NextHopGroupKey),
 		},
 	}, nil
 }
 
-// entryproto implements the gRIBIEntry interface, returning a gRIBI AFTEntry.
+// entryproto implements the GRIBIEntry interface, returning a gRIBI AFTEntry.
 func (n *nextHopGroupEntry) entryproto() (*spb.AFTEntry, error) {
 	return &spb.AFTEntry{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTEntry_NextHopGroup{
-			NextHopGroup: n.pb,
+			NextHopGroup: proto.Clone(n.pb).(*aftpb.Afts_NextHopGroupKey),
 		},
 	}, nil
 }

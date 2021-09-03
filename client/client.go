@@ -642,6 +642,11 @@ func (c *Client) handleModifyRequest(m *spb.ModifyRequest) error {
 	return nil
 }
 
+// IgnoreSessionParams allows a test to specify that it will allow
+// ModifyResponse.SessionParamsResult to be set even if it is
+// unexpected, although by definition it would always be empty.
+var IgnoreSessionParams = false
+
 // handleModifyResponse performs any required post-processing after having received
 // a ModifyResponse from the gRPC channel from the server. Particularly, this
 // ensures that pending transactions are dequeued into the results queue. An error
@@ -653,7 +658,7 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 
 	resPop := m.Result != nil
 	elecPop := m.ElectionId != nil
-	sessPop := m.SessionParamsResult != nil
+	sessPop := m.SessionParamsResult != nil && !IgnoreSessionParams
 	pop := 0
 	for _, v := range []bool{resPop, elecPop, sessPop} {
 		if v {
@@ -677,9 +682,11 @@ func (c *Client) handleModifyResponse(m *spb.ModifyResponse) error {
 	}
 
 	if m.SessionParamsResult != nil {
-		sr := c.clearPendingSessionParams()
-		sr.SessionParameters = m.SessionParamsResult
-		c.qs.resultq = append(c.qs.resultq, sr)
+		if !IgnoreSessionParams || c.qs.pendq.SessionParams != nil {
+			sr := c.clearPendingSessionParams()
+			sr.SessionParameters = m.SessionParamsResult
+			c.qs.resultq = append(c.qs.resultq, sr)
+		}
 	}
 
 	for _, r := range m.Result {

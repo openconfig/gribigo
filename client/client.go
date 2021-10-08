@@ -985,20 +985,6 @@ func (c *Client) AwaitConverged(ctx context.Context) error {
 	}
 }
 
-// GetRequest is used by a client to indicate the arguments to the Get method.
-type GetRequest struct {
-	// AllNetworkInstances indicates that the Get should be performed for every
-	// network instance. AllNetworkInstances and NetworkInstance are mutually
-	// exclusive.
-	AllNetworkInstances bool
-	// NetworkInstance specifies the name of the network instance that is to be
-	// queried. AllNetworkInstances and NetworkInstance are mutually
-	// exclusive.
-	NetworkInstance string
-	// AFT is the AFT that should be requested.
-	AFT constants.AFT
-}
-
 // Get implements the Get RPC to the gRIBI server. It takes an input context and a
 // GetRequest and returns a single GetResponse with all contained results within
 // it.

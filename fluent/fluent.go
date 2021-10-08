@@ -276,7 +276,10 @@ type gRIBIGet struct {
 // been succesfully installed according to the request's ACK type. It can be filtered
 // according to network instance and AFT.
 func (g *GRIBIClient) Get() *gRIBIGet {
-	return &gRIBIGet{parent: g}
+	return &gRIBIGet{
+		parent: g,
+		pb:     &spb.GetRequest{},
+	}
 }
 
 // AllNetworkInstance requests entries from all network instances.
@@ -324,6 +327,11 @@ var aftMap = map[AFT]spb.AFTType{
 func (g *gRIBIGet) WithAFT(a AFT) *gRIBIGet {
 	g.pb.Aft = aftMap[a]
 	return g
+}
+
+// Send issues Get RPC to the target and returns the results.
+func (g *gRIBIGet) Send() (*spb.GetResponse, error) {
+	return g.parent.c.Get(g.parent.ctx, g.pb)
 }
 
 // Modify wraps methods that trigger operations within the gRIBI Modify RPC.

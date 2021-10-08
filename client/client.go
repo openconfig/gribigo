@@ -1000,30 +1000,31 @@ type GetRequest struct {
 }
 
 // Get implements the Get RPC to the gRIBI server. It takes an input context and a
-// client.GetRequest and returns a single GetResponse with all contained results within
+// GetRequest and returns a single GetResponse with all contained results within
 // it.
-func (c *Client) Get(ctx context.Context, req *GetRequest) (*spb.GetResponse, error) {
-	sreq := &spb.GetRequest{}
-	switch {
-	case !req.AllNetworkInstances && req.NetworkInstance == "":
-		return nil, fmt.Errorf("invalid request, neither all or a specific network instance requested, got: %+v", req)
-	case req.AllNetworkInstances && req.NetworkInstance != "":
-		return nil, fmt.Errorf("invalid request, cannot request all and a specific named network instance simulatenously, got: %+v", req)
-	case req.AllNetworkInstances:
-		sreq.NetworkInstance = &spb.GetRequest_All{
-			All: &spb.Empty{},
+func (c *Client) Get(ctx context.Context, sreq *spb.GetRequest) (*spb.GetResponse, error) {
+	if sreq == nil {
+		return nil, errors.New("get request cannot be nil")
+	}
+
+	ni := sreq.GetNetworkInstance()
+	if ni == nil {
+		return nil, errors.New("network instance cannot be nil")
+	}
+
+	switch ni.(type) {
+	case *spb.GetRequest_All:
+		if sreq.GetAll() == nil {
+			return nil, errors.New("network instance All cannot be nil")
 		}
-	default:
-		sreq.NetworkInstance = &spb.GetRequest_Name{
-			Name: req.NetworkInstance,
+	case *spb.GetRequest_Name:
+		if sreq.GetName() == "" {
+			return nil, errors.New("network instance name is required")
 		}
 	}
 
-	switch v := req.AFT; v {
-	case constants.All, constants.IPv4, constants.NextHop, constants.NextHopGroup:
-		sreq.Aft = constants.AFTTypeFromAFT(v)
-	default:
-		return nil, fmt.Errorf("invalid/unsupported AFT type specified, %d", v)
+	if sreq.GetAft() == spb.AFTType_INVALID {
+		return nil, errors.New("AFT is required")
 	}
 
 	result := &spb.GetResponse{}

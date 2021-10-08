@@ -554,6 +554,19 @@ func TestRunElection(t *testing.T) {
 		wantErrDetails: &spb.ModifyRPCErrorDetails{
 			Reason: spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY,
 		},
+	}, {
+		desc: "zero is an invalid input value",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{
+						ExpectElecID: true,
+					}},
+			},
+		},
+		inID:        "c1",
+		inElecID:    &spb.Uint128{High: 0, Low: 0},
+		wantErrCode: codes.InvalidArgument,
 	}}
 
 	for _, tt := range tests {

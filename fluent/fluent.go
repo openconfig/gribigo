@@ -329,6 +329,11 @@ func (g *gRIBIGet) WithAFT(a AFT) *gRIBIGet {
 	return g
 }
 
+// Send issues Get RPC to the target and returns the results.
+func (g *gRIBIGet) Send() (*spb.GetResponse, error) {
+	return g.parent.c.Get(g.parent.ctx, g.pb)
+}
+
 // Modify wraps methods that trigger operations within the gRIBI Modify RPC.
 func (g *GRIBIClient) Modify() *gRIBIModify {
 	return &gRIBIModify{parent: g}

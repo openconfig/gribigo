@@ -276,7 +276,10 @@ type gRIBIGet struct {
 // been succesfully installed according to the request's ACK type. It can be filtered
 // according to network instance and AFT.
 func (g *GRIBIClient) Get() *gRIBIGet {
-	return &gRIBIGet{parent: g}
+	return &gRIBIGet{
+		parent: g,
+		pb:     &spb.GetRequest{},
+	}
 }
 
 // AllNetworkInstance requests entries from all network instances.

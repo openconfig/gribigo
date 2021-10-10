@@ -531,6 +531,9 @@ func (o *OpResult) String() string {
 
 	if v := o.OperationID; v != 0 {
 		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Details: %s, Status: %s }", v, o.Details, o.ProgrammingResult))
+	} else if v := o.ProgrammingResult; v != spb.AFTResult_UNSET {
+		// Special case for input messages that are just matching on status.
+		buf.WriteString(fmt.Sprintf(" AFTOperation { Status: %s }", v))
 	}
 
 	if v := o.SessionParameters; v != nil {

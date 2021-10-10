@@ -36,11 +36,12 @@ import (
 var (
 	addr              = flag.String("addr", "", "address of the gRIBI server in the format hostname:port")
 	insecure          = flag.Bool("insecure", false, "dial insecure gRPC (no TLS)")
-	skipverify        = flag.Bool("skipverify", true, "allow self-signed TLS certificate; not needed for -insecure")
+	skipVerify        = flag.Bool("skip_verify", true, "allow self-signed TLS certificate; not needed for -insecure")
 	username          = flag.String("username", os.Getenv("USER"), "username to be sent as gRPC metadata")
 	password          = flag.String("password", "", "password to be sent as gRPC metadata")
 	initialElectionID = flag.Uint("initial_electionid", 0, "initial election ID to be used")
 	skipFIBACK        = flag.Bool("skip_fiback", false, "skip tests that rely on FIB ACK")
+	skipSrvReorder    = flag.Bool("skip_reordering", false, "skip tests that rely on server side transaction reordering")
 )
 
 // flagCred implements credentials.PerRPCCredentials by populating the
@@ -73,9 +74,9 @@ func TestCompliance(t *testing.T) {
 	dialOpts := []grpc.DialOption{grpc.WithBlock()}
 	if *insecure {
 		dialOpts = append(dialOpts, grpc.WithInsecure())
-	} else if *skipverify {
+	} else if *skipVerify {
 		tlsc := credentials.NewTLS(&tls.Config{
-			InsecureSkipVerify: *skipverify,
+			InsecureSkipVerify: *skipVerify,
 		})
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(tlsc))
 	}
@@ -94,6 +95,10 @@ func TestCompliance(t *testing.T) {
 
 	for _, tt := range compliance.TestSuite {
 		if skip := *skipFIBACK; skip && tt.In.RequiresFIBACK {
+			continue
+		}
+
+		if skip := *skipSrvReorder; skip && tt.In.RequiresServerReordering {
 			continue
 		}
 

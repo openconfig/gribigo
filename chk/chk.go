@@ -21,6 +21,8 @@
 package chk
 
 import (
+	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -91,7 +93,13 @@ func HasResult(t testing.TB, res []*client.OpResult, want *client.OpResult, opt 
 		}
 	}
 	if !found {
-		t.Fatalf("results did not contain a result of value %s, got: %v", want, res)
+		buf := &bytes.Buffer{}
+		buf.WriteString(fmt.Sprintf("results did not contain a result of value %s\n", want))
+		buf.WriteString("got:\n")
+		for _, r := range res {
+			buf.WriteString(fmt.Sprintf("\t%s\n", r))
+		}
+		t.Fatalf(buf.String())
 	}
 }
 

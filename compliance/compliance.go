@@ -44,6 +44,12 @@ func init() {
 // the last tests', and thus fail due to the state of the server.
 var electionID = &atomic.Uint64{}
 
+// SetElectionID allows an external caller to specify an election ID to be used for
+// subsequent calls.
+func SetElectionID(v uint64) {
+	electionID.Store(v)
+}
+
 // Test describes a test within the compliance library.
 type Test struct {
 	// Fn is the function to be run for a test.
@@ -55,6 +61,9 @@ type Test struct {
 	ShortName string
 	// Reference is a unique reference to external data (e.g., test plans) used for the test.
 	Reference string
+
+	// Mark test as dependent upon FIB ACKs.
+	RequiresFIBACK bool
 }
 
 // TestSpec is a description of a test.
@@ -92,19 +101,21 @@ var (
 		},
 	}, {
 		In: Test{
-			Fn:        AddIPv4EntryFIBACK,
-			Reference: "TE-2.1.1.2",
-			ShortName: "Add IPv4 entry that can be programmed on the server - with FIB ACK",
-		},
-	}, {
-		In: Test{
-			Fn:        AddUnreferencedNextHopGroupFIBACK,
-			ShortName: "Add next-hop-group entry that can be resolved on the server, no referencing IPv4 entries - with RIB ACK",
+			Fn:             AddIPv4EntryFIBACK,
+			Reference:      "TE-2.1.1.2",
+			ShortName:      "Add IPv4 entry that can be programmed on the server - with FIB ACK",
+			RequiresFIBACK: true,
 		},
 	}, {
 		In: Test{
 			Fn:        AddUnreferencedNextHopGroupRIBACK,
-			ShortName: "Add next-hop-group entry that can be resolved on the server, no referencing IPv4 entries - with FIB ACK",
+			ShortName: "Add next-hop-group entry that can be resolved on the server, no referencing IPv4 entries - with RIB ACK",
+		},
+	}, {
+		In: Test{
+			Fn:             AddUnreferencedNextHopGroupFIBACK,
+			ShortName:      "Add next-hop-group entry that can be resolved on the server, no referencing IPv4 entries - with FIB ACK",
+			RequiresFIBACK: true,
 		},
 	}, {
 		In: Test{
@@ -219,7 +230,7 @@ func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB) 
 
 	want := fluent.
 		ModifyError().
-		WithCode(codes.FailedPrecondition).
+		WithCode(codes.Unimplemented).
 		WithReason(fluent.UnsupportedParameters).
 		AsStatus(t)
 

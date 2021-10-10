@@ -200,7 +200,7 @@ var (
 		},
 	}, {
 		In: Test{
-			Fn:        AddIPv4EntryDifferentNINHG,
+			Fn:        makeTestWithACK(AddIPv4EntryDifferentNINHG, fluent.InstalledInRIB),
 			ShortName: "Add IPv4 Entry that references a NHG in a different network instance",
 		},
 	}}
@@ -380,8 +380,8 @@ func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB) {
 				WithNextHopGroup(1).
 				WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
 			)
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).AddNextHop(1, 1))
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithIPAddress("2.2.2.2"))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(server.DefaultNetworkInstanceName).WithIPAddress("2.2.2.2"))
 		},
 	}
 
@@ -414,7 +414,7 @@ func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB) {
 
 // AddIPv4EntryDifferentNINHG adds an IPv4 entry that references a next-hop-group within a
 // different network instance, and validates that the entry is successfully installed.
-func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, t testing.TB) {
+func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	// TODO(robjs): Server needs to be initialised with >1 VRF.
 	t.Skip()
 	ops := []func(){
@@ -429,12 +429,12 @@ func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, t testing.TB) {
 		},
 	}
 
-	res := doOps(c, t, ops, fluent.InstalledInRIB, false)
+	res := doOps(c, t, ops, wantACK, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
 			WithNextHopGroupOperation(1).
-			WithProgrammingResult(fluent.InstalledInRIB).
+			WithProgrammingResult(wantACK).
 			WithOperationType(constants.Add).
 			AsResult(),
 		chk.IgnoreOperationID())
@@ -442,7 +442,7 @@ func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, t testing.TB) {
 	chk.HasResult(t, res,
 		fluent.OperationResult().
 			WithNextHopOperation(1).
-			WithProgrammingResult(fluent.InstalledInRIB).
+			WithProgrammingResult(wantACK).
 			WithOperationType(constants.Add).
 			AsResult(),
 		chk.IgnoreOperationID())
@@ -450,7 +450,7 @@ func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, t testing.TB) {
 	chk.HasResult(t, res,
 		fluent.OperationResult().
 			WithIPv4Operation("1.1.1.1/32").
-			WithProgrammingResult(fluent.InstalledInRIB).
+			WithProgrammingResult(wantACK).
 			WithOperationType(constants.Add).
 			AsResult(),
 		chk.IgnoreOperationID())

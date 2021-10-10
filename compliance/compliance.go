@@ -230,11 +230,11 @@ func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB) 
 
 	want := fluent.
 		ModifyError().
-		WithCode(codes.Unimplemented).
+		WithCode(codes.FailedPrecondition).
 		WithReason(fluent.UnsupportedParameters).
 		AsStatus(t)
 
-	chk.HasRecvClientErrorWithStatus(t, err, want)
+	chk.HasRecvClientErrorWithStatus(t, err, want, chk.AllowUnimplemented())
 }
 
 // AddIPv4EntryRIBACK adds a simple IPv4 Entry which references a next-hop-group

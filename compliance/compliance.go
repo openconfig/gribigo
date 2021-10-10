@@ -274,11 +274,11 @@ func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB) 
 
 	want := fluent.
 		ModifyError().
-		WithCode(codes.Unimplemented).
+		WithCode(codes.FailedPrecondition).
 		WithReason(fluent.UnsupportedParameters).
 		AsStatus(t)
 
-	chk.HasRecvClientErrorWithStatus(t, err, want)
+	chk.HasRecvClientErrorWithStatus(t, err, want, chk.AllowUnimplemented())
 }
 
 // AddIPv4Entry adds a fully referenced IPv4Entry and checks whether the specified ACK

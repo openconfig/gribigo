@@ -28,6 +28,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openconfig/gribigo/client"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -131,22 +132,50 @@ func HasNRecvErrors(t testing.TB, err error, count int) {
 	}
 }
 
+// ErrorOpt is an interface that is implemented by functions that examine errrors.
+type ErrorOpt interface {
+	isErrorOpt()
+}
+
+// allowUnimplemented is the internal representation of an ErrorOpt that allows for
+// an error that is unimplemented or a specific error.
+type allowUnimplemented struct{}
+
+// isErrorOpt marks allowUnimplemented as an ErrorOpt.
+func (*allowUnimplemented) isErrorOpt() {}
+
+// AllowUnimplemented specifies that receive error with a particular status can be unimplemented
+// OR the specified error type. It can be used to not return a fatal error when a server does
+// not support a particular functionality.
+func AllowUnimplemented() *allowUnimplemented {
+	return &allowUnimplemented{}
+}
+
 // HasRecvClientErrorWithStatus checks whether the supplied ClientErr ce contains a status with
 // the code and details set to the values supplied in want.
-func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status) {
+func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, opts ...ErrorOpt) {
 	t.Helper()
+
+	okMsgs := []*status.Status{want}
+	for _, o := range opts {
+		if _, ok := o.(*allowUnimplemented); ok {
+			okMsgs = append(okMsgs, status.New(codes.Unimplemented, ""))
+		}
+	}
 
 	var found bool
 	ce := clientError(t, err)
 	for _, e := range ce.Recv {
-		s, ok := status.FromError(e)
-		if !ok {
-			continue
-		}
-		ns := s.Proto()
-		ns.Message = "" // blank out message so that we don't compare it.
-		if proto.Equal(ns, want.Proto()) {
-			found = true
+		for _, wo := range okMsgs {
+			s, ok := status.FromError(e)
+			if !ok {
+				continue
+			}
+			ns := s.Proto()
+			ns.Message = "" // blank out message so that we don't compare it.
+			if proto.Equal(ns, wo.Proto()) {
+				found = true
+			}
 		}
 	}
 	if !found {

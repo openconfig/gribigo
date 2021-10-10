@@ -149,7 +149,7 @@ func TestGRIBIClient(t *testing.T) {
 func TestEntry(t *testing.T) {
 	tests := []struct {
 		desc           string
-		in             gRIBIEntry
+		in             GRIBIEntry
 		wantOpProto    *spb.AFTOperation
 		wantEntryProto *spb.AFTEntry
 		wantOpErr      bool
@@ -296,13 +296,13 @@ func TestEntriesToModifyRequest(t *testing.T) {
 		desc              string
 		inClient          *GRIBIClient
 		inOp              spb.AFTOperation_Operation
-		inEntries         []gRIBIEntry
+		inEntries         []GRIBIEntry
 		wantModifyRequest *spb.ModifyRequest
 		wantErr           bool
 	}{{
 		desc: "one ipv4 entry",
 		inOp: spb.AFTOperation_ADD,
-		inEntries: []gRIBIEntry{
+		inEntries: []GRIBIEntry{
 			IPv4Entry().WithPrefix("1.1.1.1/32").WithNextHopGroup(42),
 		},
 		wantModifyRequest: &spb.ModifyRequest{
@@ -324,7 +324,7 @@ func TestEntriesToModifyRequest(t *testing.T) {
 	}, {
 		desc: "multiple entries",
 		inOp: spb.AFTOperation_ADD,
-		inEntries: []gRIBIEntry{
+		inEntries: []GRIBIEntry{
 			IPv4Entry().WithPrefix("1.1.1.1/32").WithNextHopGroup(42),
 			IPv4Entry().WithPrefix("2.2.2.2/32").WithNetworkInstance("TE-VRF").WithNextHopGroup(42),
 		},
@@ -370,7 +370,7 @@ func TestEntriesToModifyRequest(t *testing.T) {
 			},
 		},
 		inOp: spb.AFTOperation_ADD,
-		inEntries: []gRIBIEntry{
+		inEntries: []GRIBIEntry{
 			IPv4Entry().WithPrefix("8.8.4.4/32").WithNextHopGroup(15169),
 		},
 		wantModifyRequest: &spb.ModifyRequest{

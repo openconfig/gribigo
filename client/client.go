@@ -518,20 +518,6 @@ type OpResult struct {
 	Details *OpDetailsResults
 }
 
-// OpDetailsResults provides details of an operation for use in the results.
-type OpDetailsResults struct {
-	// Type is the type of the operation (i.e., ADD, MODIFY, DELETE)
-	Type constants.OpType
-
-	// NextHopIndex is the identifier for a next-hop modified by the operation.
-	NextHopIndex uint64
-	// NextHopGroupID is the identifier for a next-hop-group modified by the
-	// operation.
-	NextHopGroupID uint64
-	// IPv4Prefix is the IPv4 prefix modified by the operation.
-	IPv4Prefix string
-}
-
 // String returns a string for an OpResult for debugging purposes.
 func (o *OpResult) String() string {
 	if o == nil {
@@ -553,6 +539,9 @@ func (o *OpResult) String() string {
 			typ = fmt.Sprintf("%s", o.Details.Type)
 		}
 		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, typ, o.ProgrammingResult))
+	} else if v := o.ProgrammingResult; v != spb.AFTResult_UNSET {
+		// Special case for input messages that are just matching on status.
+		buf.WriteString(fmt.Sprintf(" AFTOperation { Status: %s }", v))
 	}
 
 	if v := o.SessionParameters; v != nil {
@@ -561,6 +550,40 @@ func (o *OpResult) String() string {
 
 	if v := o.ClientError; v != "" {
 		buf.WriteString(fmt.Sprintf(" With Error: %s", v))
+	}
+	buf.WriteString(">")
+
+	return buf.String()
+}
+
+// OpDetailsResults provides details of an operation for use in the results.
+type OpDetailsResults struct {
+	// Type is the type of the operation (i.e., ADD, MODIFY, DELETE)
+	Type constants.OpType
+
+	// NextHopIndex is the identifier for a next-hop modified by the operation.
+	NextHopIndex uint64
+	// NextHopGroupID is the identifier for a next-hop-group modified by the
+	// operation.
+	NextHopGroupID uint64
+	// IPv4Prefix is the IPv4 prefix modified by the operation.
+	IPv4Prefix string
+}
+
+// String returns a human-readable form of the OpDetailsResults
+func (o *OpDetailsResults) String() string {
+	if o == nil {
+		return "<nil>"
+	}
+	buf := &bytes.Buffer{}
+	buf.WriteString(fmt.Sprintf("<Type: %s ", o.Type))
+	switch {
+	case o.NextHopIndex != 0:
+		buf.WriteString(fmt.Sprintf("NH Index: %d", o.NextHopIndex))
+	case o.NextHopGroupID != 0:
+		buf.WriteString(fmt.Sprintf("NHG ID: %d", o.NextHopGroupID))
+	case o.IPv4Prefix != "":
+		buf.WriteString(fmt.Sprintf("IPv4: %s", o.IPv4Prefix))
 	}
 	buf.WriteString(">")
 
@@ -993,45 +1016,32 @@ func (c *Client) AwaitConverged(ctx context.Context) error {
 	}
 }
 
-// GetRequest is used by a client to indicate the arguments to the Get method.
-type GetRequest struct {
-	// AllNetworkInstances indicates that the Get should be performed for every
-	// network instance. AllNetworkInstances and NetworkInstance are mutually
-	// exclusive.
-	AllNetworkInstances bool
-	// NetworkInstance specifies the name of the network instance that is to be
-	// queried. AllNetworkInstances and NetworkInstance are mutually
-	// exclusive.
-	NetworkInstance string
-	// AFT is the AFT that should be requested.
-	AFT constants.AFT
-}
-
 // Get implements the Get RPC to the gRIBI server. It takes an input context and a
-// client.GetRequest and returns a single GetResponse with all contained results within
+// GetRequest and returns a single GetResponse with all contained results within
 // it.
-func (c *Client) Get(ctx context.Context, req *GetRequest) (*spb.GetResponse, error) {
-	sreq := &spb.GetRequest{}
-	switch {
-	case !req.AllNetworkInstances && req.NetworkInstance == "":
-		return nil, fmt.Errorf("invalid request, neither all or a specific network instance requested, got: %+v", req)
-	case req.AllNetworkInstances && req.NetworkInstance != "":
-		return nil, fmt.Errorf("invalid request, cannot request all and a specific named network instance simulatenously, got: %+v", req)
-	case req.AllNetworkInstances:
-		sreq.NetworkInstance = &spb.GetRequest_All{
-			All: &spb.Empty{},
+func (c *Client) Get(ctx context.Context, sreq *spb.GetRequest) (*spb.GetResponse, error) {
+	if sreq == nil {
+		return nil, errors.New("get request cannot be nil")
+	}
+
+	ni := sreq.GetNetworkInstance()
+	if ni == nil {
+		return nil, errors.New("network instance cannot be nil")
+	}
+
+	switch ni.(type) {
+	case *spb.GetRequest_All:
+		if sreq.GetAll() == nil {
+			return nil, errors.New("network instance All cannot be nil")
 		}
-	default:
-		sreq.NetworkInstance = &spb.GetRequest_Name{
-			Name: req.NetworkInstance,
+	case *spb.GetRequest_Name:
+		if sreq.GetName() == "" {
+			return nil, errors.New("network instance name is required")
 		}
 	}
 
-	switch v := req.AFT; v {
-	case constants.All, constants.IPv4, constants.NextHop, constants.NextHopGroup:
-		sreq.Aft = constants.AFTTypeFromAFT(v)
-	default:
-		return nil, fmt.Errorf("invalid/unsupported AFT type specified, %d", v)
+	if sreq.GetAft() == spb.AFTType_INVALID {
+		return nil, errors.New("AFT is required")
 	}
 
 	result := &spb.GetResponse{}

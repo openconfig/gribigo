@@ -518,20 +518,6 @@ type OpResult struct {
 	Details *OpDetailsResults
 }
 
-// OpDetailsResults provides details of an operation for use in the results.
-type OpDetailsResults struct {
-	// Type is the type of the operation (i.e., ADD, MODIFY, DELETE)
-	Type constants.OpType
-
-	// NextHopIndex is the identifier for a next-hop modified by the operation.
-	NextHopIndex uint64
-	// NextHopGroupID is the identifier for a next-hop-group modified by the
-	// operation.
-	NextHopGroupID uint64
-	// IPv4Prefix is the IPv4 prefix modified by the operation.
-	IPv4Prefix string
-}
-
 // String returns a string for an OpResult for debugging purposes.
 func (o *OpResult) String() string {
 	buf := &bytes.Buffer{}
@@ -553,6 +539,39 @@ func (o *OpResult) String() string {
 
 	if v := o.ClientError; v != "" {
 		buf.WriteString(fmt.Sprintf(" With Error: %s", v))
+	}
+	buf.WriteString(">")
+
+	return buf.String()
+}
+
+// OpDetailsResults provides details of an operation for use in the results.
+type OpDetailsResults struct {
+	// Type is the type of the operation (i.e., ADD, MODIFY, DELETE)
+	Type constants.OpType
+
+	// NextHopIndex is the identifier for a next-hop modified by the operation.
+	NextHopIndex uint64
+	// NextHopGroupID is the identifier for a next-hop-group modified by the
+	// operation.
+	NextHopGroupID uint64
+	// IPv4Prefix is the IPv4 prefix modified by the operation.
+	IPv4Prefix string
+}
+
+func (o *OpDetailsResults) String() string {
+	if o == nil {
+		return "<nil>"
+	}
+	buf := &bytes.Buffer{}
+	buf.WriteString(fmt.Sprintf("<Type: %s ", o.Type))
+	switch {
+	case o.NextHopIndex != 0:
+		buf.WriteString(fmt.Sprintf("NH Index: %d", o.NextHopIndex))
+	case o.NextHopGroupID != 0:
+		buf.WriteString(fmt.Sprintf("NHG ID: %d", o.NextHopGroupID))
+	case o.IPv4Prefix != "":
+		buf.WriteString(fmt.Sprintf("IPv4: %s", o.IPv4Prefix))
 	}
 	buf.WriteString(">")
 

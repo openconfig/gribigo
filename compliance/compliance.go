@@ -62,8 +62,15 @@ type Test struct {
 	// Reference is a unique reference to external data (e.g., test plans) used for the test.
 	Reference string
 
-	// Mark test as dependent upon FIB ACKs.
+	// RequiresFIBACK marks a test that requires the implementation of FIB ACK on the server.
+	// This is expected behaviour of a gRIBI server, but some implementations add this in
+	// later builds.
 	RequiresFIBACK bool
+	// RequiresServerReordering marks a test that requires the implementation of server-side
+	// reordering of transactions rather than an immediate NACK. Currently, some implementations
+	// immediately NACK forward references, which causes some tests to fail. The reference
+	// implementation handles reodering.
+	RequiresServerReordering bool
 }
 
 // TestSpec is a description of a test.
@@ -95,69 +102,106 @@ var (
 		},
 	}, {
 		In: Test{
-			Fn:        AddIPv4EntryRIBACK,
+			Fn:        makeTestWithACK(AddIPv4Entry, fluent.InstalledInRIB),
 			Reference: "TE-2.1.1.1",
 			ShortName: "Add IPv4 entry that can be programmed on the server - with RIB ACK",
 		},
 	}, {
 		In: Test{
-			Fn:             AddIPv4EntryFIBACK,
+			Fn:             makeTestWithACK(AddIPv4Entry, fluent.InstalledInFIB),
 			Reference:      "TE-2.1.1.2",
 			ShortName:      "Add IPv4 entry that can be programmed on the server - with FIB ACK",
 			RequiresFIBACK: true,
 		},
 	}, {
 		In: Test{
-			Fn:        AddUnreferencedNextHopGroupRIBACK,
+			Fn:        makeTestWithACK(AddUnreferencedNextHopGroup, fluent.InstalledInRIB),
 			ShortName: "Add next-hop-group entry that can be resolved on the server, no referencing IPv4 entries - with RIB ACK",
 		},
 	}, {
 		In: Test{
-			Fn:             AddUnreferencedNextHopGroupFIBACK,
+			Fn:             makeTestWithACK(AddUnreferencedNextHopGroup, fluent.InstalledInFIB),
 			ShortName:      "Add next-hop-group entry that can be resolved on the server, no referencing IPv4 entries - with FIB ACK",
 			RequiresFIBACK: true,
 		},
 	}, {
 		In: Test{
-			Fn:        AddIPv4EntryRandom,
-			ShortName: "Add IPv4 entries that are resolved by NHG and NH, in random order",
+			Fn:                       AddIPv4EntryRandom,
+			ShortName:                "Add IPv4 entries that are resolved by NHG and NH, in random order",
+			RequiresServerReordering: true,
 		},
 	}, {
 		In: Test{
-			Fn:        AddIPv4ToMultipleNHsSingleRequest,
-			ShortName: "Add IPv4 entries that are resolved to a next-hop-group containing multiple next-hops (single ModifyRequest)",
+			Fn:             makeTestWithACK(AddIPv4ToMultipleNHsSingleRequest, fluent.InstalledInFIB),
+			ShortName:      "Add IPv4 entries that are resolved to a next-hop-group containing multiple next-hops (single ModifyRequest) - with FIB ACK",
+			Reference:      "TE-2.1.2.1",
+			RequiresFIBACK: true,
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(AddIPv4ToMultipleNHsSingleRequest, fluent.InstalledInRIB),
+			ShortName: "Add IPv4 entries that are resolved to a next-hop-group containing multiple next-hops (single ModifyRequest) - with RIB ACK",
 			Reference: "TE-2.1.2.1",
 		},
 	}, {
 		In: Test{
-			Fn:        AddIPv4ToMultipleNHsMultipleRequests,
-			ShortName: "Add IPv4 entries that are resolved to a next-hop-group containing multiple next-hops (multiple ModifyRequests)",
+			Fn:             makeTestWithACK(AddIPv4ToMultipleNHsMultipleRequests, fluent.InstalledInFIB),
+			ShortName:      "Add IPv4 entries that are resolved to a next-hop-group containing multiple next-hops (multiple ModifyRequests) - with FIB ACK",
+			Reference:      "TE-2.1.2.2",
+			RequiresFIBACK: true,
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(AddIPv4ToMultipleNHsMultipleRequests, fluent.InstalledInRIB),
+			ShortName: "Add IPv4 entries that are resolved to a next-hop-group containing multiple next-hops (multiple ModifyRequests) - with RIB ACK",
 			Reference: "TE-2.1.2.2",
 		},
 	}, {
 		In: Test{
-			Fn:        DeleteIPv4Entry,
-			ShortName: "Delete IPv4 entry within default network instance",
+			Fn:        makeTestWithACK(DeleteIPv4Entry, fluent.InstalledInRIB),
+			ShortName: "Delete IPv4 entry within default network instance - RIB ACK",
 		},
 	}, {
 		In: Test{
-			Fn:        DeleteReferencedNHGFailure,
-			ShortName: "Delete NHG entry that is referenced - failure",
+			Fn:        makeTestWithACK(DeleteReferencedNHGFailure, fluent.InstalledInRIB),
+			ShortName: "Delete NHG entry that is referenced - failure - RIB ACK",
 		},
 	}, {
 		In: Test{
-			Fn:        DeleteReferencedNHFailure,
-			ShortName: "Delete NH entry that is referenced - failure",
+			Fn:        makeTestWithACK(DeleteReferencedNHFailure, fluent.InstalledInRIB),
+			ShortName: "Delete NH entry that is referenced - failure - RIB ACK",
 		},
 	}, {
 		In: Test{
-			Fn:        DeleteNextHopGroup,
-			ShortName: "Delete NHG entry successfully",
+			Fn:        makeTestWithACK(DeleteNextHopGroup, fluent.InstalledInRIB),
+			ShortName: "Delete NHG entry successfully - RIB ACK",
 		},
 	}, {
 		In: Test{
-			Fn:        DeleteNextHop,
-			ShortName: "Delete NH entry successfully",
+			Fn:             makeTestWithACK(DeleteNextHopGroup, fluent.InstalledInFIB),
+			ShortName:      "Delete NHG entry successfully - FIB ACK",
+			RequiresFIBACK: true,
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(DeleteNextHop, fluent.InstalledInRIB),
+			ShortName: "Delete NH entry successfully - RIB ACK",
+		},
+	}, {
+		In: Test{
+			Fn:             makeTestWithACK(DeleteNextHop, fluent.InstalledInRIB),
+			ShortName:      "Delete NH entry successfully - FIB ACK",
+			RequiresFIBACK: true,
+		},
+	}, {
+		In: Test{
+			Fn:        AddIPv4Metadata,
+			ShortName: "Add Metadata for IPv4 entry",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(AddIPv4EntryDifferentNINHG, fluent.InstalledInRIB),
+			ShortName: "Add IPv4 Entry that references a NHG in a different network instance",
 		},
 	}}
 )
@@ -237,33 +281,9 @@ func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB) 
 	chk.HasRecvClientErrorWithStatus(t, err, want, chk.AllowUnimplemented())
 }
 
-// AddIPv4EntryRIBACK adds a simple IPv4 Entry which references a next-hop-group
-// to the gRIBI server, requesting a RIB-level ACK.
-func AddIPv4EntryRIBACK(c *fluent.GRIBIClient, t testing.TB) {
-	addIPv4Internal(c, t, fluent.InstalledInRIB)
-}
-
-// AddIPv4EntryFIBACK adds a simple IPv4 Entry which references a next-hop-group
-// to the gRIBI server, requesting a FIB-level ACK.
-func AddIPv4EntryFIBACK(c *fluent.GRIBIClient, t testing.TB) {
-	addIPv4Internal(c, t, fluent.InstalledInFIB)
-}
-
-// AddUnreferencedNextHopGroupRIBACK adds an unreferenced next-hop-group that contains
-// nexthops to the gRIBI server, requesting a FIB-level ACK.
-func AddUnreferencedNextHopGroupRIBACK(c *fluent.GRIBIClient, t testing.TB) {
-	addNextHopGroupInternal(c, t, fluent.InstalledInRIB)
-}
-
-// AddUnreferencedNextHopGroupFIBACK adds an unreferenced next-hop-group that contains
-// nexthops to the gRIBI server, requesting a FIB-level ACK.
-func AddUnreferencedNextHopGroupFIBACK(c *fluent.GRIBIClient, t testing.TB) {
-	addNextHopGroupInternal(c, t, fluent.InstalledInFIB)
-}
-
-// addIPv4Internal is an internal test that adds IPv4 entries, and checks
-// whether the specified FIB ack is received.
-func addIPv4Internal(c *fluent.GRIBIClient, t testing.TB, wantACK fluent.ProgrammingResult) {
+// AddIPv4Entry adds a fully referenced IPv4Entry and checks whether the specified ACK
+// type (wantACK) is returned.
+func AddIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
@@ -349,6 +369,93 @@ func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB) {
 	// TODO(robjs): add gNMI subscription using generated telemetry library.
 }
 
+// AddIPv4Metadata adds an IPv4 Entry (and its dependencies) with metadata alongside the
+// entry.
+func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB) {
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.IPv4Entry().
+				WithPrefix("1.1.1.1/32").
+				WithNetworkInstance(server.DefaultNetworkInstanceName).
+				WithNextHopGroup(1).
+				WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
+			)
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(server.DefaultNetworkInstanceName).WithIPAddress("2.2.2.2"))
+		},
+	}
+
+	res := doOps(c, t, ops, fluent.InstalledInRIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("1.1.1.1/32").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// AddIPv4EntryDifferentNINHG adds an IPv4 entry that references a next-hop-group within a
+// different network instance, and validates that the entry is successfully installed.
+func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+	// TODO(robjs): Server needs to be initialised with >1 VRF.
+	t.Skip()
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.IPv4Entry().
+				WithPrefix("1.1.1.1/32").
+				WithNetworkInstance("NON-DEFAULT").
+				WithNextHopGroup(1).
+				WithNextHopGroupNetworkInstance(server.DefaultNetworkInstanceName))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithIPAddress("2.2.2.2"))
+		},
+	}
+
+	res := doOps(c, t, ops, wantACK, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithProgrammingResult(wantACK).
+			WithOperationType(constants.Add).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithProgrammingResult(wantACK).
+			WithOperationType(constants.Add).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("1.1.1.1/32").
+			WithProgrammingResult(wantACK).
+			WithOperationType(constants.Add).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
 // doOps performs the series of operations in ops using the context
 // client c. wantACK specifies the ACK type to request from the
 // server, and randomise specifies whether the operations should be
@@ -389,11 +496,9 @@ func doOps(c *fluent.GRIBIClient, t testing.TB, ops []func(), wantACK fluent.Pro
 	return c.Results(t)
 }
 
-// addNextHopGroupInternal is an internal implementation that checks that a
-// next-hop-group can be added to the gRIBI server with the specified ACK mode.
-// The tests does not install an IPv4Entry, so these NHGs are unreferenced.
-// We still expect an ACK in this case.
-func addNextHopGroupInternal(c *fluent.GRIBIClient, t testing.TB, wantACK fluent.ProgrammingResult) {
+// AddUnreferencedNextHopGroup adds a NHG that is not referenced by any other entry. An ACK is expected,
+// and is validated to be of the type specified by wantACK.
+func AddUnreferencedNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
@@ -449,13 +554,13 @@ func baseTopologyEntries(c *fluent.GRIBIClient, t testing.TB) {
 
 // validateBaseEntries checks that the entries in the base topology are correctly
 // installed.
-func validateBaseTopologyEntries(res []*client.OpResult, t testing.TB) {
+func validateBaseTopologyEntries(res []*client.OpResult, wantACK fluent.ProgrammingResult, t testing.TB) {
 	// Check for next-hops 1 and 2.
 	for _, nhopID := range []uint64{1, 2} {
 		chk.HasResult(t, res,
 			fluent.OperationResult().
 				WithNextHopOperation(nhopID).
-				WithProgrammingResult(fluent.InstalledInFIB).
+				WithProgrammingResult(wantACK).
 				WithOperationType(constants.Add).
 				AsResult(),
 			chk.IgnoreOperationID(),
@@ -466,7 +571,7 @@ func validateBaseTopologyEntries(res []*client.OpResult, t testing.TB) {
 	chk.HasResult(t, res,
 		fluent.OperationResult().
 			WithNextHopGroupOperation(1).
-			WithProgrammingResult(fluent.InstalledInFIB).
+			WithProgrammingResult(wantACK).
 			WithOperationType(constants.Add).
 			AsResult(),
 		chk.IgnoreOperationID(),
@@ -476,17 +581,17 @@ func validateBaseTopologyEntries(res []*client.OpResult, t testing.TB) {
 	chk.HasResult(t, res,
 		fluent.OperationResult().
 			WithIPv4Operation("1.0.0.0/8").
-			WithProgrammingResult(fluent.InstalledInFIB).
+			WithProgrammingResult(wantACK).
 			WithOperationType(constants.Add).
 			AsResult(),
 		chk.IgnoreOperationID(),
 	)
 }
 
-// AddIPv4ToMultipleNHsSingleRequest creates an IPv4 entry which references a NHG containing
-// 2 NHs within a single ModifyRequest, validating that they are installed in the FIB.
-func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, t testing.TB) {
-
+// AddIPv4ToMultipleNHsSingleRequest is the internal implementation of the single request installation
+// of a IPv4Entry referencing a NHG that contains multiple NHs. It uses the wantACK parameter to determine the
+// type of acknowledgement that is expected from the server.
+func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -497,35 +602,41 @@ func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, t testing.TB) {
 		},
 	}
 
-	validateBaseTopologyEntries(doOps(c, t, ops, fluent.InstalledInFIB, false), t)
+	validateBaseTopologyEntries(doOps(c, t, ops, wantACK, false), wantACK, t)
 }
 
 // AddIPv4ToMultipleNHsMultipleRequests creates an IPv4 entry which references a NHG containing
-// 2 NHs within multiple ModifyReqests, validating that they are installed in the FIB.
-func AddIPv4ToMultipleNHsMultipleRequests(c *fluent.GRIBIClient, t testing.TB) {
-
+// 2 NHs within multiple ModifyReqests, validating that they are installed in the specified RIB
+// or FIB according to wantACK.
+func AddIPv4ToMultipleNHsMultipleRequests(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 	}
-	validateBaseTopologyEntries(doOps(c, t, ops, fluent.InstalledInFIB, false), t)
+	validateBaseTopologyEntries(doOps(c, t, ops, wantACK, false), wantACK, t)
+}
+
+// makeTestWithACK creates a version of a test function that can be directly executed by the runner
+// which has a specific ACK type.
+func makeTestWithACK(fn func(*fluent.GRIBIClient, fluent.ProgrammingResult, testing.TB), wantACK fluent.ProgrammingResult) func(*fluent.GRIBIClient, testing.TB) {
+	return func(c *fluent.GRIBIClient, t testing.TB) { fn(c, wantACK, t) }
 }
 
 // DeleteIPv4Entry deletes an IPv4 entry from the server's RIB.
-func DeleteIPv4Entry(c *fluent.GRIBIClient, t testing.TB) {
+func DeleteIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
 			c.Modify().DeleteEntry(t, fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName))
 		},
 	}
-	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
-	validateBaseTopologyEntries(res, t)
+	res := doOps(c, t, ops, wantACK, false)
+	validateBaseTopologyEntries(res, wantACK, t)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
 			WithIPv4Operation("1.0.0.0/8").
 			WithOperationType(constants.Delete).
-			WithProgrammingResult(fluent.InstalledInFIB).
+			WithProgrammingResult(wantACK).
 			AsResult(),
 		chk.IgnoreOperationID(),
 	)
@@ -533,15 +644,15 @@ func DeleteIPv4Entry(c *fluent.GRIBIClient, t testing.TB) {
 
 // DeleteReferencedNHGFailure attempts to delete a NextHopGroup entry that is referenced
 // from the RIB, and expects a failure.
-func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, t testing.TB) {
+func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
 			c.Modify().DeleteEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName))
 		},
 	}
-	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
-	validateBaseTopologyEntries(res, t)
+	res := doOps(c, t, ops, wantACK, false)
+	validateBaseTopologyEntries(res, wantACK, t)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -554,7 +665,7 @@ func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, t testing.TB) {
 
 // DeleteReferencedNHFailure attempts to delete a NH entry that is referened from the RIB
 // and expects a failure.
-func DeleteReferencedNHFailure(c *fluent.GRIBIClient, t testing.TB) {
+func DeleteReferencedNHFailure(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -564,8 +675,8 @@ func DeleteReferencedNHFailure(c *fluent.GRIBIClient, t testing.TB) {
 			c.Modify().DeleteEntry(t, fluent.NextHopEntry().WithIndex(2).WithNetworkInstance(server.DefaultNetworkInstanceName))
 		},
 	}
-	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
-	validateBaseTopologyEntries(res, t)
+	res := doOps(c, t, ops, wantACK, false)
+	validateBaseTopologyEntries(res, wantACK, t)
 
 	for _, i := range []uint64{1, 2} {
 		chk.HasResult(t, res,
@@ -579,8 +690,8 @@ func DeleteReferencedNHFailure(c *fluent.GRIBIClient, t testing.TB) {
 }
 
 // DeleteNextHopGroup attempts to delete a NHG entry that is not referenced and expects
-// success.
-func DeleteNextHopGroup(c *fluent.GRIBIClient, t testing.TB) {
+// success. The ACK type expected is validated against wantACK.
+func DeleteNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -591,14 +702,14 @@ func DeleteNextHopGroup(c *fluent.GRIBIClient, t testing.TB) {
 		},
 	}
 
-	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
-	validateBaseTopologyEntries(res, t)
+	res := doOps(c, t, ops, wantACK, false)
+	validateBaseTopologyEntries(res, wantACK, t)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
 			WithNextHopGroupOperation(1).
 			WithOperationType(constants.Delete).
-			WithProgrammingResult(fluent.InstalledInFIB).
+			WithProgrammingResult(wantACK).
 			AsResult(),
 		chk.IgnoreOperationID())
 
@@ -606,17 +717,14 @@ func DeleteNextHopGroup(c *fluent.GRIBIClient, t testing.TB) {
 		fluent.OperationResult().
 			WithIPv4Operation("1.0.0.0/8").
 			WithOperationType(constants.Delete).
-			WithProgrammingResult(fluent.InstalledInFIB).
+			WithProgrammingResult(wantACK).
 			AsResult(),
 		chk.IgnoreOperationID())
 }
 
-// DeleteNextHop attempts to delete the NH entris within the base topology and expects
-// success.
-//
-// TODO(robjs): When traffic and AFT validation is added, ensure that a partial delete
-// scenario keeps traffic routed via the remaining NH.
-func DeleteNextHop(c *fluent.GRIBIClient, t testing.TB) {
+// DeleteNextHop attempts to delete the NH entries within the base topology and expects
+// success. The ACK type returned is validated against wantACK.
+func DeleteNextHop(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -629,25 +737,24 @@ func DeleteNextHop(c *fluent.GRIBIClient, t testing.TB) {
 		},
 	}
 
-	res := doOps(c, t, ops, fluent.InstalledInFIB, false)
-	validateBaseTopologyEntries(res, t)
+	res := doOps(c, t, ops, wantACK, false)
+	validateBaseTopologyEntries(res, wantACK, t)
 
 	for _, i := range []uint64{1, 2} {
 		chk.HasResult(t, res,
 			fluent.OperationResult().
 				WithNextHopOperation(i).
 				WithOperationType(constants.Delete).
-				WithProgrammingResult(fluent.InstalledInFIB).
+				WithProgrammingResult(wantACK).
 				AsResult(),
 			chk.IgnoreOperationID())
-
 	}
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
 			WithNextHopGroupOperation(1).
 			WithOperationType(constants.Delete).
-			WithProgrammingResult(fluent.InstalledInFIB).
+			WithProgrammingResult(wantACK).
 			AsResult(),
 		chk.IgnoreOperationID())
 
@@ -655,7 +762,7 @@ func DeleteNextHop(c *fluent.GRIBIClient, t testing.TB) {
 		fluent.OperationResult().
 			WithIPv4Operation("1.0.0.0/8").
 			WithOperationType(constants.Delete).
-			WithProgrammingResult(fluent.InstalledInFIB).
+			WithProgrammingResult(wantACK).
 			AsResult(),
 		chk.IgnoreOperationID())
 }

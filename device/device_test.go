@@ -88,7 +88,7 @@ func TestDevice(t *testing.T) {
 	case addr := <-devCh:
 		c := fluent.NewClient()
 		c.Connection().WithTarget(addr)
-		compliance.AddIPv4EntryRIBACK(c, t)
+		compliance.AddIPv4Entry(c, fluent.InstalledInRIB, t)
 
 		_, cidr, err := net.ParseCIDR("1.1.1.1/32")
 		if err != nil {

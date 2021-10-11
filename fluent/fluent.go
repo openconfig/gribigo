@@ -464,7 +464,14 @@ func (i *ipv4Entry) WithNextHopGroupNetworkInstance(n string) *ipv4Entry {
 	return i
 }
 
-// opproto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
+// WithMetadata specifies a byte slice that is stored as metadata alongside
+// the entry on the gRIBI server.
+func (i *ipv4Entry) WithMetadata(b []byte) *ipv4Entry {
+	i.pb.Ipv4Entry.Metadata = &wpb.BytesValue{Value: b}
+	return i
+}
+
+// opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
 func (i *ipv4Entry) opproto() (*spb.AFTOperation, error) {

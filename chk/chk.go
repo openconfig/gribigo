@@ -21,6 +21,8 @@
 package chk
 
 import (
+	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -30,6 +32,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+
+	spb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
 // resultOpt is an interface implemented by all options that can be
@@ -92,7 +96,13 @@ func HasResult(t testing.TB, res []*client.OpResult, want *client.OpResult, opt 
 		}
 	}
 	if !found {
-		t.Fatalf("results did not contain a result of value %s, got: %v", want, res)
+		buf := &bytes.Buffer{}
+		buf.WriteString(fmt.Sprintf("results did not contain a result of value %s\n", want))
+		buf.WriteString("got:\n")
+		for _, r := range res {
+			buf.WriteString(fmt.Sprintf("\t%s\n", r))
+		}
+		t.Fatalf(buf.String())
 	}
 }
 
@@ -151,7 +161,10 @@ func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, 
 	okMsgs := []*status.Status{want}
 	for _, o := range opts {
 		if _, ok := o.(*allowUnimplemented); ok {
-			okMsgs = append(okMsgs, status.New(codes.Unimplemented, ""))
+			uProto := proto.Clone(want.Proto()).(*spb.Status)
+			uProto.Code = int32(codes.Unimplemented)
+			unimpl := status.FromProto(uProto)
+			okMsgs = append(okMsgs, unimpl)
 		}
 	}
 
@@ -165,6 +178,7 @@ func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, 
 			}
 			ns := s.Proto()
 			ns.Message = "" // blank out message so that we don't compare it.
+
 			if proto.Equal(ns, wo.Proto()) {
 				found = true
 			}

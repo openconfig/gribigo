@@ -13,6 +13,7 @@ require (
 	github.com/openconfig/grpctunnel v0.0.0-20210610163803-fde4a9dc048d // indirect
 	github.com/openconfig/ygot v0.11.0
 	go.uber.org/atomic v1.7.0
+	google.golang.org/genproto v0.0.0-20201214200347-8c77b98c765d // indirect
 	google.golang.org/grpc v1.37.0
 	google.golang.org/protobuf v1.26.0
 	lukechampine.com/uint128 v1.1.1

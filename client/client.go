@@ -536,7 +536,7 @@ func (o *OpResult) String() string {
 	if v := o.OperationID; v != 0 {
 		typ := "Unknown"
 		if o.Details != nil {
-			typ = fmt.Sprintf("%s", o.Details.Type)
+			typ = o.Details.Type.String()
 		}
 		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, typ, o.ProgrammingResult))
 	} else if v := o.ProgrammingResult; v != spb.AFTResult_UNSET {

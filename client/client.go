@@ -520,6 +520,10 @@ type OpResult struct {
 
 // String returns a string for an OpResult for debugging purposes.
 func (o *OpResult) String() string {
+	if o == nil {
+		return "<nil>"
+	}
+
 	buf := &bytes.Buffer{}
 	buf.WriteString("<")
 	buf.WriteString(fmt.Sprintf("%d (%d nsec):", o.Timestamp, o.Latency))
@@ -530,7 +534,11 @@ func (o *OpResult) String() string {
 	}
 
 	if v := o.OperationID; v != 0 {
-		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Details: %s, Status: %s }", v, o.Details, o.ProgrammingResult))
+		typ := "Unknown"
+		if o.Details != nil {
+			typ = o.Details.Type.String()
+		}
+		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, typ, o.ProgrammingResult))
 	} else if v := o.ProgrammingResult; v != spb.AFTResult_UNSET {
 		// Special case for input messages that are just matching on status.
 		buf.WriteString(fmt.Sprintf(" AFTOperation { Status: %s }", v))
@@ -562,6 +570,7 @@ type OpDetailsResults struct {
 	IPv4Prefix string
 }
 
+// String returns a human-readable form of the OpDetailsResults
 func (o *OpDetailsResults) String() string {
 	if o == nil {
 		return "<nil>"

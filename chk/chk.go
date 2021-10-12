@@ -106,6 +106,50 @@ func HasResult(t testing.TB, res []*client.OpResult, want *client.OpResult, opt 
 	}
 }
 
+// HasResultsCache implements an efficient mechanism to call HasResults across
+// a large set of operations results. HasResultsCache checks whether each result
+// in wants is present in res, using the options specified.
+func HasResultsCache(t testing.TB, res []*client.OpResult, wants []*client.OpResult, opt ...resultOpt) {
+	t.Helper()
+
+	byOpID := map[uint64]*client.OpResult{}
+	byNHID := map[uint64]*client.OpResult{}
+	byNHGID := map[uint64]*client.OpResult{}
+	byIPv4Prefix := map[string]*client.OpResult{}
+
+	for _, r := range res {
+		byOpID[r.OperationID] = r
+		if r.Details != nil {
+			switch {
+			case r.Details.NextHopGroupID != 0:
+				byNHGID[r.Details.NextHopGroupID] = r
+			case r.Details.NextHopIndex != 0:
+				byNHID[r.Details.NextHopIndex] = r
+			case r.Details.IPv4Prefix != "":
+				byIPv4Prefix[r.Details.IPv4Prefix] = r
+			}
+		}
+	}
+
+	if !hasIgnoreOperationID(opt) {
+		for _, want := range wants {
+			HasResult(t, []*client.OpResult{byOpID[want.OperationID]}, want, opt...)
+		}
+		return
+	}
+
+	for _, want := range wants {
+		switch {
+		case want.Details.NextHopGroupID != 0:
+			HasResult(t, []*client.OpResult{byNHGID[want.Details.NextHopGroupID]}, want, opt...)
+		case want.Details.NextHopIndex != 0:
+			HasResult(t, []*client.OpResult{byNHID[want.Details.NextHopIndex]}, want, opt...)
+		case want.Details.IPv4Prefix != "":
+			HasResult(t, []*client.OpResult{byIPv4Prefix[want.Details.IPv4Prefix]}, want, opt...)
+		}
+	}
+}
+
 // clientError converts the given error into a client ClientErr.
 func clientError(t testing.TB, err error) *client.ClientErr {
 	t.Helper()

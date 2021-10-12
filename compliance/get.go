@@ -24,6 +24,7 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/chk"
+	"github.com/openconfig/gribigo/client"
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/server"
@@ -90,15 +91,17 @@ func populateNNHs(c *fluent.GRIBIClient, n int, wantACK fluent.ProgrammingResult
 	res := doModifyOps(c, t, ops, wantACK, false)
 
 	log.V(2).Infof("doing check for %d nexthops", n)
+
+	wants := []*client.OpResult{}
 	for i := 0; i < n; i++ {
-		chk.HasResult(t, res,
+		wants = append(wants,
 			fluent.OperationResult().
 				WithNextHopOperation(uint64(i)+1).
 				WithProgrammingResult(wantACK).
 				WithOperationType(constants.Add).
-				AsResult(),
-			chk.IgnoreOperationID())
+				AsResult())
 	}
+	chk.HasResultsCache(t, res, wants, chk.IgnoreOperationID())
 }
 
 func GetBenchmarkNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {

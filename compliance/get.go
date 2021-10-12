@@ -16,21 +16,18 @@ package compliance
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"net"
 	"testing"
+	"time"
 
+	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/chk"
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/server"
 )
-
-func doGet(c *fluent.GRIBIClient, t testing.TB, gets []func()) *spb.GetResponse {
-	ctx := context.Background()
-	c.Start(ctx, t)
-	defer c.Stop(t)
-
-}
 
 // GetNH validates that an installed next-hop is returned via the Get RPC.
 func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
@@ -55,10 +52,73 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 		chk.IgnoreOperationID(),
 	)
 
+	ctx := context.Background()
+	c.Start(ctx, t)
+	defer c.Stop(t)
 	gr, err := c.Get().
 		WithNetworkInstance(server.DefaultNetworkInstanceName).
 		WithAFT(fluent.NextHop).
 		Send()
-	fmt.Printf("%v, %v", gr, err)
 
+	// TODO(robjs): add checking for get responses, requires new
+	// fluent/check library for this.
+	_, _ = gr, err
+}
+
+// TODO(robjs): get NHG
+// TODO(robjs): get ipv4 entry
+
+func indexAsIPv4(i uint32, baseSlashEight int) string {
+	ip := make(net.IP, 4)
+	binary.BigEndian.PutUint32(ip, uint32(i)+uint32(baseSlashEight*16777216))
+	return ip.String()
+}
+
+func populateNNHs(c *fluent.GRIBIClient, n int, wantACK fluent.ProgrammingResult, t testing.TB) {
+	ops := []func(){}
+	for i := 0; i < n; i++ {
+		j := i + 1
+		ops = append(ops, func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithIndex(uint64(j)).
+					WithIPAddress(indexAsIPv4(uint32(i), 1)))
+		})
+	}
+
+	res := doModifyOps(c, t, ops, wantACK, false)
+
+	log.V(2).Infof("doing check for %d nexthops", n)
+	for i := 0; i < n; i++ {
+		chk.HasResult(t, res,
+			fluent.OperationResult().
+				WithNextHopOperation(uint64(i)+1).
+				WithProgrammingResult(wantACK).
+				WithOperationType(constants.Add).
+				AsResult(),
+			chk.IgnoreOperationID())
+	}
+}
+
+func GetBenchmarkNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+	for _, i := range []int{10, 100, 1000, 10000, 100000} {
+		populateNNHs(c, i, wantACK, t)
+		ctx := context.Background()
+		c.Start(ctx, t)
+		defer c.Stop(t)
+
+		start := time.Now()
+		_, err := c.Get().
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithAFT(fluent.NextHop).
+			Send()
+		end := time.Now()
+		if err != nil {
+			t.Fatalf("got unexpected error, %v", err)
+		}
+
+		latency := end.Sub(start).Nanoseconds()
+		fmt.Printf("latency for %d NHs: %d\n", i, latency)
+	}
 }

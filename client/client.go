@@ -533,15 +533,8 @@ func (o *OpResult) String() string {
 		buf.WriteString(fmt.Sprintf(" ElectionID: %s", e))
 	}
 
-	if v := o.OperationID; v != 0 {
-		typ := "Unknown"
-		if o.Details != nil {
-			typ = o.Details.Type.String()
-		}
-		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, typ, o.ProgrammingResult))
-	} else if v := o.ProgrammingResult; v != spb.AFTResult_UNSET {
-		// Special case for input messages that are just matching on status.
-		buf.WriteString(fmt.Sprintf(" AFTOperation { Status: %s }", v))
+	if opID, pr := o.OperationID, o.ProgrammingResult; opID != 0 || pr != spb.AFTResult_UNSET {
+		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Details: %s, Status: %s }", opID, o.Details, o.ProgrammingResult))
 	}
 
 	if v := o.SessionParameters; v != nil {

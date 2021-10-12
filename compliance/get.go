@@ -88,7 +88,9 @@ func populateNNHs(c *fluent.GRIBIClient, n int, wantACK fluent.ProgrammingResult
 		})
 	}
 
+	log.V(2).Infof("doing programming")
 	res := doModifyOps(c, t, ops, wantACK, false)
+	log.V(2).Infof("finished programming")
 
 	log.V(2).Infof("doing check for %d nexthops", n)
 
@@ -105,11 +107,10 @@ func populateNNHs(c *fluent.GRIBIClient, n int, wantACK fluent.ProgrammingResult
 }
 
 func GetBenchmarkNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
-	for _, i := range []int{10, 100, 1000, 10000, 100000} {
+	for _, i := range []int{10, 100, 1000, 10000, 25000} {
 		populateNNHs(c, i, wantACK, t)
 		ctx := context.Background()
 		c.Start(ctx, t)
-		defer c.Stop(t)
 
 		start := time.Now()
 		_, err := c.Get().
@@ -123,5 +124,6 @@ func GetBenchmarkNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t t
 
 		latency := end.Sub(start).Nanoseconds()
 		fmt.Printf("latency for %d NHs: %d\n", i, latency)
+		c.Stop(t)
 	}
 }

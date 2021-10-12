@@ -518,6 +518,44 @@ type OpResult struct {
 	Details *OpDetailsResults
 }
 
+// String returns a string for an OpResult for debugging purposes.
+func (o *OpResult) String() string {
+	if o == nil {
+		return "<nil>"
+	}
+
+	buf := &bytes.Buffer{}
+	buf.WriteString("<")
+	buf.WriteString(fmt.Sprintf("%d (%d nsec):", o.Timestamp, o.Latency))
+
+	if v := o.CurrentServerElectionID; v != nil {
+		e := uint128.New(v.Low, v.High)
+		buf.WriteString(fmt.Sprintf(" ElectionID: %s", e))
+	}
+
+	if v := o.OperationID; v != 0 {
+		typ := "Unknown"
+		if o.Details != nil {
+			typ = o.Details.Type.String()
+		}
+		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, typ, o.ProgrammingResult))
+	} else if v := o.ProgrammingResult; v != spb.AFTResult_UNSET {
+		// Special case for input messages that are just matching on status.
+		buf.WriteString(fmt.Sprintf(" AFTOperation { Status: %s }", v))
+	}
+
+	if v := o.SessionParameters; v != nil {
+		buf.WriteString(fmt.Sprintf(" SessionParameterResult: OK (%s)", v.String()))
+	}
+
+	if v := o.ClientError; v != "" {
+		buf.WriteString(fmt.Sprintf(" With Error: %s", v))
+	}
+	buf.WriteString(">")
+
+	return buf.String()
+}
+
 // OpDetailsResults provides details of an operation for use in the results.
 type OpDetailsResults struct {
 	// Type is the type of the operation (i.e., ADD, MODIFY, DELETE)
@@ -532,27 +570,20 @@ type OpDetailsResults struct {
 	IPv4Prefix string
 }
 
-// String returns a string for an OpResult for debugging purposes.
-func (o *OpResult) String() string {
+// String returns a human-readable form of the OpDetailsResults
+func (o *OpDetailsResults) String() string {
+	if o == nil {
+		return "<nil>"
+	}
 	buf := &bytes.Buffer{}
-	buf.WriteString("<")
-	buf.WriteString(fmt.Sprintf("%d (%d nsec):", o.Timestamp, o.Latency))
-
-	if v := o.CurrentServerElectionID; v != nil {
-		e := uint128.New(v.Low, v.High)
-		buf.WriteString(fmt.Sprintf(" ElectionID: %s", e))
-	}
-
-	if v := o.OperationID; v != 0 {
-		buf.WriteString(fmt.Sprintf(" AFTOperation { ID: %d, Type: %s, Status: %s }", v, o.Details.Type, o.ProgrammingResult))
-	}
-
-	if v := o.SessionParameters; v != nil {
-		buf.WriteString(fmt.Sprintf(" SessionParameterResult: OK (%s)", v.String()))
-	}
-
-	if v := o.ClientError; v != "" {
-		buf.WriteString(fmt.Sprintf(" With Error: %s", v))
+	buf.WriteString(fmt.Sprintf("<Type: %s ", o.Type))
+	switch {
+	case o.NextHopIndex != 0:
+		buf.WriteString(fmt.Sprintf("NH Index: %d", o.NextHopIndex))
+	case o.NextHopGroupID != 0:
+		buf.WriteString(fmt.Sprintf("NHG ID: %d", o.NextHopGroupID))
+	case o.IPv4Prefix != "":
+		buf.WriteString(fmt.Sprintf("IPv4: %s", o.IPv4Prefix))
 	}
 	buf.WriteString(">")
 

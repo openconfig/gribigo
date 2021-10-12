@@ -38,6 +38,6 @@ func TestDemo(t *testing.T) {
 	}
 	c := fluent.NewClient()
 	c.Connection().WithTarget(*addr)
-	compliance.AddIPv4EntryRIBACK(c, t)
+	compliance.AddIPv4Entry(c, fluent.InstalledInRIB, t)
 	time.Sleep(2 * time.Second)
 }

@@ -238,6 +238,11 @@ var (
 			Fn:        ReplaceMissingIPv4Entry,
 			ShortName: "Ensure failure for a IPv4 entry that does not exist",
 		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(GetNH, fluent.InstalledInRIB),
+			ShortName: "Get for installed NH - RIB ACK",
+		},
 	}}
 )
 
@@ -331,7 +336,7 @@ func AddIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 		},
 	}
 
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 
 	// Check the three entries in order.
 	chk.HasResult(t, res,
@@ -371,7 +376,7 @@ func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB) {
 		},
 	}
 
-	res := doOps(c, t, ops, fluent.InstalledInRIB, true)
+	res := doModifyOps(c, t, ops, fluent.InstalledInRIB, true)
 
 	// Check the three entries in order.
 	chk.HasResult(t, res,
@@ -420,7 +425,7 @@ func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB) {
 		},
 	}
 
-	res := doOps(c, t, ops, fluent.InstalledInRIB, false)
+	res := doModifyOps(c, t, ops, fluent.InstalledInRIB, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -464,7 +469,7 @@ func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.Programmin
 		},
 	}
 
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -491,14 +496,14 @@ func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.Programmin
 		chk.IgnoreOperationID())
 }
 
-// doOps performs the series of operations in ops using the context
+// doModifyOps performs the series of operations in ops using the context
 // client c. wantACK specifies the ACK type to request from the
 // server, and randomise specifies whether the operations should be
 // sent in order, or randomised.
 //
 // If the caller sets randomise to true, the client MUST NOT, rely on the operation
 // ID to validate the entries, since this is allocated internally to the client.
-func doOps(c *fluent.GRIBIClient, t testing.TB, ops []func(), wantACK fluent.ProgrammingResult, randomise bool) []*client.OpResult {
+func doModifyOps(c *fluent.GRIBIClient, t testing.TB, ops []func(), wantACK fluent.ProgrammingResult, randomise bool) []*client.OpResult {
 	defer electionID.Inc()
 	conn := c.Connection().WithRedundancyMode(fluent.ElectedPrimaryClient).WithInitialElectionID(electionID.Load(), 0).WithPersistence()
 
@@ -543,7 +548,7 @@ func AddUnreferencedNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.Programmi
 		},
 	}
 
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 
 	// Check the three entries in order.
 	chk.HasResult(t, res,
@@ -581,7 +586,7 @@ func ImplicitReplaceNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 		},
 	}
 
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 
 	// Check the two Add operations in order - we always start at 1 during a test, so we can
 	// safely specify the explicit IDs here.
@@ -638,7 +643,7 @@ func ImplicitReplaceNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 		},
 	}
 
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -719,7 +724,7 @@ func ImplicitReplaceIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 		},
 	}
 
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -784,7 +789,7 @@ func ReplaceMissingNH(c *fluent.GRIBIClient, t testing.TB) {
 		},
 	}
 
-	res := doOps(c, t, ops, fluent.InstalledInRIB, false)
+	res := doModifyOps(c, t, ops, fluent.InstalledInRIB, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -821,7 +826,7 @@ func ReplaceMissingNHG(c *fluent.GRIBIClient, t testing.TB) {
 		},
 	}
 
-	res := doOps(c, t, ops, fluent.InstalledInRIB, false)
+	res := doModifyOps(c, t, ops, fluent.InstalledInRIB, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -886,7 +891,7 @@ func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB) {
 		},
 	}
 
-	res := doOps(c, t, ops, fluent.InstalledInRIB, false)
+	res := doModifyOps(c, t, ops, fluent.InstalledInRIB, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -1005,7 +1010,7 @@ func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, wantACK fluent.Pro
 		},
 	}
 
-	validateBaseTopologyEntries(doOps(c, t, ops, wantACK, false), wantACK, t)
+	validateBaseTopologyEntries(doModifyOps(c, t, ops, wantACK, false), wantACK, t)
 }
 
 // AddIPv4ToMultipleNHsMultipleRequests creates an IPv4 entry which references a NHG containing
@@ -1015,7 +1020,7 @@ func AddIPv4ToMultipleNHsMultipleRequests(c *fluent.GRIBIClient, wantACK fluent.
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 	}
-	validateBaseTopologyEntries(doOps(c, t, ops, wantACK, false), wantACK, t)
+	validateBaseTopologyEntries(doModifyOps(c, t, ops, wantACK, false), wantACK, t)
 }
 
 // makeTestWithACK creates a version of a test function that can be directly executed by the runner
@@ -1032,7 +1037,7 @@ func DeleteIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t 
 			c.Modify().DeleteEntry(t, fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName))
 		},
 	}
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 	validateBaseTopologyEntries(res, wantACK, t)
 
 	chk.HasResult(t, res,
@@ -1054,7 +1059,7 @@ func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, wantACK fluent.Programmin
 			c.Modify().DeleteEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName))
 		},
 	}
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 	validateBaseTopologyEntries(res, wantACK, t)
 
 	chk.HasResult(t, res,
@@ -1078,7 +1083,7 @@ func DeleteReferencedNHFailure(c *fluent.GRIBIClient, wantACK fluent.Programming
 			c.Modify().DeleteEntry(t, fluent.NextHopEntry().WithIndex(2).WithNetworkInstance(server.DefaultNetworkInstanceName))
 		},
 	}
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 	validateBaseTopologyEntries(res, wantACK, t)
 
 	for _, i := range []uint64{1, 2} {
@@ -1105,7 +1110,7 @@ func DeleteNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 		},
 	}
 
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 	validateBaseTopologyEntries(res, wantACK, t)
 
 	chk.HasResult(t, res,
@@ -1140,7 +1145,7 @@ func DeleteNextHop(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 		},
 	}
 
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 	validateBaseTopologyEntries(res, wantACK, t)
 
 	for _, i := range []uint64{1, 2} {
@@ -1197,7 +1202,7 @@ func AddDeleteAdd(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 		},
 	}
 
-	res := doOps(c, t, ops, wantACK, false)
+	res := doModifyOps(c, t, ops, wantACK, false)
 	validateBaseTopologyEntries(res, wantACK, t)
 
 	chk.HasResult(t, res,

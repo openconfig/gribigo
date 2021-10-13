@@ -61,20 +61,246 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 		WithAFT(fluent.NextHop).
 		Send()
 
-	// TODO(robjs): add checking for get responses, requires new
-	// fluent/check library for this.
-	_, _ = gr, err
+	if err != nil {
+		t.Fatalf("got unexpected error from get, got: %v", err)
+	}
+
+	chk.GetResponseHasEntries(t, gr,
+		fluent.NextHopEntry().
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithIndex(1).
+			WithIPAddress("1.1.1.1"))
 }
 
-// TODO(robjs): get NHG
-// TODO(robjs): get ipv4 entry
+// GetNHG validates that an installed next-hop-group is returned via the Get RPC.
+func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithIndex(1).
+					WithIPAddress("1.1.1.1"))
+		},
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopGroupEntry().
+					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithID(1).
+					AddNextHop(1, 1))
+		},
+	}
 
+	res := doModifyOps(c, t, ops, wantACK, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	ctx := context.Background()
+	c.Start(ctx, t)
+	defer c.Stop(t)
+	gr, err := c.Get().
+		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithAFT(fluent.NextHopGroup).
+		Send()
+
+	if err != nil {
+		t.Fatalf("got unexpected error from get, got: %v", err)
+	}
+
+	chk.GetResponseHasEntries(t, gr,
+		fluent.NextHopGroupEntry().
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithID(1).
+			AddNextHop(1, 1),
+	)
+}
+
+// GetIPv4 validates that an installed IPv4 entry is returned via the Get RPC.
+func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithIndex(1).
+					WithIPAddress("1.1.1.1"))
+		},
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopGroupEntry().
+					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithID(1).
+					AddNextHop(1, 1))
+		},
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.IPv4Entry().
+					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNextHopGroup(1).
+					WithPrefix("42.42.42.42/32"))
+		},
+	}
+
+	res := doModifyOps(c, t, ops, wantACK, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("42.42.42.42/32").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	ctx := context.Background()
+	c.Start(ctx, t)
+	defer c.Stop(t)
+	gr, err := c.Get().
+		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithAFT(fluent.IPv4).
+		Send()
+
+	if err != nil {
+		t.Fatalf("got unexpected error from get, got: %v", err)
+	}
+
+	chk.GetResponseHasEntries(t, gr,
+		fluent.IPv4Entry().
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNextHopGroup(1).
+			WithPrefix("42.42.42.42/32"),
+	)
+}
+
+// GetIPv4Chain validates that Get for all AFTs returns the chain of IPv4Entry->NHG->NH
+// required.
+func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithIndex(1).
+					WithIPAddress("1.1.1.1"))
+		},
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopGroupEntry().
+					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithID(1).
+					AddNextHop(1, 1))
+		},
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.IPv4Entry().
+					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNextHopGroup(1).
+					WithPrefix("42.42.42.42/32"))
+		},
+	}
+
+	res := doModifyOps(c, t, ops, wantACK, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("42.42.42.42/32").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	ctx := context.Background()
+	c.Start(ctx, t)
+	defer c.Stop(t)
+	gr, err := c.Get().
+		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithAFT(fluent.AllAFTs).
+		Send()
+
+	if err != nil {
+		t.Fatalf("got unexpected error from get, got: %v", err)
+	}
+
+	chk.GetResponseHasEntries(t, gr,
+		fluent.IPv4Entry().
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNextHopGroup(1).
+			WithPrefix("42.42.42.42/32"),
+		fluent.NextHopGroupEntry().
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithID(1).
+			AddNextHop(1, 1),
+		fluent.NextHopEntry().
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithIndex(1).
+			WithIPAddress("1.1.1.1"),
+	)
+}
+
+// indexAsIPv4 converts a uint32 index into an IP address, using the baseSlashEight argument as the
+// starting point. For example, if an index = 1 is provided with baseSlashEight = 1 the address
+// returned is 1.0.0.1.
 func indexAsIPv4(i uint32, baseSlashEight int) string {
 	ip := make(net.IP, 4)
 	binary.BigEndian.PutUint32(ip, uint32(i)+uint32(baseSlashEight*16777216))
 	return ip.String()
 }
 
+// populateNNHs creates N next-hops based via the client, c, expecting the wanACK back from
+// the server. Errors are reported via the testing.TB provided.
 func populateNNHs(c *fluent.GRIBIClient, n int, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){}
 	for i := 0; i < n; i++ {
@@ -106,6 +332,9 @@ func populateNNHs(c *fluent.GRIBIClient, n int, wantACK fluent.ProgrammingResult
 	chk.HasResultsCache(t, res, wants, chk.IgnoreOperationID())
 }
 
+// GetBenchmarkNH benchmarks the performance of Get populating the server with N next-hop
+// instances and measuring latency of the Get returned by the server. No validation of
+// the returned contents is performed.
 func GetBenchmarkNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	for _, i := range []int{10, 100, 1000} {
 		populateNNHs(c, i, wantACK, t)

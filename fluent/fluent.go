@@ -416,8 +416,8 @@ func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entr
 type GRIBIEntry interface {
 	// opproto builds the entry as a new AFTOperation protobuf.
 	opproto() (*spb.AFTOperation, error)
-	// entryproto builds the entry as a new AFTEntry protobuf.
-	entryproto() (*spb.AFTEntry, error)
+	// EntryProto builds the entry as a new AFTEntry protobuf.
+	EntryProto() (*spb.AFTEntry, error)
 }
 
 // ipv4Entry is the internal representation of a gRIBI IPv4Entry.
@@ -483,8 +483,8 @@ func (i *ipv4Entry) opproto() (*spb.AFTOperation, error) {
 	}, nil
 }
 
-// entryproto implements the GRIBIEntry interface, building a gRIBI AFTEntry.
-func (i *ipv4Entry) entryproto() (*spb.AFTEntry, error) {
+// EntryProto implements the GRIBIEntry interface, building a gRIBI AFTEntry.
+func (i *ipv4Entry) EntryProto() (*spb.AFTEntry, error) {
 	return &spb.AFTEntry{
 		NetworkInstance: i.ni,
 		Entry: &spb.AFTEntry_Ipv4{
@@ -553,8 +553,8 @@ func (n *nextHopEntry) opproto() (*spb.AFTOperation, error) {
 	}, nil
 }
 
-// entryproto implements the GRIBIEntry interface, building a gRIBI AFTEntry.
-func (n *nextHopEntry) entryproto() (*spb.AFTEntry, error) {
+// EntryProto implements the GRIBIEntry interface, building a gRIBI AFTEntry.
+func (n *nextHopEntry) EntryProto() (*spb.AFTEntry, error) {
 	return &spb.AFTEntry{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTEntry_NextHop{
@@ -615,8 +615,8 @@ func (n *nextHopGroupEntry) opproto() (*spb.AFTOperation, error) {
 	}, nil
 }
 
-// entryproto implements the GRIBIEntry interface, returning a gRIBI AFTEntry.
-func (n *nextHopGroupEntry) entryproto() (*spb.AFTEntry, error) {
+// EntryProto implements the GRIBIEntry interface, returning a gRIBI AFTEntry.
+func (n *nextHopGroupEntry) EntryProto() (*spb.AFTEntry, error) {
 	return &spb.AFTEntry{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTEntry_NextHopGroup{

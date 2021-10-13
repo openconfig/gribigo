@@ -240,7 +240,7 @@ func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, 
 // GetResponseHasEntry checks whether the supplied GetResponse has the gRIBI
 // entry described by the specified want within it. It calls t.Fatalf if no
 // such entry is found.
-func GetResponseHasEntries(t testing.TB, getres *spb.GetResponse, wants []fluent.GRIBIEntry) {
+func GetResponseHasEntries(t testing.TB, getres *spb.GetResponse, wants ...fluent.GRIBIEntry) {
 	// proto.Equal tends to be expensive, so start with building a cache
 	// so that we do not loop each time. We have to do this by network
 	// instance, because each NI has its own namespace for each included
@@ -313,7 +313,5 @@ func GetResponseHasEntries(t testing.TB, getres *spb.GetResponse, wants []fluent
 				t.Fatalf("did not find entry, did not find ipv4: %s, got: %s\n", v.Ipv4, getres)
 			}
 		}
-
 	}
-
 }

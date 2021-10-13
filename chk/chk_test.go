@@ -431,14 +431,14 @@ func TestGetResponseHasEntries(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			if tt.expectFatalMsg != "" {
 				got := negtest.ExpectFatal(t, func(t testing.TB) {
-					GetResponseHasEntries(t, tt.inGetRes, tt.inWants)
+					GetResponseHasEntries(t, tt.inGetRes, tt.inWants...)
 				})
 				if !strings.Contains(got, tt.expectFatalMsg) {
 					t.Fatalf("did not get expected fatal message, but test called Fatal, got: %s, want: %s", got, tt.expectFatalMsg)
 				}
 				return
 			}
-			GetResponseHasEntries(t, tt.inGetRes, tt.inWants)
+			GetResponseHasEntries(t, tt.inGetRes, tt.inWants...)
 		})
 	}
 }

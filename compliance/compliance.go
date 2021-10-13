@@ -245,6 +245,21 @@ var (
 		},
 	}, {
 		In: Test{
+			Fn:        makeTestWithACK(GetNHG, fluent.InstalledInRIB),
+			ShortName: "Get for installed NHG - RIB ACK",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(GetIPv4, fluent.InstalledInRIB),
+			ShortName: "Get for installed IPv4 Entry - RIB ACK",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(GetIPv4Chain, fluent.InstalledInRIB),
+			ShortName: "Get for installed chain of entries - RIB ACK",
+		},
+	}, {
+		In: Test{
 			Fn:        makeTestWithACK(GetBenchmarkNH, fluent.InstalledInRIB),
 			ShortName: "Benchmark Get for next-hops",
 		},

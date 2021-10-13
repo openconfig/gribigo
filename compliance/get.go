@@ -72,7 +72,7 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 			WithIPAddress("1.1.1.1"))
 }
 
-// GetNH validates that an installed next-hop-group is returned via the Get RPC.
+// GetNHG validates that an installed next-hop-group is returned via the Get RPC.
 func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
 	ops := []func(){
 		func() {

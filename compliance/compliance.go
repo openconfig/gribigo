@@ -245,8 +245,47 @@ var (
 		},
 	}, {
 		In: Test{
+			Fn:        makeTestWithACK(GetNHG, fluent.InstalledInRIB),
+			ShortName: "Get for installed NHG - RIB ACK",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(GetIPv4, fluent.InstalledInRIB),
+			ShortName: "Get for installed IPv4 Entry - RIB ACK",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(GetIPv4Chain, fluent.InstalledInRIB),
+			ShortName: "Get for installed chain of entries - RIB ACK",
+		},
+	}, {
+		In: Test{
 			Fn:        makeTestWithACK(GetBenchmarkNH, fluent.InstalledInRIB),
 			ShortName: "Benchmark Get for next-hops",
+		},
+	}, {
+		In: Test{
+			Fn:             makeTestWithACK(GetNH, fluent.InstalledInFIB),
+			ShortName:      "Get for installed NH - FIB ACK",
+			RequiresFIBACK: true,
+		},
+	}, {
+		In: Test{
+			Fn:             makeTestWithACK(GetNHG, fluent.InstalledInFIB),
+			ShortName:      "Get for installed NHG - FIB ACK",
+			RequiresFIBACK: true,
+		},
+	}, {
+		In: Test{
+			Fn:             makeTestWithACK(GetIPv4, fluent.InstalledInFIB),
+			ShortName:      "Get for installed IPv4 Entry - FIB ACK",
+			RequiresFIBACK: true,
+		},
+	}, {
+		In: Test{
+			Fn:             makeTestWithACK(GetIPv4Chain, fluent.InstalledInFIB),
+			ShortName:      "Get for installed chain of entries - FIB ACK",
+			RequiresFIBACK: true,
 		},
 	}}
 )

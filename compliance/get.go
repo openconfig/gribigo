@@ -61,9 +61,13 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 		WithAFT(fluent.NextHop).
 		Send()
 
-	// TODO(robjs): add checking for get responses, requires new
-	// fluent/check library for this.
-	_, _ = gr, err
+	if err != nil {
+		t.Fatalf("got unexpected error from get, got: %v", err)
+	}
+
+	// Implement check against getresponse contents.
+	_ = gr
+
 }
 
 // TODO(robjs): get NHG

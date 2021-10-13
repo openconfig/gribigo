@@ -1125,7 +1125,7 @@ func TestOpResultString(t *testing.T) {
 		inResult: &OpResult{
 			OperationID: 42,
 		},
-		want: "<0 (0 nsec): AFTOperation { ID: 42, Type: Unknown, Status: UNSET }>",
+		want: "<0 (0 nsec): AFTOperation { ID: 42, Details: <nil>, Status: UNSET }>",
 	}}
 
 	for _, tt := range tests {

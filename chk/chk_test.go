@@ -23,6 +23,7 @@ import (
 	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/negtest"
 
+	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
@@ -109,6 +110,335 @@ func TestHasMessage(t *testing.T) {
 				return
 			}
 			HasResult(t, tt.inResults, tt.inMsg)
+		})
+	}
+}
+
+func TestHasResultsCache(t *testing.T) {
+	tests := []struct {
+		desc           string
+		inResults      []*client.OpResult
+		inWants        []*client.OpResult
+		expectFatalMsg string
+		inOpt          []resultOpt
+	}{{
+		desc: "single want, single result by operation ID",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+		}},
+		inWants: []*client.OpResult{{
+			OperationID: 42,
+		}},
+	}, {
+		desc: "multiple results, single want by operation ID",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+		}, {
+			OperationID: 128,
+		}},
+		inWants: []*client.OpResult{{
+			OperationID: 128,
+		}},
+	}, {
+		desc: "multiple results, multiple want by opeation ID",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+		}, {
+			OperationID: 128,
+		}},
+		inWants: []*client.OpResult{{
+			OperationID: 42,
+		}, {
+			OperationID: 128,
+		}},
+	}, {
+		desc: "missing result by operation ID",
+		inResults: []*client.OpResult{{
+			OperationID: 52,
+		}, {
+			OperationID: 124,
+		}},
+		inWants: []*client.OpResult{{
+			OperationID: 42,
+		}},
+		expectFatalMsg: "results did not contain a result of value",
+	}, {
+		desc: "result by nhg ID - found",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 242,
+			},
+		}, {
+			OperationID: 44,
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 244,
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 242,
+			},
+		}, {
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 244,
+			},
+		}},
+		inOpt: []resultOpt{IgnoreOperationID()},
+	}, {
+		desc: "result by nhg ID - missing",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 242,
+			},
+		}, {
+			OperationID: 44,
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 256,
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 257,
+			},
+		}},
+		inOpt:          []resultOpt{IgnoreOperationID()},
+		expectFatalMsg: "results did not contain a result",
+	}, {
+		desc: "result by NH ID - found",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				NextHopIndex: 420,
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				NextHopIndex: 420,
+			},
+		}},
+		inOpt: []resultOpt{IgnoreOperationID()},
+	}, {
+		desc: "result by NH ID - missing",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				NextHopIndex: 420,
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				NextHopIndex: 1280,
+			},
+		}},
+		inOpt:          []resultOpt{IgnoreOperationID()},
+		expectFatalMsg: "results did not contain a result",
+	}, {
+		desc: "result by IPv4 prefix - found",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "1.1.1.1/32",
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "1.1.1.1/32",
+			},
+		}},
+		inOpt: []resultOpt{IgnoreOperationID()},
+	}, {
+		desc: "result by IPv4 prefix - missing",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "1.1.1.1/32",
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "4.4.4.0/24",
+			},
+		}},
+		inOpt:          []resultOpt{IgnoreOperationID()},
+		expectFatalMsg: "results did not contain a result",
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if tt.expectFatalMsg != "" {
+				got := negtest.ExpectFatal(t, func(t testing.TB) {
+					HasResultsCache(t, tt.inResults, tt.inWants, tt.inOpt...)
+				})
+				if !strings.Contains(got, tt.expectFatalMsg) {
+					t.Fatalf("did not get expected fatal message, but test called Fatal, got: %s, want: %s", got, tt.expectFatalMsg)
+				}
+				return
+			}
+			HasResultsCache(t, tt.inResults, tt.inWants, tt.inOpt...)
+		})
+	}
+}
+
+func TestGetResponseHasEntries(t *testing.T) {
+	tests := []struct {
+		desc           string
+		inGetRes       *spb.GetResponse
+		inWants        []fluent.GRIBIEntry
+		expectFatalMsg string
+	}{{
+		desc: "found IPv4 entry in default",
+		inGetRes: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "default",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "1.1.1.1/32",
+					},
+				},
+			}},
+		},
+		inWants: []fluent.GRIBIEntry{
+			fluent.IPv4Entry().WithNetworkInstance("default").WithPrefix("1.1.1.1/32"),
+		},
+	}, {
+		desc: "missing IPv4 entry in default",
+		inGetRes: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "default",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "1.1.1.1/32",
+					},
+				},
+			}},
+		},
+		inWants: []fluent.GRIBIEntry{
+			fluent.IPv4Entry().WithNetworkInstance("default").WithPrefix("2.2.2.2/32"),
+		},
+		expectFatalMsg: `did not find ipv4: prefix:"2.2.2.2/32"`,
+	}, {
+		desc: "missing IPv4 entry - missing NI",
+		inGetRes: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "FOO",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "1.1.1.1/32",
+					},
+				},
+			}},
+		},
+		inWants: []fluent.GRIBIEntry{
+			fluent.IPv4Entry().WithNetworkInstance("default").WithPrefix("1.1.1.1/32"),
+		},
+		expectFatalMsg: `did not find network instance in want: entry:{network_instance:"FOO"`,
+	}, {
+		desc: "missing IPv4 entry - known NI - prefix not in this NI",
+		inGetRes: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "FOO",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "1.1.1.1/32",
+					},
+				},
+			}, {
+				NetworkInstance: "default",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "2.2.2.2/32",
+					},
+				},
+			}},
+		},
+		inWants: []fluent.GRIBIEntry{
+			fluent.IPv4Entry().WithNetworkInstance("default").WithPrefix("1.1.1.1/32"),
+		},
+		expectFatalMsg: `did not find entry, did not find ipv4: prefix:"1.1.1.1/32"`,
+	}, {
+		desc: "missing NHG entry",
+		inGetRes: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "default",
+				Entry: &spb.AFTEntry_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 42,
+					},
+				},
+			}},
+		},
+		inWants: []fluent.GRIBIEntry{
+			fluent.NextHopGroupEntry().WithNetworkInstance("default").WithID(1000),
+		},
+		expectFatalMsg: `did not find entry, did not find nexthop group`,
+	}, {
+		desc: "found NHG entry",
+		inGetRes: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "default",
+				Entry: &spb.AFTEntry_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 42,
+					},
+				},
+			}},
+		},
+		inWants: []fluent.GRIBIEntry{
+			fluent.NextHopGroupEntry().WithNetworkInstance("default").WithID(42),
+		},
+	}, {
+		desc: "missing NH entry",
+		inGetRes: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "default",
+				Entry: &spb.AFTEntry_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 42,
+					},
+				},
+			}},
+		},
+		inWants: []fluent.GRIBIEntry{
+			fluent.NextHopEntry().WithNetworkInstance("default").WithIndex(728),
+		},
+		expectFatalMsg: `did not find entry, did not find nexthop`,
+	}, {
+		desc: "found NH entry",
+		inGetRes: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "default",
+				Entry: &spb.AFTEntry_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 728,
+					},
+				},
+			}},
+		},
+		inWants: []fluent.GRIBIEntry{
+			fluent.NextHopEntry().WithNetworkInstance("default").WithIndex(728),
+		},
+	}, {
+		desc: "no network instance in want",
+		inWants: []fluent.GRIBIEntry{
+			fluent.IPv4Entry(),
+		},
+		expectFatalMsg: `got nil network instance`,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if tt.expectFatalMsg != "" {
+				got := negtest.ExpectFatal(t, func(t testing.TB) {
+					GetResponseHasEntries(t, tt.inGetRes, tt.inWants...)
+				})
+				if !strings.Contains(got, tt.expectFatalMsg) {
+					t.Fatalf("did not get expected fatal message, but test called Fatal, got: %s, want: %s", got, tt.expectFatalMsg)
+				}
+				return
+			}
+			GetResponseHasEntries(t, tt.inGetRes, tt.inWants...)
 		})
 	}
 }

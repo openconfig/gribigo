@@ -280,7 +280,7 @@ func TestEntry(t *testing.T) {
 				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
 			}
 
-			gotent, err := tt.in.entryproto()
+			gotent, err := tt.in.EntryProto()
 			if (err != nil) != tt.wantEntryErr {
 				t.Fatalf("did not get expected error for entry, got: %v, wantErr? %v", err, tt.wantEntryErr)
 			}

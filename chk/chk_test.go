@@ -112,3 +112,170 @@ func TestHasMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestHasResultsCache(t *testing.T) {
+	tests := []struct {
+		desc           string
+		inResults      []*client.OpResult
+		inWants        []*client.OpResult
+		expectFatalMsg string
+		inOpt          []resultOpt
+	}{{
+		desc: "single want, single result by operation ID",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+		}},
+		inWants: []*client.OpResult{{
+			OperationID: 42,
+		}},
+	}, {
+		desc: "multiple results, single want by operation ID",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+		}, {
+			OperationID: 128,
+		}},
+		inWants: []*client.OpResult{{
+			OperationID: 128,
+		}},
+	}, {
+		desc: "multiple results, multiple want by opeation ID",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+		}, {
+			OperationID: 128,
+		}},
+		inWants: []*client.OpResult{{
+			OperationID: 42,
+		}, {
+			OperationID: 128,
+		}},
+	}, {
+		desc: "missing result by operation ID",
+		inResults: []*client.OpResult{{
+			OperationID: 52,
+		}, {
+			OperationID: 124,
+		}},
+		inWants: []*client.OpResult{{
+			OperationID: 42,
+		}},
+		expectFatalMsg: "results did not contain a result of value",
+	}, {
+		desc: "result by nhg ID - found",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 242,
+			},
+		}, {
+			OperationID: 44,
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 244,
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 242,
+			},
+		}, {
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 244,
+			},
+		}},
+		inOpt: []resultOpt{IgnoreOperationID()},
+	}, {
+		desc: "result by nhg ID - missing",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 242,
+			},
+		}, {
+			OperationID: 44,
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 256,
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				NextHopGroupID: 257,
+			},
+		}},
+		inOpt:          []resultOpt{IgnoreOperationID()},
+		expectFatalMsg: "results did not contain a result",
+	}, {
+		desc: "result by NH ID - found",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				NextHopIndex: 420,
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				NextHopIndex: 420,
+			},
+		}},
+		inOpt: []resultOpt{IgnoreOperationID()},
+	}, {
+		desc: "result by NH ID - missing",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				NextHopIndex: 420,
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				NextHopIndex: 1280,
+			},
+		}},
+		inOpt:          []resultOpt{IgnoreOperationID()},
+		expectFatalMsg: "results did not contain a result",
+	}, {
+		desc: "result by IPv4 prefix - found",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "1.1.1.1/32",
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "1.1.1.1/32",
+			},
+		}},
+		inOpt: []resultOpt{IgnoreOperationID()},
+	}, {
+		desc: "result by IPv4 prefix - missing",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "1.1.1.1/32",
+			},
+		}},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "4.4.4.0/24",
+			},
+		}},
+		inOpt:          []resultOpt{IgnoreOperationID()},
+		expectFatalMsg: "results did not contain a result",
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if tt.expectFatalMsg != "" {
+				got := negtest.ExpectFatal(t, func(t testing.TB) {
+					HasResultsCache(t, tt.inResults, tt.inWants, tt.inOpt...)
+				})
+				if !strings.Contains(got, tt.expectFatalMsg) {
+					t.Fatalf("did not get expected fatal message, but test called Fatal, got: %s, want: %s", got, tt.expectFatalMsg)
+				}
+				return
+			}
+			HasResultsCache(t, tt.inResults, tt.inWants, tt.inOpt...)
+		})
+	}
+}

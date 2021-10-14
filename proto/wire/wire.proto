@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package openconfig.kne.wire;
+
+service WireServer {
+  rpc Stream(stream WireStream) returns (stream WireStream); 
+}
+
+service WireControl {
+  rpc Register(stream RegisterClientStream) 
+  returns (stream RegisterServerStream);
+}
+
+message WireStream {
+  oneof message {
+    Data data = 1;
+    Control control = 2;
+  }
+}
+
+enum ControlStatus {
+  UNKNOWN = 0;
+  UP      = 1;
+  DOWN    = 2;
+  ERROR   = 3;
+}
+
+message Heartbeat {
+  string message = 1;
+  int64 timestamp = 2;
+}
+
+message Control {
+  oneof message {
+    Register register = 1;
+    ControlStatus status = 2;
+    Heartbeat heartbeat = 3;
+  }
+}
+
+// Data is a single frame of data sent over the stream.
+message Data {
+  // raw is a raw data frame transported in the stream.
+  repeated bytes raw = 1;
+}
+
+message RegisterClientStream {
+  oneof message {
+    Register register = 1;
+    string close = 2;
+    bool synced = 3;
+    ControlStatus status = 4;
+    Heartbeat heartbeat = 5;
+  }
+}
+
+message Register {
+  string a_node = 1;
+  string a_port = 2;
+  string z_node = 3;
+  string z_port = 4;
+  uint32 mtu = 5;
+}
+
+message RegisterServerStream {
+  oneof message {
+    Register peer = 1;
+    string close = 2;
+    bool synced = 3;
+    ControlStatus status = 4;
+    Heartbeat heartbeat = 5;
+  }
+}
+

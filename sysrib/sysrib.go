@@ -24,6 +24,8 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/kentik/patricia"
 	"github.com/kentik/patricia/string_tree"
 	"github.com/openconfig/gribigo/afthelper"
@@ -207,6 +209,41 @@ func (r *SysRIB) EgressInterface(inputNI string, ip *net.IPNet) ([]*Interface, e
 		}
 	}
 	return egressIfs, nil
+}
+
+// EgressInterfaceForPacket takes an input network instance and a byte slice containing a packet
+// which must start at the Ethernet header, and returns the interfaces that the RIB would route
+// this packet via.
+//
+// TODO(robjs): unit tests.
+func (r *SysRIB) EgressInterfaceForPacket(inputNI string, pkt []byte) ([]*Interface, error) {
+	// We need:
+	//  - IP dst
+	//  - DSCP (for VRF-based DSCP selection)
+	//  - IP src (for repair PBR)
+	// For full PBR we'll need more fields, but we start here.
+	// TODO(robjs): determine full set of fields required to support here.
+	packet := gopacket.NewPacket(pkt, layers.LayerTypeEthernet, gopacket.Default)
+
+	var (
+		srcIP, dstIP net.IP
+		dscp         uint8
+	)
+
+	if ip4 := packet.Layer(layers.LayerTypeIPv4); ip4 != nil {
+		ip4L := ip4.(*layers.IPv4)
+		srcIP = ip4L.SrcIP
+		dstIP = ip4L.DstIP
+		dscp = ip4L.TOS >> 2 // discard ecn
+	}
+
+	_, _ = srcIP, dscp // TODO(robjs): implement lookup based on DSCP and TOS.
+
+	_, n, err := net.ParseCIDR(fmt.Sprintf("%s/32", dstIP.String()))
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert destination IP to a /32, %v", err)
+	}
+	return r.EgressInterface(inputNI, n)
 }
 
 // niConnected is a description of a set of connected routes within a network instance.

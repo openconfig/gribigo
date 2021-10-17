@@ -2,13 +2,15 @@ syntax = "proto3";
 
 package openconfig.kne.wire;
 
+option go_package="github.com/openconfig/gribigo/proto/wire;wire";
+
 service WireServer {
   rpc Stream(stream WireStream) returns (stream WireStream); 
 }
 
 service WireControl {
   rpc Register(stream RegisterClientStream) 
-  returns (stream RegisterServerStream);
+    returns (stream RegisterServerStream);
 }
 
 message WireStream {
@@ -41,7 +43,9 @@ message Control {
 // Data is a single frame of data sent over the stream.
 message Data {
   // raw is a raw data frame transported in the stream.
-  repeated bytes raw = 1;
+  // TODO(robjs): discuss with hines@ - this was a repeated, but that
+  // doesn't seem to make sense.
+  bytes raw = 1;
 }
 
 message RegisterClientStream {

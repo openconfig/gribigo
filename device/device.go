@@ -27,6 +27,7 @@ import (
 	"github.com/openconfig/gribigo/ocrt"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/sysrib"
+	"github.com/openconfig/gribigo/wiresrv"
 	"github.com/openconfig/ygot/ygot"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -34,6 +35,7 @@ import (
 
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	wirepb "github.com/openconfig/gribigo/proto/wire"
 )
 
 // Device is a wrapper struct that contains all functionalities
@@ -55,6 +57,9 @@ type Device struct {
 
 	// sysRIB is the system RIB that is being programmed.
 	sysRIB *sysrib.SysRIB
+
+	// ports is a map of L3 interface to wire service port.
+	ports map[*intf]*intfDetails
 }
 
 const (
@@ -63,6 +68,25 @@ const (
 	// fakes at the same time.
 	targetName string = "DUT"
 )
+
+type intf struct {
+	Interface    string
+	Subinterface uint32
+}
+
+type intfDetails struct {
+	// svc is the gRPC service that handles this port.
+	svc *wiresrv.Server
+
+	// svcStop is how to cleanly stop the wire.
+	svcStop func()
+
+	tcpPort uint32
+
+	// TODO(robjs): we should apply other actions here. At the most basic
+	// this will be adding VLAN tags, but it would also be egress actions
+	// such as ACLs, or even QoS in the future.
+}
 
 // DevOpt is an interface that is implemented by options that can be handed to New()
 // for the device.
@@ -136,6 +160,14 @@ func TLSCredsFromFile(certFile, keyFile string) (*tlsCreds, error) {
 // IsDevOpt implements the DevOpt interface for tlsCreds.
 func (*tlsCreds) isDevOpt() {}
 
+// TODO(robjs): comments for enableWires.
+type enableWires struct{}
+
+func (*enableWires) isDevOpt() {}
+func EnableWires() *enableWires {
+	return &enableWires{}
+}
+
 // New returns a new device with the specific context. It returns the device, and
 // an optional error. The servers can be stopped by cancelling the supplied context.
 func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
@@ -145,7 +177,7 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 	switch jcfg {
 	case nil:
 		dev := &ocrt.Device{}
-		dev.GetOrCreateNetworkInstance("DEFAULT").Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
+		dev.GetOrCreateNetworkInstance(server.DefaultNetworkInstanceName).Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
 		sr, err := sysrib.NewSysRIB(dev)
 		if err != nil {
 			return nil, fmt.Errorf("cannot build system RIB, %v", err)
@@ -157,6 +189,46 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 			return nil, fmt.Errorf("cannot build system RIB, %v", err)
 		}
 		d.sysRIB = sr
+	}
+
+	switch optEnableWires(opts) {
+	case nil:
+	default:
+		if jcfg == nil {
+			return nil, fmt.Errorf("can only enable wires when a device configuration is provided")
+		}
+
+		h := func(data []byte) error {
+			log.Infof("received packet, %v", data)
+			egressInterfaces, err := d.sysRIB.EgressInterfaceForPacket(server.DefaultNetworkInstanceName, data)
+			if err != nil {
+				log.Errorf("got error parsing packet, %v", err)
+				return err
+			}
+
+			for _, e := range egressInterfaces {
+				fmt.Printf("packet could go via %s.%d\n", e.Name, e.Subinterface)
+			}
+
+			// Do some hashing/ECMP
+			egress := egressInterfaces[0]
+
+			for k, e := range d.ports {
+				if k.Interface == egress.Name && k.Subinterface == egress.Subinterface {
+					// do manipulations of packet
+					fmt.Printf("forwarding the packet to %s.%d\n", k.Interface, k.Subinterface)
+					e.svc.Q(data)
+				}
+			}
+
+			return nil
+		}
+
+		p, err := portsFromJSON(jcfg, h)
+		if err != nil {
+			return nil, fmt.Errorf("cannot enable wires for ports, %v", err)
+		}
+		d.ports = p
 	}
 
 	ribHookfn := func(o constants.OpType, ts int64, ni string, data ygot.GoStruct) {
@@ -225,10 +297,19 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 		return nil, fmt.Errorf("cannot start gNMI server, %v", err)
 	}
 
+	// TODO(robjs): parameterise host with new option.
+	if err := d.startPorts(ctx, "localhost", creds); err != nil {
+		return nil, fmt.Errorf("cannot start wire ports server, %v", err)
+	}
+
 	go func() {
 		<-ctx.Done()
 		gNMIStop()
 		gRIBIStop()
+
+		for _, p := range d.ports {
+			p.svcStop()
+		}
 	}()
 
 	return d, nil
@@ -276,7 +357,17 @@ func optTLSCreds(opts []DevOpt) *tlsCreds {
 	return nil
 }
 
-// Start gRIBI starts the gRIBI server on the device on the specified host:port
+// optEnableWires finds the first occurrence of the enableWires option in opts.
+func optEnableWires(opts []DevOpt) *enableWires {
+	for _, o := range opts {
+		if v, ok := o.(*enableWires); ok {
+			return v
+		}
+	}
+	return nil
+}
+
+// startgRIBI starts the gRIBI server on the device on the specified host:port
 // and the specified TLS credentials, with the specified options.
 // It returns a function to stop the server, and error if the server cannot be started.
 func (d *Device) startgRIBI(ctx context.Context, host string, port int, creds *tlsCreds, opt ...server.ServerOpt) (func(), error) {
@@ -306,6 +397,22 @@ func (d *Device) startgNMI(ctx context.Context, host string, port int, creds *tl
 	return c.Stop, nil
 }
 
+func (d *Device) startPorts(ctx context.Context, host string, creds *tlsCreds) error {
+	for k, p := range d.ports {
+		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, p.tcpPort))
+		if err != nil {
+			return fmt.Errorf("cannot start wire service for %s.%d, %v", k.Interface, k.Subinterface, err)
+		}
+
+		log.Infof("starting server for port %s.%d on port %d", k.Interface, k.Subinterface, p.tcpPort)
+		s := grpc.NewServer(grpc.Creds(creds.c))
+		wirepb.RegisterWireServerServer(s, p.svc)
+		go s.Serve(l)
+		p.svcStop = s.GracefulStop
+	}
+	return nil
+}
+
 // GRIBIAddr returns the address that the gRIBI server is listening on.
 func (d *Device) GRIBIAddr() string {
 	return d.gribiAddr
@@ -314,6 +421,15 @@ func (d *Device) GRIBIAddr() string {
 // GNMIAddr returns the address that the gNMI server is listening on.
 func (d *Device) GNMIAddr() string {
 	return d.gnmiAddr
+}
+
+// PortAddrs returns the addresses that the wire servers are running on.
+func (d *Device) PortAddrs() []string {
+	a := []string{}
+	for _, p := range d.ports {
+		a = append(a, fmt.Sprintf("localhost:%d", p.tcpPort))
+	}
+	return a
 }
 
 // gnmiNoti creates a gNMI Notification from a RIB operation.
@@ -385,4 +501,37 @@ func gnmiNoti(t constants.OpType, ts int64, ni string, e ygot.GoStruct) (*gpb.No
 	ns[0].Atomic = true
 	ns[0].Prefix.Target = targetName
 	return ns[0], nil
+}
+
+const (
+	baseWireServicePort uint32 = 60000
+)
+
+// portsFromJSON returns a map of interfaces to their details from the input OpenConfig
+// configuration.
+func portsFromJSON(jsonCfg []byte, handler func([]byte) error) (map[*intf]*intfDetails, error) {
+	cfg := &ocrt.Device{}
+	if err := ocrt.Unmarshal(jsonCfg, cfg); err != nil {
+		return nil, fmt.Errorf("cannot unmarshal JSON configuration, %v", err)
+	}
+
+	ports := map[*intf]*intfDetails{}
+
+	for name, ocint := range cfg.Interface {
+		for index := range ocint.Subinterface {
+			iKey := &intf{
+				Interface:    name,
+				Subinterface: index,
+			}
+
+			iDet := &intfDetails{
+				svc:     wiresrv.New(handler),
+				tcpPort: baseWireServicePort + uint32(len(ports)),
+			}
+
+			log.Infof("defining interface for %s.%d", name, index)
+			ports[iKey] = iDet
+		}
+	}
+	return ports, nil
 }

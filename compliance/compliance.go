@@ -52,8 +52,10 @@ func SetElectionID(v uint64) {
 
 // Test describes a test within the compliance library.
 type Test struct {
-	// Fn is the function to be run for a test.
-	Fn func(*fluent.GRIBIClient, testing.TB)
+	// Fn is the function to be run for a test. Tests must not error if additional
+	// TestOpt arguments are supplied to them, but silently ignore them so as to allow
+	// a consistent set of options to be passed to the test suite.
+	Fn func(*fluent.GRIBIClient, testing.TB, ...TestOpt)
 	// Description is a longer description of what the test does such that it can
 	// be handed to a documentation generating function within the test.
 	Description string
@@ -81,6 +83,14 @@ type TestSpec struct {
 	FatalMsg string
 	// ErrorMsg is an expected t.Errorf message that the test finds.
 	ErrorMsg string
+}
+
+// TestOpt is an option that is handed to tests that need additional parameters,
+// each test is responsible for checking whether it is populated in the manner that
+// it expects.
+type TestOpt interface {
+	// IsTestOpt marks the TestOpt as implementing this interface.
+	IsTestOpt()
 }
 
 var (
@@ -287,6 +297,16 @@ var (
 			ShortName:      "Get for installed chain of entries - FIB ACK",
 			RequiresFIBACK: true,
 		},
+	}, {
+		In: Test{
+			Fn:        TestUnsupportedElectionParams,
+			ShortName: "Ensure that election ID is not accepted in ALL_PRIMARY mode",
+		},
+	}, {
+		In: Test{
+			Fn:        TestDifferingElectionParameters,
+			ShortName: "Ensure that a client with mismatched parameters is rejected",
+		},
 	}}
 )
 
@@ -299,7 +319,7 @@ func awaitTimeout(ctx context.Context, c *fluent.GRIBIClient, t testing.TB, time
 
 // ModifyConnection is a test that opens a Modify RPC. It determines
 // that there is no response from the server.
-func ModifyConnection(c *fluent.GRIBIClient, t testing.TB) {
+func ModifyConnection(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	c.Start(context.Background(), t)
 	defer c.Stop(t)
 	c.StartSending(context.Background(), t)
@@ -314,14 +334,13 @@ func ModifyConnection(c *fluent.GRIBIClient, t testing.TB) {
 // ModifyConnectionWithElectionID is a test that opens a Modify RPC,
 // with initial SessionParameters. It determines that there is a
 // successful response from the server for the election ID.
-func ModifyConnectionWithElectionID(c *fluent.GRIBIClient, t testing.TB) {
+func ModifyConnectionWithElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer electionID.Inc()
 	c.Connection().WithInitialElectionID(electionID.Load(), 0).WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence()
 	c.Start(context.Background(), t)
 	defer c.Stop(t)
 	c.StartSending(context.Background(), t)
-	err := awaitTimeout(context.Background(), c, t, time.Minute)
-	if err != nil {
+	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {
 		t.Fatalf("got unexpected error on client, %v", err)
 	}
 
@@ -343,7 +362,7 @@ func ModifyConnectionWithElectionID(c *fluent.GRIBIClient, t testing.TB) {
 // an erroneous combination and hence it checks that the server
 // returns an error that specifies unsupported parameters and the
 // failed precondition code.
-func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB) {
+func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	c.Connection().WithRedundancyMode(fluent.AllPrimaryClients).WithPersistence()
 	c.Start(context.Background(), t)
 	defer c.Stop(t)
@@ -367,7 +386,7 @@ func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB) 
 
 // AddIPv4Entry adds a fully referenced IPv4Entry and checks whether the specified ACK
 // type (wantACK) is returned.
-func AddIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func AddIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
@@ -407,7 +426,7 @@ func AddIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 
 // addIPv4Random adds an IPv4 Entry, shuffling the order of the entries, and
 // validating those entries are ACKed.
-func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB) {
+func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1))
@@ -455,7 +474,7 @@ func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB) {
 
 // AddIPv4Metadata adds an IPv4 Entry (and its dependencies) with metadata alongside the
 // entry.
-func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB) {
+func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t, fluent.IPv4Entry().
@@ -498,7 +517,7 @@ func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB) {
 
 // AddIPv4EntryDifferentNINHG adds an IPv4 entry that references a next-hop-group within a
 // different network instance, and validates that the entry is successfully installed.
-func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	// TODO(robjs): Server needs to be initialised with >1 VRF.
 	t.Skip()
 	ops := []func(){
@@ -582,7 +601,7 @@ func doModifyOps(c *fluent.GRIBIClient, t testing.TB, ops []func(), wantACK flue
 
 // AddUnreferencedNextHopGroup adds a NHG that is not referenced by any other entry. An ACK is expected,
 // and is validated to be of the type specified by wantACK.
-func AddUnreferencedNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func AddUnreferencedNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
@@ -612,7 +631,7 @@ func AddUnreferencedNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.Programmi
 
 // ImplicitReplaceNH performs two add operations for the same NextHop entry, validating that the
 // server handles this as an implicit replace of the entry.
-func ImplicitReplaceNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func ImplicitReplaceNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -657,7 +676,7 @@ func ImplicitReplaceNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 
 // ImplicitReplaceNHG performs two add operations for the same NextHopGroup entry, validating that the
 // server handles this as an implicit replace of the entry.
-func ImplicitReplaceNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func ImplicitReplaceNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -726,7 +745,7 @@ func ImplicitReplaceNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 
 // ImplicitReplaceIPv4Entry performs two add operations for the same NextHopGroup entry, validating that the
 // server handles this as an implicit replace of the entry.
-func ImplicitReplaceIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func ImplicitReplaceIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -823,7 +842,7 @@ func ImplicitReplaceIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 
 // ReplaceMissingNH validates that an operation for a next-hop entry that does not exist
 // on the server fails.
-func ReplaceMissingNH(c *fluent.GRIBIClient, t testing.TB) {
+func ReplaceMissingNH(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().ReplaceEntry(t,
@@ -846,7 +865,7 @@ func ReplaceMissingNH(c *fluent.GRIBIClient, t testing.TB) {
 
 // ReplaceMissingNHG validates that an operation for a next-hop-group entry that does not exist
 // on the server fails.
-func ReplaceMissingNHG(c *fluent.GRIBIClient, t testing.TB) {
+func ReplaceMissingNHG(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			// Make sure that our replace does not get rejected because of a missing reference.
@@ -899,7 +918,7 @@ func ReplaceMissingNHG(c *fluent.GRIBIClient, t testing.TB) {
 
 // ReplaceMissingIPv4Entry validates that an operation for an IPv4 entry that does not exist
 // on the server fails.
-func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB) {
+func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 
@@ -997,7 +1016,7 @@ func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB) {
 
 // baseTopologyEntries creates the entries shown in the diagram above using
 // separate ModifyRequests for each entry.
-func baseTopologyEntries(c *fluent.GRIBIClient, t testing.TB) {
+func baseTopologyEntries(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
 	c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(2).WithIPAddress("192.0.2.5"))
 	c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(1).AddNextHop(1, 1).AddNextHop(2, 1))
@@ -1043,7 +1062,7 @@ func validateBaseTopologyEntries(res []*client.OpResult, wantACK fluent.Programm
 // AddIPv4ToMultipleNHsSingleRequest is the internal implementation of the single request installation
 // of a IPv4Entry referencing a NHG that contains multiple NHs. It uses the wantACK parameter to determine the
 // type of acknowledgement that is expected from the server.
-func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -1060,7 +1079,7 @@ func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, wantACK fluent.Pro
 // AddIPv4ToMultipleNHsMultipleRequests creates an IPv4 entry which references a NHG containing
 // 2 NHs within multiple ModifyReqests, validating that they are installed in the specified RIB
 // or FIB according to wantACK.
-func AddIPv4ToMultipleNHsMultipleRequests(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func AddIPv4ToMultipleNHsMultipleRequests(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 	}
@@ -1069,12 +1088,12 @@ func AddIPv4ToMultipleNHsMultipleRequests(c *fluent.GRIBIClient, wantACK fluent.
 
 // makeTestWithACK creates a version of a test function that can be directly executed by the runner
 // which has a specific ACK type.
-func makeTestWithACK(fn func(*fluent.GRIBIClient, fluent.ProgrammingResult, testing.TB), wantACK fluent.ProgrammingResult) func(*fluent.GRIBIClient, testing.TB) {
-	return func(c *fluent.GRIBIClient, t testing.TB) { fn(c, wantACK, t) }
+func makeTestWithACK(fn func(*fluent.GRIBIClient, fluent.ProgrammingResult, testing.TB, ...TestOpt), wantACK fluent.ProgrammingResult) func(*fluent.GRIBIClient, testing.TB, ...TestOpt) {
+	return func(c *fluent.GRIBIClient, t testing.TB, opt ...TestOpt) { fn(c, wantACK, t, opt...) }
 }
 
 // DeleteIPv4Entry deletes an IPv4 entry from the server's RIB.
-func DeleteIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func DeleteIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -1096,7 +1115,7 @@ func DeleteIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t 
 
 // DeleteReferencedNHGFailure attempts to delete a NextHopGroup entry that is referenced
 // from the RIB, and expects a failure.
-func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -1117,7 +1136,7 @@ func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, wantACK fluent.Programmin
 
 // DeleteReferencedNHFailure attempts to delete a NH entry that is referened from the RIB
 // and expects a failure.
-func DeleteReferencedNHFailure(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func DeleteReferencedNHFailure(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -1143,7 +1162,7 @@ func DeleteReferencedNHFailure(c *fluent.GRIBIClient, wantACK fluent.Programming
 
 // DeleteNextHopGroup attempts to delete a NHG entry that is not referenced and expects
 // success. The ACK type expected is validated against wantACK.
-func DeleteNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func DeleteNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -1176,7 +1195,7 @@ func DeleteNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 
 // DeleteNextHop attempts to delete the NH entries within the base topology and expects
 // success. The ACK type returned is validated against wantACK.
-func DeleteNextHop(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func DeleteNextHop(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
@@ -1223,7 +1242,7 @@ func DeleteNextHop(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 // each is acknowledged separately by the server. Note that this does not imply that the
 // transactions cannot be coaesced when writing to hardware, but in order to prevent
 // pending transactions at the client, all must be acknowledged.
-func AddDeleteAdd(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func AddDeleteAdd(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		// Build the initial forwarding entries.
 		func() { baseTopologyEntries(c, t) },

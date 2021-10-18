@@ -142,6 +142,7 @@ func handleParams(opts ...Opt) (*clientState, error) {
 	s := &clientState{
 		SessParams: &spb.SessionParameters{},
 	}
+
 	for _, o := range opts {
 		switch v := o.(type) {
 		case *allPrimaryClients:
@@ -158,6 +159,7 @@ func handleParams(opts ...Opt) (*clientState, error) {
 			s.SessParams.AckType = spb.SessionParameters_RIB_AND_FIB_ACK
 		}
 	}
+
 	return s, nil
 }
 

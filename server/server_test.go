@@ -152,6 +152,26 @@ func TestUpdateParams(t *testing.T) {
 			Persist:      true,
 			FIBAck:       true,
 		},
+	}, {
+		desc: "new client, all fields default",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{},
+				},
+			},
+		},
+		inID: "c1",
+		inParams: &spb.SessionParameters{
+			Persistence: spb.SessionParameters_DELETE,
+			Redundancy:  spb.SessionParameters_ALL_PRIMARY,
+			AckType:     spb.SessionParameters_RIB_ACK,
+		},
+		wantState: &clientParams{
+			ExpectElecID: false,
+			Persist:      false,
+			FIBAck:       false,
+		},
 	}}
 
 	for _, tt := range tests {
@@ -365,6 +385,55 @@ func TestCheckParams(t *testing.T) {
 				Status: spb.SessionParametersResult_OK,
 			},
 		},
+	}, {
+		desc: "check parameters match - FIB ACK",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{
+						FIBAck:       true,
+						ExpectElecID: true,
+						Persist:      true,
+					},
+				},
+				"c2": {params: &clientParams{}},
+			},
+		},
+		inID: "c2",
+		inParams: &spb.SessionParameters{
+			AckType:     spb.SessionParameters_RIB_AND_FIB_ACK,
+			Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+			Persistence: spb.SessionParameters_PRESERVE,
+		},
+		wantResponse: &spb.ModifyResponse{
+			SessionParamsResult: &spb.SessionParametersResult{
+				Status: spb.SessionParametersResult_OK,
+			},
+		},
+	}, {
+		desc: "check parameters mismatch - FIB ACK",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{
+						FIBAck:       true,
+						ExpectElecID: true,
+						Persist:      true,
+					},
+				},
+				"c2": {params: &clientParams{}},
+			},
+		},
+		inID: "c2",
+		inParams: &spb.SessionParameters{
+			AckType:     spb.SessionParameters_RIB_ACK,
+			Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+			Persistence: spb.SessionParameters_PRESERVE,
+		},
+		wantErrCode: codes.FailedPrecondition,
+		wantErrDetails: &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_PARAMS_DIFFER_FROM_OTHER_CLIENTS,
+		},
 	}}
 
 	for _, tt := range tests {
@@ -388,7 +457,7 @@ func TestCheckParams(t *testing.T) {
 			}
 
 			if diff := cmp.Diff(got, tt.wantResponse, protocmp.Transform()); diff != "" {
-				t.Fatalf("did not get expected error, diff(-got,+want):\n%s", diff)
+				t.Fatalf("did not get expected response, diff(-got,+want):\n%s", diff)
 			}
 		})
 	}

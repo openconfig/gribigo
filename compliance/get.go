@@ -31,7 +31,7 @@ import (
 )
 
 // GetNH validates that an installed next-hop is returned via the Get RPC.
-func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -73,7 +73,7 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 }
 
 // GetNHG validates that an installed next-hop-group is returned via the Get RPC.
-func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -132,7 +132,7 @@ func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.T
 }
 
 // GetIPv4 validates that an installed IPv4 entry is returned via the Get RPC.
-func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -208,7 +208,7 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 
 // GetIPv4Chain validates that Get for all AFTs returns the chain of IPv4Entry->NHG->NH
 // required.
-func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -335,7 +335,7 @@ func populateNNHs(c *fluent.GRIBIClient, n int, wantACK fluent.ProgrammingResult
 // GetBenchmarkNH benchmarks the performance of Get populating the server with N next-hop
 // instances and measuring latency of the Get returned by the server. No validation of
 // the returned contents is performed.
-func GetBenchmarkNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB) {
+func GetBenchmarkNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	for _, i := range []int{10, 100, 1000} {
 		populateNNHs(c, i, wantACK, t)
 		ctx := context.Background()

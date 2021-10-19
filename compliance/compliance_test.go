@@ -44,9 +44,15 @@ func TestCompliance(t *testing.T) {
 			c := fluent.NewClient()
 			c.Connection().WithTarget(d.GRIBIAddr())
 
+			sc := fluent.NewClient()
+			sc.Connection().WithTarget(d.GRIBIAddr())
+			opts := []TestOpt{
+				SecondClient(sc),
+			}
+
 			if tt.FatalMsg != "" {
 				if got := negtest.ExpectFatal(t, func(t testing.TB) {
-					tt.In.Fn(c, t)
+					tt.In.Fn(c, t, opts...)
 				}); !strings.Contains(got, tt.FatalMsg) {
 					t.Fatalf("did not get expected fatal error, got: %s, want: %s", got, tt.FatalMsg)
 				}
@@ -55,14 +61,14 @@ func TestCompliance(t *testing.T) {
 
 			if tt.ErrorMsg != "" {
 				if got := negtest.ExpectError(t, func(t testing.TB) {
-					tt.In.Fn(c, t)
+					tt.In.Fn(c, t, opts...)
 				}); !strings.Contains(got, tt.ErrorMsg) {
 					t.Fatalf("did not get expected error, got: %s, want: %s", got, tt.ErrorMsg)
 				}
 			}
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
-			tt.In.Fn(c, t)
+			tt.In.Fn(c, t, opts...)
 		})
 	}
 }

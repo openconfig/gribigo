@@ -19,8 +19,11 @@ import (
 	"testing"
 	"time"
 
+	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/chk"
+	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/fluent"
+	"github.com/openconfig/gribigo/server"
 	"google.golang.org/grpc/codes"
 )
 
@@ -226,6 +229,296 @@ func TestLowerElectionID(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
 	chk.HasResult(t, clientB.Results(t),
 		fluent.OperationResult().
 			WithCurrentServerElectionID(electionID.Load()+1, 0).
+			AsResult(),
+	)
+}
+
+// TestActiveAfterMasterChange tests whether entries installed by client A remain active
+// when clientB connects and provides a higher election ID. The presence of an entry is
+// verified through the Get RPC.
+func TestActiveAfterMasterChange(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
+	defer electionID.Add(2)
+
+	clientA, clientB := clientAB(c, t, opts...)
+
+	clientA.Connection().WithInitialElectionID(electionID.Load(), 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence()
+	clientA.Start(context.Background(), t)
+	clientA.StartSending(context.Background(), t)
+	defer clientA.Stop(t)
+
+	clientA.Modify().AddEntry(t,
+		fluent.NextHopEntry().
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithIndex(1).
+			WithIPAddress("192.0.2.1"))
+
+	clientA.Modify().AddEntry(t,
+		fluent.NextHopGroupEntry().
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithID(42).
+			AddNextHop(1, 1))
+
+	clientA.Modify().AddEntry(t,
+		fluent.IPv4Entry().
+			WithPrefix("1.1.1.1/32").
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNextHopGroup(42))
+
+	if err := awaitTimeout(context.Background(), clientA, t, time.Minute); err != nil {
+		t.Fatalf("could not program entries via clientA, got err: %v", err)
+	}
+
+	chk.HasResult(t, clientA.Results(t),
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, clientA.Results(t),
+		fluent.OperationResult().
+			WithNextHopGroupOperation(42).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, clientA.Results(t),
+		fluent.OperationResult().
+			WithIPv4Operation("1.1.1.1/32").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chkIPv4 := func(c *fluent.GRIBIClient, t testing.TB, errDetails string) {
+		gr, err := c.Get().
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithAFT(fluent.IPv4).
+			Send()
+
+		log.Infof("got Get result, %s", gr)
+
+		if err != nil {
+			t.Fatalf("could not execute Get via client (%s), %v", errDetails, err)
+		}
+
+		chk.GetResponseHasEntries(t, gr,
+			fluent.IPv4Entry().
+				WithNetworkInstance(server.DefaultNetworkInstanceName).
+				WithNextHopGroup(42).
+				WithPrefix("1.1.1.1/32"),
+		)
+	}
+
+	chkIPv4(clientA, t, "clientA, prior to clientB connecting")
+
+	// connect clientB with higher election ID.
+	clientB.Connection().WithInitialElectionID(electionID.Load()+1, 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence()
+	clientB.Start(context.Background(), t)
+	clientB.StartSending(context.Background(), t)
+	defer clientB.Stop(t)
+
+	chkIPv4(clientA, t, "clientA, after clientB connected")
+	chkIPv4(clientB, t, "clientB directly")
+}
+
+// TestNewElectionIDNoUpdateRejected checks that a client that specifies a higher election
+// ID without explicitly updating the ID is rejected.
+func TestNewElectionIDNoUpdateRejected(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer electionID.Add(2)
+
+	c.Connection().WithInitialElectionID(electionID.Load(), 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence()
+	c.Start(context.Background(), t)
+	c.StartSending(context.Background(), t)
+	defer c.Stop(t)
+
+	entries := []fluent.GRIBIEntry{
+		fluent.NextHopEntry().
+			WithIndex(1).
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithElectionID(electionID.Load()+1, 0),
+		fluent.NextHopGroupEntry().
+			WithID(1).
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			AddNextHop(1, 1).
+			WithElectionID(electionID.Load()+1, 0),
+		fluent.IPv4Entry().
+			WithPrefix("1.1.1.1/32").
+			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithElectionID(electionID.Load()+1, 0),
+	}
+
+	c.Modify().AddEntry(t, entries...)
+
+	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {
+		t.Fatalf("could not program entries via client, got err: %v", err)
+	}
+
+	chk.HasResult(t, c.Results(t),
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, c.Results(t),
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, c.Results(t),
+		fluent.OperationResult().
+			WithIPv4Operation("1.1.1.1/32").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+}
+
+// TestIncElectionID ensures that when the election ID is updated explicitly by the
+// client to a higher value that the new value is accepted, and the lower values are rejected.
+func TestIncElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer electionID.Inc()
+
+	c.Connection().WithInitialElectionID(electionID.Load(), 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence()
+	c.Start(context.Background(), t)
+	c.StartSending(context.Background(), t)
+	defer c.Stop(t)
+
+	c.Modify().AddEntry(t, fluent.
+		NextHopEntry().
+		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithIndex(1).
+		WithIPAddress("1.1.1.1"))
+
+	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {
+		t.Fatalf("could not program entries via client, got err: %v", err)
+	}
+
+	chk.HasResult(t, c.Results(t),
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	electionID.Inc()
+
+	c.Modify().UpdateElectionID(t, electionID.Load(), 0)
+
+	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {
+		t.Fatalf("could not update election ID via client, got err: %v", err)
+	}
+
+	chk.HasResult(t, c.Results(t),
+		fluent.
+			OperationResult().
+			WithCurrentServerElectionID(electionID.Load(), 0).
+			AsResult(),
+	)
+
+	// check old ID is not honoured.
+	c.Modify().AddEntry(t, fluent.
+		NextHopEntry().
+		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithIndex(1).
+		WithIPAddress("2.2.2.2").
+		WithElectionID(electionID.Load()-1, 0))
+
+	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {
+		t.Fatalf("could not send update with stale ID via client, got err: %v", err)
+	}
+
+	chk.HasResult(t, c.Results(t),
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	// check new ID is honoured.
+	c.Modify().AddEntry(t, fluent.
+		NextHopEntry().
+		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithIndex(1).
+		WithIPAddress("3.3.3.3").
+		WithElectionID(electionID.Load(), 0))
+
+	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {
+		t.Fatalf("could not send update with current ID via client, got err: %v", err)
+	}
+
+	chk.HasResult(t, c.Results(t),
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+}
+
+// TestDecElectionID validates that when a client decreases the election ID
+// it is not honoured by the server, and the server reports back the highest
+// ID it has seen.
+func TestDecElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer electionID.Inc()
+
+	// ensure that we can safely use election ID - 1
+	electionID.Inc()
+
+	c.Connection().WithInitialElectionID(electionID.Load(), 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence()
+	c.Start(context.Background(), t)
+	c.StartSending(context.Background(), t)
+	defer c.Stop(t)
+
+	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {
+		t.Fatalf("could not send update with current ID via client, got err: %v", err)
+	}
+
+	chk.HasResult(t, c.Results(t),
+		fluent.
+			OperationResult().
+			WithCurrentServerElectionID(electionID.Load(), 0).
+			AsResult(),
+	)
+
+	c.Modify().UpdateElectionID(t, electionID.Load()-1, 0)
+
+	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {
+		t.Fatalf("could not send update with current ID via client, got err: %v", err)
+	}
+
+	chk.HasResult(t, c.Results(t),
+		fluent.
+			OperationResult().
+			WithCurrentServerElectionID(electionID.Load(), 0).
 			AsResult(),
 	)
 }

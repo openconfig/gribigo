@@ -307,6 +307,16 @@ var (
 			Fn:        TestDifferingElectionParameters,
 			ShortName: "Ensure that a client with mismatched parameters is rejected",
 		},
+	}, {
+		In: Test{
+			Fn: TestMatchingElectionParameters,
+			ShortName: "Matching parameters for two clients in election",
+		},
+	}, {
+		In: Test{
+			Fn: TestLowerElectionID,
+			ShortName: "Lower election ID from new client",
+		},
 	}}
 )
 

@@ -309,12 +309,12 @@ var (
 		},
 	}, {
 		In: Test{
-			Fn: TestMatchingElectionParameters,
+			Fn:        TestMatchingElectionParameters,
 			ShortName: "Matching parameters for two clients in election",
 		},
 	}, {
 		In: Test{
-			Fn: TestLowerElectionID,
+			Fn:        TestLowerElectionID,
 			ShortName: "Lower election ID from new client",
 		},
 	}}

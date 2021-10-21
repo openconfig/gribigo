@@ -260,9 +260,6 @@ func (g *GRIBIClient) Status(t testing.TB) *client.ClientStatus {
 	return s
 }
 
-// TODO(robjs): add an UpdateElectionID method such that we can set the election ID
-// after it has initially been created.
-
 // gRIBIGet is a container for arguments to the Get RPC.
 type gRIBIGet struct {
 	// parent is a reference to the parent client.
@@ -375,6 +372,18 @@ func (g *gRIBIModify) ReplaceEntry(t testing.TB, entries ...GRIBIEntry) *gRIBIMo
 	return g
 }
 
+// UpdateElectionID updates the election ID on the gRIBI Modify channel using value provided.
+// The election ID is a uint128 made up of concatenating the low and high uint64 values provided.
+func (g *gRIBIModify) UpdateElectionID(t testing.TB, low, high uint64) *gRIBIModify {
+	g.parent.c.Q(&spb.ModifyRequest{
+		ElectionId: &spb.Uint128{
+			Low:  low,
+			High: high,
+		},
+	})
+	return g
+}
+
 // entriesToModifyRequest creates a ModifyRequest from a set of input entries.
 func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entries []GRIBIEntry) (*spb.ModifyRequest, error) {
 	m := &spb.ModifyRequest{}
@@ -426,6 +435,9 @@ type ipv4Entry struct {
 	pb *aftpb.Afts_Ipv4EntryKey
 	// ni is the network instance to which the IPv4Entry is applied.
 	ni string
+	// electionID is an explicit election ID to be used for an
+	// operation using the entry.
+	electionID *spb.Uint128
 }
 
 // IPv4Entry returns a new gRIBI IPv4Entry builder.
@@ -471,6 +483,17 @@ func (i *ipv4Entry) WithMetadata(b []byte) *ipv4Entry {
 	return i
 }
 
+// WithElectionID specifies an explicit election ID to be used for the Entry.
+// The election ID is made up of the concatenation of the low and high uint64
+// values provided.
+func (i *ipv4Entry) WithElectionID(low, high uint64) *ipv4Entry {
+	i.electionID = &spb.Uint128{
+		Low:  low,
+		High: high,
+	}
+	return i
+}
+
 // opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
@@ -480,6 +503,7 @@ func (i *ipv4Entry) opproto() (*spb.AFTOperation, error) {
 		Entry: &spb.AFTOperation_Ipv4{
 			Ipv4: proto.Clone(i.pb).(*aftpb.Afts_Ipv4EntryKey),
 		},
+		ElectionId: i.electionID,
 	}, nil
 }
 
@@ -495,8 +519,14 @@ func (i *ipv4Entry) EntryProto() (*spb.AFTEntry, error) {
 
 // nextHopEntry is the internal representation of a next-hop Entry in gRIBI.
 type nextHopEntry struct {
+	// ni is the network instance that the next-hop entry is within.
 	ni string
+	// pb is the AFT protobuf representing the next-hop entry.
 	pb *aftpb.Afts_NextHopKey
+
+	// electionID is an explicit electionID to be used hen the next-hop entry
+	// is programmed.
+	electionID *spb.Uint128
 }
 
 // NextHopEntry returns a builder that can be used to build up a NextHop within
@@ -539,6 +569,17 @@ func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
 	return n
 }
 
+// WithElectionID specifies an explicit election ID that is to be used hen the next hop
+// is programmed in an AFTOperation. The electionID is a uint128 made up of concatenating
+// the low and high uint64 values provided.
+func (n *nextHopEntry) WithElectionID(low, high uint64) *nextHopEntry {
+	n.electionID = &spb.Uint128{
+		Low:  low,
+		High: high,
+	}
+	return n
+}
+
 // TODO(robjs): add additional NextHopEntry fields.
 
 // opproto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
@@ -550,6 +591,7 @@ func (n *nextHopEntry) opproto() (*spb.AFTOperation, error) {
 		Entry: &spb.AFTOperation_NextHop{
 			NextHop: proto.Clone(n.pb).(*aftpb.Afts_NextHopKey),
 		},
+		ElectionId: n.electionID,
 	}, nil
 }
 
@@ -565,8 +607,14 @@ func (n *nextHopEntry) EntryProto() (*spb.AFTEntry, error) {
 
 // nextHopGroupEntry is the internal representation of a next-hop-group Entry in gRIBI.
 type nextHopGroupEntry struct {
+	// ni is the network instance that the next-hop-group entry is within.
 	ni string
+	// pb is the AFT protobuf that describes the NextHopGroup entry.
 	pb *aftpb.Afts_NextHopGroupKey
+
+	// electionID is the explicit election ID to be used when this entry is used
+	// in an AFTOperation.
+	electionID *spb.Uint128
 }
 
 // NextHopGroupEntry returns a builder that can be used to build up a NextHopGroup within
@@ -603,6 +651,17 @@ func (n *nextHopGroupEntry) AddNextHop(index, weight uint64) *nextHopGroupEntry 
 	return n
 }
 
+// WithElectionID specifies an explicit election ID that is to be used hen the next hop group
+// is programmed in an AFTOperation. The electionID is a uint128 made up of concatenating
+// the low and high uint64 values provided.
+func (n *nextHopGroupEntry) WithElectionID(low, high uint64) *nextHopGroupEntry {
+	n.electionID = &spb.Uint128{
+		Low:  low,
+		High: high,
+	}
+	return n
+}
+
 // opproto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
@@ -612,6 +671,7 @@ func (n *nextHopGroupEntry) opproto() (*spb.AFTOperation, error) {
 		Entry: &spb.AFTOperation_NextHopGroup{
 			NextHopGroup: proto.Clone(n.pb).(*aftpb.Afts_NextHopGroupKey),
 		},
+		ElectionId: n.electionID,
 	}, nil
 }
 

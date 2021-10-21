@@ -307,6 +307,36 @@ var (
 			Fn:        TestDifferingElectionParameters,
 			ShortName: "Ensure that a client with mismatched parameters is rejected",
 		},
+	}, {
+		In: Test{
+			Fn:        TestMatchingElectionParameters,
+			ShortName: "Matching parameters for two clients in election",
+		},
+	}, {
+		In: Test{
+			Fn:        TestLowerElectionID,
+			ShortName: "Lower election ID from new client",
+		},
+	}, {
+		In: Test{
+			Fn:        TestActiveAfterMasterChange,
+			ShortName: "Active entries after new master connects",
+		},
+	}, {
+		In: Test{
+			Fn:        TestNewElectionIDNoUpdateRejected,
+			ShortName: "Unannounced master operations are rejected",
+		},
+	}, {
+		In: Test{
+			Fn:        TestIncElectionID,
+			ShortName: "Incrementing election ID is honoured, and older IDs are rejected",
+		},
+	}, {
+		In: Test{
+			Fn:        TestDecElectionID,
+			ShortName: "Decrementing election ID is ignored",
+		},
 	}}
 )
 

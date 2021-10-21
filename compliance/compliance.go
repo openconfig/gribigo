@@ -317,6 +317,16 @@ var (
 			Fn:        TestLowerElectionID,
 			ShortName: "Lower election ID from new client",
 		},
+	}, {
+		In: Test{
+			Fn:        TestActiveAfterMasterChange,
+			ShortName: "Active entries after new master connects",
+		},
+	}, {
+		In: Test{
+			Fn:        TestNewElectionIDNoUpdateRejected,
+			ShortName: "Unannounced master operations are rejected",
+		},
 	}}
 )
 

@@ -260,9 +260,6 @@ func (g *GRIBIClient) Status(t testing.TB) *client.ClientStatus {
 	return s
 }
 
-// TODO(robjs): add an UpdateElectionID method such that we can set the election ID
-// after it has initially been created.
-
 // gRIBIGet is a container for arguments to the Get RPC.
 type gRIBIGet struct {
 	// parent is a reference to the parent client.
@@ -372,6 +369,18 @@ func (g *gRIBIModify) ReplaceEntry(t testing.TB, entries ...GRIBIEntry) *gRIBIMo
 		t.Fatalf("cannot build modify request, %v", err)
 	}
 	g.parent.c.Q(m)
+	return g
+}
+
+// UpdateElectionID updates the election ID on the gRIBI Modify channel using value provided.
+// The election ID is a uint128 made up of concatenating the low and high uint64 values provided.
+func (g *gRIBIModify) UpdateElectionID(t testing.TB, low, high uint64) *gRIBIModify {
+	g.parent.c.Q(&spb.ModifyRequest{
+		ElectionId: &spb.Uint128{
+			Low:  low,
+			High: high,
+		},
+	})
 	return g
 }
 

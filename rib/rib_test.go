@@ -85,7 +85,7 @@ func TestAdd(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.0.0.0/24",
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-				Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+				EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			},
 		},
 		wantInstalled: true,
@@ -93,8 +93,8 @@ func TestAdd(t *testing.T) {
 			Afts: &aft.Afts{
 				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
 					"1.0.0.0/24": {
-						Prefix:   ygot.String("1.0.0.0/24"),
-						Metadata: aft.Binary{0, 1, 2, 3, 4, 5, 6, 7},
+						Prefix:        ygot.String("1.0.0.0/24"),
+						EntryMetadata: aft.Binary{0, 1, 2, 3, 4, 5, 6, 7},
 					},
 				},
 			},
@@ -126,7 +126,7 @@ func TestAdd(t *testing.T) {
 			if _, _, err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 				Prefix: "8.8.8.8/32",
 				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-					Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+					EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 				},
 			}, false); err != nil {
 				panic(err)
@@ -137,7 +137,7 @@ func TestAdd(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "8.8.8.8/32",
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-				Metadata: &wpb.BytesValue{Value: []byte{10, 11, 12, 13, 14, 15, 16, 17}},
+				EntryMetadata: &wpb.BytesValue{Value: []byte{10, 11, 12, 13, 14, 15, 16, 17}},
 			},
 		},
 		wantInstalled: true,
@@ -146,8 +146,8 @@ func TestAdd(t *testing.T) {
 			Afts: &aft.Afts{
 				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
 					"8.8.8.8/32": {
-						Prefix:   ygot.String("8.8.8.8/32"),
-						Metadata: aft.Binary{10, 11, 12, 13, 14, 15, 16, 17},
+						Prefix:        ygot.String("8.8.8.8/32"),
+						EntryMetadata: aft.Binary{10, 11, 12, 13, 14, 15, 16, 17},
 					},
 				},
 			},
@@ -306,7 +306,7 @@ func TestAdd(t *testing.T) {
 			if _, _, err := r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
 				Prefix: "22.32.42.52/32",
 				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-					Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+					EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 				},
 			}, false); err != nil {
 				panic(err)
@@ -501,7 +501,7 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 			case en.v4 != nil:
 				p := a.GetOrCreateAfts().GetOrCreateIpv4Entry(en.v4.prefix)
 				if en.v4.metadata != nil {
-					p.Metadata = en.v4.metadata
+					p.EntryMetadata = en.v4.metadata
 				}
 				if en.v4.nhg != 0 {
 					p.NextHopGroup = ygot.Uint64(en.v4.nhg)
@@ -562,13 +562,13 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-				Metadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+				EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 			},
 		},
 		wantOK: true,
 		wantOrig: &aft.Afts_Ipv4Entry{
-			Prefix:   ygot.String("1.1.1.1/32"),
-			Metadata: aft.Binary{0, 1, 2, 3, 4, 5, 6, 7},
+			Prefix:        ygot.String("1.1.1.1/32"),
+			EntryMetadata: aft.Binary{0, 1, 2, 3, 4, 5, 6, 7},
 		},
 		wantPostRIB: &RIBHolder{
 			r: ribEntries([]*entry{}),
@@ -583,13 +583,13 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-				Metadata: &wpb.BytesValue{Value: []byte{2, 3, 4, 5}},
+				EntryMetadata: &wpb.BytesValue{Value: []byte{2, 3, 4, 5}},
 			},
 		},
 		wantOK: true,
 		wantOrig: &aft.Afts_Ipv4Entry{
-			Prefix:   ygot.String("1.1.1.1/32"),
-			Metadata: aft.Binary{1, 2, 3, 4},
+			Prefix:        ygot.String("1.1.1.1/32"),
+			EntryMetadata: aft.Binary{1, 2, 3, 4},
 		},
 		wantPostRIB: &RIBHolder{},
 	}, {
@@ -716,13 +716,13 @@ func TestConcreteIPv4Proto(t *testing.T) {
 	}, {
 		desc: "with metadata",
 		inEntry: &aft.Afts_Ipv4Entry{
-			Prefix:   ygot.String("8.8.8.8/32"),
-			Metadata: []byte{1, 2, 3, 4},
+			Prefix:        ygot.String("8.8.8.8/32"),
+			EntryMetadata: []byte{1, 2, 3, 4},
 		},
 		want: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "8.8.8.8/32",
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-				Metadata: &wpb.BytesValue{
+				EntryMetadata: &wpb.BytesValue{
 					Value: []byte{1, 2, 3, 4},
 				},
 			},

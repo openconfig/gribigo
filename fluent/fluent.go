@@ -479,7 +479,7 @@ func (i *ipv4Entry) WithNextHopGroupNetworkInstance(n string) *ipv4Entry {
 // WithMetadata specifies a byte slice that is stored as metadata alongside
 // the entry on the gRIBI server.
 func (i *ipv4Entry) WithMetadata(b []byte) *ipv4Entry {
-	i.pb.Ipv4Entry.Metadata = &wpb.BytesValue{Value: b}
+	i.pb.Ipv4Entry.EntryMetadata = &wpb.BytesValue{Value: b}
 	return i
 }
 

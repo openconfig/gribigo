@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package RIB implements a basic RIB for a gRIBI server.
+// Package rib implements a basic RIB for a gRIBI server.
 package rib
 
 import (

@@ -251,6 +251,7 @@ func TestEntry(t *testing.T) {
 		desc: "next-hop",
 		in: NextHopEntry().
 			WithNetworkInstance("DEFAULT").WithIndex(1).
+			WithIPAddress("198.51.100.1").
 			WithInterfaceSubinterfaceRef("Ethernet5/2", 1982).
 			WithMacAddress("12:34:56:78:9a:bc").
 			WithIPInIP("192.0.2.111", "192.0.2.222"),
@@ -260,6 +261,7 @@ func TestEntry(t *testing.T) {
 				NextHop: &aftpb.Afts_NextHopKey{
 					Index: 1,
 					NextHop: &aftpb.Afts_NextHop{
+						IpAddress: &wpb.StringValue{Value: "198.51.100.1"},
 						InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
 							Interface:    &wpb.StringValue{Value: "Ethernet5/2"},
 							Subinterface: &wpb.UintValue{Value: 1982},
@@ -279,6 +281,7 @@ func TestEntry(t *testing.T) {
 				NextHop: &aftpb.Afts_NextHopKey{
 					Index: 1,
 					NextHop: &aftpb.Afts_NextHop{
+						IpAddress: &wpb.StringValue{Value: "198.51.100.1"},
 						InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
 							Interface:    &wpb.StringValue{Value: "Ethernet5/2"},
 							Subinterface: &wpb.UintValue{Value: 1982},

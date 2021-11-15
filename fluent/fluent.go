@@ -559,6 +559,41 @@ func (n *nextHopEntry) WithIPAddress(addr string) *nextHopEntry {
 	return n
 }
 
+// WithInterfaceRef specifies an interface to be used for the next-hop.
+func (n *nextHopEntry) WithInterfaceRef(name string) *nextHopEntry {
+	n.pb.NextHop.InterfaceRef = &aftpb.Afts_NextHop_InterfaceRef{
+		Interface: &wpb.StringValue{Value: name},
+	}
+	return n
+}
+
+// WithInterfaceSubinterfaceRef specifies both an interface and a
+// specific subinterface to be used for the next-hop.
+func (n *nextHopEntry) WithInterfaceSubinterfaceRef(name string, sub uint64) *nextHopEntry {
+	n.pb.NextHop.InterfaceRef = &aftpb.Afts_NextHop_InterfaceRef{
+		Interface:    &wpb.StringValue{Value: name},
+		Subinterface: &wpb.UintValue{Value: sub},
+	}
+	return n
+}
+
+// WithMacAddress specifies a MAC address to be used for the next-hop.
+func (n *nextHopEntry) WithMacAddress(mac string) *nextHopEntry {
+	n.pb.NextHop.MacAddress = &wpb.StringValue{Value: mac}
+	return n
+}
+
+// WithIPInIP specifies that IP-in-IP encapsulation should be used for
+// the next-hop, and the source and destination IP addresses for the
+// packet.
+func (n *nextHopEntry) WithIPInIP(srcIP, dstIP string) *nextHopEntry {
+	n.pb.NextHop.IpInIp = &aftpb.Afts_NextHop_IpInIp{
+		SrcIp: &wpb.StringValue{Value: srcIP},
+		DstIp: &wpb.StringValue{Value: dstIP},
+	}
+	return n
+}
+
 // WithNextHopNetworkInstance specifies the network instance within which the next-hop
 // should be resolved. If it is not specified, the next-hop is resolved in the network
 // instance that the next-hop is installed in. If no other parameters are specified, the

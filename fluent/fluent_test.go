@@ -254,7 +254,7 @@ func TestEntry(t *testing.T) {
 			WithIPAddress("198.51.100.1").
 			WithSubInterfaceRef("Ethernet5/2", 1982).
 			WithMacAddress("12:34:56:78:9a:bc").
-			WithIPInIP("192.0.2.111", "192.0.2.222"),
+			WithIPinIP("192.0.2.111", "192.0.2.222"),
 		wantOpProto: &spb.AFTOperation{
 			NetworkInstance: "DEFAULT",
 			Entry: &spb.AFTOperation_NextHop{

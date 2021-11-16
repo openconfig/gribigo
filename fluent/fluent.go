@@ -583,10 +583,10 @@ func (n *nextHopEntry) WithMacAddress(mac string) *nextHopEntry {
 	return n
 }
 
-// WithIPInIP specifies that IP-in-IP encapsulation should be used for
+// WithIPinIP specifies that IP-in-IP encapsulation should be used for
 // the next-hop, and the source and destination IP addresses for the
 // packet.
-func (n *nextHopEntry) WithIPInIP(srcIP, dstIP string) *nextHopEntry {
+func (n *nextHopEntry) WithIPinIP(srcIP, dstIP string) *nextHopEntry {
 	n.pb.NextHop.IpInIp = &aftpb.Afts_NextHop_IpInIp{
 		SrcIp: &wpb.StringValue{Value: srcIP},
 		DstIp: &wpb.StringValue{Value: dstIP},

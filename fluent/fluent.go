@@ -567,12 +567,12 @@ func (n *nextHopEntry) WithInterfaceRef(name string) *nextHopEntry {
 	return n
 }
 
-// WithInterfaceSubinterfaceRef specifies both an interface and a
-// specific subinterface to be used for the next-hop.
-func (n *nextHopEntry) WithInterfaceSubinterfaceRef(name string, sub uint64) *nextHopEntry {
+// WithSubInterfaceRef specifies both an interface and a specific
+// subinterface to be used for the next-hop.
+func (n *nextHopEntry) WithSubInterfaceRef(name string, subinterface uint64) *nextHopEntry {
 	n.pb.NextHop.InterfaceRef = &aftpb.Afts_NextHop_InterfaceRef{
 		Interface:    &wpb.StringValue{Value: name},
-		Subinterface: &wpb.UintValue{Value: sub},
+		Subinterface: &wpb.UintValue{Value: subinterface},
 	}
 	return n
 }

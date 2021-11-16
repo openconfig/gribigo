@@ -31,6 +31,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	enums "github.com/openconfig/gribi/v1/proto/gribi_aft/enums"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
@@ -287,6 +288,31 @@ func TestEntry(t *testing.T) {
 					Id: 42,
 					NextHopGroup: &aftpb.Afts_NextHopGroup{
 						BackupNextHopGroup: &wpb.UintValue{Value: 84},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "next-hop with decap",
+		in:   NextHopEntry().WithNetworkInstance("DEFAULT").WithIndex(1).WithDecapsulateHeader(IPinIP),
+		wantOpProto: &spb.AFTOperation{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						DecapsulateHeader: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						DecapsulateHeader: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
 					},
 				},
 			},

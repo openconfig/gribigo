@@ -249,13 +249,29 @@ func TestEntry(t *testing.T) {
 		},
 	}, {
 		desc: "next-hop",
-		in:   NextHopEntry().WithNetworkInstance("DEFAULT").WithIndex(1),
+		in: NextHopEntry().
+			WithNetworkInstance("DEFAULT").WithIndex(1).
+			WithIPAddress("198.51.100.1").
+			WithSubinterfaceRef("Ethernet5/2", 1982).
+			WithMacAddress("12:34:56:78:9a:bc").
+			WithIPinIP("192.0.2.111", "192.0.2.222"),
 		wantOpProto: &spb.AFTOperation{
 			NetworkInstance: "DEFAULT",
 			Entry: &spb.AFTOperation_NextHop{
 				NextHop: &aftpb.Afts_NextHopKey{
-					Index:   1,
-					NextHop: &aftpb.Afts_NextHop{},
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						IpAddress: &wpb.StringValue{Value: "198.51.100.1"},
+						InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+							Interface:    &wpb.StringValue{Value: "Ethernet5/2"},
+							Subinterface: &wpb.UintValue{Value: 1982},
+						},
+						MacAddress: &wpb.StringValue{Value: "12:34:56:78:9a:bc"},
+						IpInIp: &aftpb.Afts_NextHop_IpInIp{
+							SrcIp: &wpb.StringValue{Value: "192.0.2.111"},
+							DstIp: &wpb.StringValue{Value: "192.0.2.222"},
+						},
+					},
 				},
 			},
 		},
@@ -263,8 +279,50 @@ func TestEntry(t *testing.T) {
 			NetworkInstance: "DEFAULT",
 			Entry: &spb.AFTEntry_NextHop{
 				NextHop: &aftpb.Afts_NextHopKey{
-					Index:   1,
-					NextHop: &aftpb.Afts_NextHop{},
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						IpAddress: &wpb.StringValue{Value: "198.51.100.1"},
+						InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+							Interface:    &wpb.StringValue{Value: "Ethernet5/2"},
+							Subinterface: &wpb.UintValue{Value: 1982},
+						},
+						MacAddress: &wpb.StringValue{Value: "12:34:56:78:9a:bc"},
+						IpInIp: &aftpb.Afts_NextHop_IpInIp{
+							SrcIp: &wpb.StringValue{Value: "192.0.2.111"},
+							DstIp: &wpb.StringValue{Value: "192.0.2.222"},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "next-hop interface only",
+		in: NextHopEntry().
+			WithNetworkInstance("DEFAULT").WithIndex(1).
+			WithInterfaceRef("Ethernet5/2"),
+		wantOpProto: &spb.AFTOperation{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+							Interface: &wpb.StringValue{Value: "Ethernet5/2"},
+						},
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+							Interface: &wpb.StringValue{Value: "Ethernet5/2"},
+						},
+					},
 				},
 			},
 		},

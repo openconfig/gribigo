@@ -840,7 +840,7 @@ func checkElectionForModify(opID uint64, opElecID *spb.Uint128, election *electi
 		)
 	case election.client != election.master:
 		// this client is not the elected master.
-		log.Errorf("returning failed to client %s, because they are not the elected master (%s is)", election.client, election.master)
+		log.Errorf("returning failed to client %s (id: %s), because they are not the elected master (%s is, id: %s)", election.client, election.clientLatest, election.master, election.ID)
 		return &spb.ModifyResponse{
 			Result: []*spb.AFTResult{{
 				Id:     opID,

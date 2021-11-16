@@ -165,6 +165,11 @@ func clientError(t testing.TB, err error) *client.ClientErr {
 // HasNSendErrors checks that the error contains N sender errors.
 func HasNSendErrors(t testing.TB, err error, count int) {
 	t.Helper()
+
+	if err == nil && count == 0 {
+		return
+	}
+
 	ce := clientError(t, err)
 	if l := len(ce.Send); l != count {
 		t.Fatalf("got unexpected number of send errors, got: %d (%v), want: %d", l, ce.Send, count)
@@ -174,6 +179,11 @@ func HasNSendErrors(t testing.TB, err error, count int) {
 // HasNRecvErrors checks that the error contains N receive errors.
 func HasNRecvErrors(t testing.TB, err error, count int) {
 	t.Helper()
+
+	if err == nil && count == 0 {
+		return
+	}
+
 	ce := clientError(t, err)
 	if l := len(ce.Recv); l != count {
 		t.Fatalf("got unexpected number of receive errors, got: %d (%v), want: %d", l, ce.Recv, count)

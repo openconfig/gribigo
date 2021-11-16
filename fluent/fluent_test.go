@@ -272,7 +272,7 @@ func TestEntry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			gotop, err := tt.in.opproto()
+			gotop, err := tt.in.OpProto()
 			if (err != nil) != tt.wantOpErr {
 				t.Fatalf("did not get expected error for op, got: %v, wantErr? %v", err, tt.wantOpErr)
 			}

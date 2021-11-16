@@ -379,7 +379,7 @@ func (g *gRIBIModify) ReplaceEntry(t testing.TB, entries ...GRIBIEntry) *gRIBIMo
 func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entries []GRIBIEntry) (*spb.ModifyRequest, error) {
 	m := &spb.ModifyRequest{}
 	for _, e := range entries {
-		ep, err := e.opproto()
+		ep, err := e.OpProto()
 		if err != nil {
 			return nil, fmt.Errorf("cannot build entry protobuf, got err: %v", err)
 		}
@@ -414,8 +414,8 @@ func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entr
 // GRIBIEntry is an entry implemented for all types that can be returned
 // as a gRIBI entry.
 type GRIBIEntry interface {
-	// opproto builds the entry as a new AFTOperation protobuf.
-	opproto() (*spb.AFTOperation, error)
+	// OpProto builds the entry as a new AFTOperation protobuf.
+	OpProto() (*spb.AFTOperation, error)
 	// EntryProto builds the entry as a new AFTEntry protobuf.
 	EntryProto() (*spb.AFTEntry, error)
 }
@@ -471,10 +471,10 @@ func (i *ipv4Entry) WithMetadata(b []byte) *ipv4Entry {
 	return i
 }
 
-// opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// OpProto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
-func (i *ipv4Entry) opproto() (*spb.AFTOperation, error) {
+func (i *ipv4Entry) OpProto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: i.ni,
 		Entry: &spb.AFTOperation_Ipv4{
@@ -541,10 +541,10 @@ func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
 
 // TODO(robjs): add additional NextHopEntry fields.
 
-// opproto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
+// OpProto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
-func (n *nextHopEntry) opproto() (*spb.AFTOperation, error) {
+func (n *nextHopEntry) OpProto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTOperation_NextHop{
@@ -603,10 +603,10 @@ func (n *nextHopGroupEntry) AddNextHop(index, weight uint64) *nextHopGroupEntry 
 	return n
 }
 
-// opproto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
+// OpProto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
-func (n *nextHopGroupEntry) opproto() (*spb.AFTOperation, error) {
+func (n *nextHopGroupEntry) OpProto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTOperation_NextHopGroup{

@@ -640,6 +640,13 @@ func (n *nextHopGroupEntry) WithNetworkInstance(ni string) *nextHopGroupEntry {
 	return n
 }
 
+// WithBackupNHG specifies a backup next-hop-group that is to be used when the
+// next-hop-group being created is not viable.
+func (n *nextHopGroupEntry) WithBackupNHG(id uint64) *nextHopGroupEntry {
+	n.pb.NextHopGroup.BackupNextHopGroup = &wpb.UintValue{Value: id}
+	return n
+}
+
 // AddNextHop adds the specified nexthop index to the NextHopGroup with the specified weight.
 func (n *nextHopGroupEntry) AddNextHop(index, weight uint64) *nextHopGroupEntry {
 	n.pb.NextHopGroup.NextHop = append(n.pb.NextHopGroup.NextHop, &aftpb.Afts_NextHopGroup_NextHopKey{

@@ -268,6 +268,29 @@ func TestEntry(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc: "nhg with a backup",
+		in:   NextHopGroupEntry().WithID(42).WithBackupNHG(84),
+		wantOpProto: &spb.AFTOperation{
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 42,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						BackupNextHopGroup: &wpb.UintValue{Value: 84},
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			Entry: &spb.AFTEntry_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 42,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						BackupNextHopGroup: &wpb.UintValue{Value: 84},
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {

@@ -52,7 +52,15 @@ module ocrt-deviations {
     deviate not-supported;
   }
 
-  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:policy-forwarding" {
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:policy-forwarding/oc-ni:path-selection-groups" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:policy-forwarding/oc-ni:policies/oc-ni:policy/oc-ni:rules/oc-ni:rule/oc-ni:action/oc-ni:config/oc-ni:path-selection-group" {
+    deviate not-supported;
+  }
+
+  deviation "/oc-ni:network-instances/oc-ni:network-instance/oc-ni:policy-forwarding/oc-ni:policies/oc-ni:policy/oc-ni:rules/oc-ni:rule/oc-ni:action/oc-ni:state/oc-ni:path-selection-group" {
     deviate not-supported;
   }
 

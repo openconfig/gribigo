@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	enums "github.com/openconfig/gribi/v1/proto/gribi_aft/enums"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
@@ -569,6 +570,32 @@ func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
 	return n
 }
 
+// DecapsulateHeader represents the enumerated set of headers that can be decapsulated
+// from a packet.
+type DecapsulateHeader int64
+
+const (
+	_ DecapsulateHeader = iota
+	// IPinIP specifies that the header to be decpsulated is an IPv4 header, and is typically
+	// used when IP-in-IP tunnels are created.
+	IPinIP
+)
+
+var (
+	// decapMap translates between the fluent DecapsulateHeader type and the generated
+	// protobuf name.
+	decapMap = map[DecapsulateHeader]enums.OpenconfigAftTypesEncapsulationHeaderType{
+		IPinIP: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
+	}
+)
+
+// WithDecapsulateHeader specifies that the next-hop should apply an action to decapsulate
+// the packet from the specified header, h.
+func (n *nextHopEntry) WithDecapsulateHeader(h DecapsulateHeader) *nextHopEntry {
+	n.pb.NextHop.DecapsulateHeader = decapMap[h]
+	return n
+}
+
 // WithElectionID specifies an explicit election ID that is to be used hen the next hop
 // is programmed in an AFTOperation. The electionID is a uint128 made up of concatenating
 // the low and high uint64 values provided.
@@ -640,6 +667,13 @@ func (n *nextHopGroupEntry) WithNetworkInstance(ni string) *nextHopGroupEntry {
 	return n
 }
 
+// WithBackupNHG specifies a backup next-hop-group that is to be used when the
+// next-hop-group being created is not viable.
+func (n *nextHopGroupEntry) WithBackupNHG(id uint64) *nextHopGroupEntry {
+	n.pb.NextHopGroup.BackupNextHopGroup = &wpb.UintValue{Value: id}
+	return n
+}
+
 // AddNextHop adds the specified nexthop index to the NextHopGroup with the specified weight.
 func (n *nextHopGroupEntry) AddNextHop(index, weight uint64) *nextHopGroupEntry {
 	n.pb.NextHopGroup.NextHop = append(n.pb.NextHopGroup.NextHop, &aftpb.Afts_NextHopGroup_NextHopKey{
@@ -651,7 +685,7 @@ func (n *nextHopGroupEntry) AddNextHop(index, weight uint64) *nextHopGroupEntry 
 	return n
 }
 
-// WithElectionID specifies an explicit election ID that is to be used hen the next hop group
+// WithElectionID specifies an explicit election ID that is to be used when the next hop group
 // is programmed in an AFTOperation. The electionID is a uint128 made up of concatenating
 // the low and high uint64 values provided.
 func (n *nextHopGroupEntry) WithElectionID(low, high uint64) *nextHopGroupEntry {

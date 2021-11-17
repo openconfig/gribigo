@@ -86,6 +86,8 @@ github.com/openconfig/ygot v0.11.0 h1:CAi4Uk96tdonyoWP7uMFqccpA0G5OUCgBpPGBpYre4
 github.com/openconfig/ygot v0.11.0/go.mod h1:5q5fz1SDPGUwMyzbm8Ns2Krul+32euNSU89ZmrGrSK8=
 github.com/openconfig/ygot v0.12.4 h1:r4sSaXuYfJGCVJvOrpRqAD/H1NFGC1iDfeDE7EMy78I=
 github.com/openconfig/ygot v0.12.4/go.mod h1:kJN0yCXIH07dOXvNBEFm3XxXdnDD5NI6K99tnD5x49c=
+github.com/openconfig/ygot v0.12.5 h1:J63zt59nnehyPPkI3/QG/eSnslyHFhwuuh0Gyl4uXBs=
+github.com/openconfig/ygot v0.12.5/go.mod h1:kJN0yCXIH07dOXvNBEFm3XxXdnDD5NI6K99tnD5x49c=
 github.com/pborman/getopt v0.0.0-20190409184431-ee0cd42419d3/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

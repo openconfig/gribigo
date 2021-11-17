@@ -11,7 +11,7 @@ require (
 	github.com/openconfig/goyang v0.2.9
 	github.com/openconfig/gribi v0.1.1-0.20211019025504-386ca81f79d0
 	github.com/openconfig/grpctunnel v0.0.0-20210610163803-fde4a9dc048d // indirect
-	github.com/openconfig/ygot v0.12.4
+	github.com/openconfig/ygot v0.12.5
 	go.uber.org/atomic v1.7.0
 	google.golang.org/genproto v0.0.0-20201214200347-8c77b98c765d
 	google.golang.org/grpc v1.37.0

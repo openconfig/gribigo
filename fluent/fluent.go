@@ -605,29 +605,36 @@ func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
 	return n
 }
 
-// DecapsulateHeader represents the enumerated set of headers that can be decapsulated
-// from a packet.
-type DecapsulateHeader int64
+// Header represents the enumerated set of headers that a packet can be encapsulated or
+// decapsulated from.
+type Header int64
 
 const (
-	_ DecapsulateHeader = iota
+	_ Header = iota
 	// IPinIP specifies that the header to be decpsulated is an IPv4 header, and is typically
 	// used when IP-in-IP tunnels are created.
 	IPinIP
 )
 
 var (
-	// decapMap translates between the fluent DecapsulateHeader type and the generated
+	// encapMap translates between the fluent DecapsulateHeader type and the generated
 	// protobuf name.
-	decapMap = map[DecapsulateHeader]enums.OpenconfigAftTypesEncapsulationHeaderType{
+	encapMap = map[Header]enums.OpenconfigAftTypesEncapsulationHeaderType{
 		IPinIP: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
 	}
 )
 
 // WithDecapsulateHeader specifies that the next-hop should apply an action to decapsulate
 // the packet from the specified header, h.
-func (n *nextHopEntry) WithDecapsulateHeader(h DecapsulateHeader) *nextHopEntry {
-	n.pb.NextHop.DecapsulateHeader = decapMap[h]
+func (n *nextHopEntry) WithDecapsulateHeader(h Header) *nextHopEntry {
+	n.pb.NextHop.DecapsulateHeader = encapMap[h]
+	return n
+}
+
+// WithEncapsulateHeader specifies that the next-hop should apply an action to encapsulate
+// the packet with the specified header, h.
+func (n *nextHopEntry) WithEncapsulateHeader(h Header) *nextHopEntry {
+	n.pb.NextHop.EncapsulateHeader = encapMap[h]
 	return n
 }
 

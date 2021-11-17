@@ -352,7 +352,7 @@ func TestEntry(t *testing.T) {
 		},
 	}, {
 		desc: "next-hop with decap",
-		in:   NextHopEntry().WithNetworkInstance("DEFAULT").WithIndex(1).WithDecapsulateHeader(IPinIP),
+		in:   NextHopEntry().WithNetworkInstance("DEFAULT").WithIndex(1).WithDecapsulateHeader(IPinIP).WithEncapsulateHeader(IPinIP),
 		wantOpProto: &spb.AFTOperation{
 			NetworkInstance: "DEFAULT",
 			Entry: &spb.AFTOperation_NextHop{
@@ -360,6 +360,7 @@ func TestEntry(t *testing.T) {
 					Index: 1,
 					NextHop: &aftpb.Afts_NextHop{
 						DecapsulateHeader: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
+						EncapsulateHeader: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
 					},
 				},
 			},
@@ -371,6 +372,7 @@ func TestEntry(t *testing.T) {
 					Index: 1,
 					NextHop: &aftpb.Afts_NextHop{
 						DecapsulateHeader: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
+						EncapsulateHeader: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
 					},
 				},
 			},

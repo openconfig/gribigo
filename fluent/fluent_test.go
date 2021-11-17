@@ -31,6 +31,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	enums "github.com/openconfig/gribi/v1/proto/gribi_aft/enums"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
@@ -326,11 +327,59 @@ func TestEntry(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc: "nhg with a backup",
+		in:   NextHopGroupEntry().WithID(42).WithBackupNHG(84),
+		wantOpProto: &spb.AFTOperation{
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 42,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						BackupNextHopGroup: &wpb.UintValue{Value: 84},
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			Entry: &spb.AFTEntry_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 42,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						BackupNextHopGroup: &wpb.UintValue{Value: 84},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "next-hop with decap",
+		in:   NextHopEntry().WithNetworkInstance("DEFAULT").WithIndex(1).WithDecapsulateHeader(IPinIP),
+		wantOpProto: &spb.AFTOperation{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						DecapsulateHeader: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						DecapsulateHeader: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			gotop, err := tt.in.opproto()
+			gotop, err := tt.in.OpProto()
 			if (err != nil) != tt.wantOpErr {
 				t.Fatalf("did not get expected error for op, got: %v, wantErr? %v", err, tt.wantOpErr)
 			}

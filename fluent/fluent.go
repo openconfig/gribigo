@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	enums "github.com/openconfig/gribi/v1/proto/gribi_aft/enums"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
@@ -388,7 +389,7 @@ func (g *gRIBIModify) UpdateElectionID(t testing.TB, low, high uint64) *gRIBIMod
 func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entries []GRIBIEntry) (*spb.ModifyRequest, error) {
 	m := &spb.ModifyRequest{}
 	for _, e := range entries {
-		ep, err := e.opproto()
+		ep, err := e.OpProto()
 		if err != nil {
 			return nil, fmt.Errorf("cannot build entry protobuf, got err: %v", err)
 		}
@@ -423,8 +424,8 @@ func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entr
 // GRIBIEntry is an entry implemented for all types that can be returned
 // as a gRIBI entry.
 type GRIBIEntry interface {
-	// opproto builds the entry as a new AFTOperation protobuf.
-	opproto() (*spb.AFTOperation, error)
+	// OpProto builds the entry as a new AFTOperation protobuf.
+	OpProto() (*spb.AFTOperation, error)
 	// EntryProto builds the entry as a new AFTEntry protobuf.
 	EntryProto() (*spb.AFTEntry, error)
 }
@@ -494,10 +495,10 @@ func (i *ipv4Entry) WithElectionID(low, high uint64) *ipv4Entry {
 	return i
 }
 
-// opproto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// OpProto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
-func (i *ipv4Entry) opproto() (*spb.AFTOperation, error) {
+func (i *ipv4Entry) OpProto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: i.ni,
 		Entry: &spb.AFTOperation_Ipv4{
@@ -604,6 +605,32 @@ func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
 	return n
 }
 
+// DecapsulateHeader represents the enumerated set of headers that can be decapsulated
+// from a packet.
+type DecapsulateHeader int64
+
+const (
+	_ DecapsulateHeader = iota
+	// IPinIP specifies that the header to be decpsulated is an IPv4 header, and is typically
+	// used when IP-in-IP tunnels are created.
+	IPinIP
+)
+
+var (
+	// decapMap translates between the fluent DecapsulateHeader type and the generated
+	// protobuf name.
+	decapMap = map[DecapsulateHeader]enums.OpenconfigAftTypesEncapsulationHeaderType{
+		IPinIP: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
+	}
+)
+
+// WithDecapsulateHeader specifies that the next-hop should apply an action to decapsulate
+// the packet from the specified header, h.
+func (n *nextHopEntry) WithDecapsulateHeader(h DecapsulateHeader) *nextHopEntry {
+	n.pb.NextHop.DecapsulateHeader = decapMap[h]
+	return n
+}
+
 // WithElectionID specifies an explicit election ID that is to be used hen the next hop
 // is programmed in an AFTOperation. The electionID is a uint128 made up of concatenating
 // the low and high uint64 values provided.
@@ -617,10 +644,10 @@ func (n *nextHopEntry) WithElectionID(low, high uint64) *nextHopEntry {
 
 // TODO(robjs): add additional NextHopEntry fields.
 
-// opproto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
+// OpProto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
-func (n *nextHopEntry) opproto() (*spb.AFTOperation, error) {
+func (n *nextHopEntry) OpProto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTOperation_NextHop{
@@ -675,6 +702,13 @@ func (n *nextHopGroupEntry) WithNetworkInstance(ni string) *nextHopGroupEntry {
 	return n
 }
 
+// WithBackupNHG specifies a backup next-hop-group that is to be used when the
+// next-hop-group being created is not viable.
+func (n *nextHopGroupEntry) WithBackupNHG(id uint64) *nextHopGroupEntry {
+	n.pb.NextHopGroup.BackupNextHopGroup = &wpb.UintValue{Value: id}
+	return n
+}
+
 // AddNextHop adds the specified nexthop index to the NextHopGroup with the specified weight.
 func (n *nextHopGroupEntry) AddNextHop(index, weight uint64) *nextHopGroupEntry {
 	n.pb.NextHopGroup.NextHop = append(n.pb.NextHopGroup.NextHop, &aftpb.Afts_NextHopGroup_NextHopKey{
@@ -686,7 +720,7 @@ func (n *nextHopGroupEntry) AddNextHop(index, weight uint64) *nextHopGroupEntry 
 	return n
 }
 
-// WithElectionID specifies an explicit election ID that is to be used hen the next hop group
+// WithElectionID specifies an explicit election ID that is to be used when the next hop group
 // is programmed in an AFTOperation. The electionID is a uint128 made up of concatenating
 // the low and high uint64 values provided.
 func (n *nextHopGroupEntry) WithElectionID(low, high uint64) *nextHopGroupEntry {
@@ -697,10 +731,10 @@ func (n *nextHopGroupEntry) WithElectionID(low, high uint64) *nextHopGroupEntry 
 	return n
 }
 
-// opproto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
+// OpProto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
-func (n *nextHopGroupEntry) opproto() (*spb.AFTOperation, error) {
+func (n *nextHopGroupEntry) OpProto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
 		NetworkInstance: n.ni,
 		Entry: &spb.AFTOperation_NextHopGroup{

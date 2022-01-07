@@ -132,6 +132,49 @@ func TestDifferingElectionParameters(c *fluent.GRIBIClient, t testing.TB, opts .
 	)
 }
 
+// TestParamsDifferFromOtherClients checks that when a client A is connected with election ID of 10
+// and client B connects with ALL_PRIMARY, an error is returned to client B.
+func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
+	defer electionID.Inc()
+
+	clientA, clientB := clientAB(c, t, opts...)
+
+	clientA.Connection().WithInitialElectionID(10, 10).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence()
+	clientA.Start(context.Background(), t)
+	defer clientA.Stop(t)
+	clientA.StartSending(context.Background(), t)
+
+	clientB.Connection().WithRedundancyMode(fluent.AllPrimaryClients)
+
+	clientB.Start(context.Background(), t)
+	defer clientB.Stop(t)
+	clientB.StartSending(context.Background(), t)
+
+	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)
+	if err := clientAErr; err != nil {
+		t.Fatalf("did not expect error from server in client A, got: %v", err)
+	}
+
+	clientBErr := awaitTimeout(context.Background(), clientB, t, time.Minute)
+	if err := clientBErr; err == nil {
+		t.Fatalf("did not get expected error from server, got: %v", err)
+	}
+
+	chk.HasNSendErrors(t, clientBErr, 0)
+	chk.HasNRecvErrors(t, clientBErr, 1)
+
+	chk.HasRecvClientErrorWithStatus(
+		t,
+		clientBErr,
+		fluent.ModifyError().
+			WithCode(codes.FailedPrecondition).
+			WithReason(fluent.ParamsDifferFromOtherClients).
+			AsStatus(t),
+	)
+}
+
 // TestMatchingElectionParameters tests whether two clients can connect with the same
 // parameters and the connection is succesful.
 func TestMatchingElectionParameters(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {

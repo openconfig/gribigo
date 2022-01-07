@@ -337,6 +337,16 @@ var (
 			Fn:        TestDecElectionID,
 			ShortName: "Decrementing election ID is ignored",
 		},
+	}, {
+		In: Test{
+			Fn:        TestSameElectionIDFromTwoClients,
+			ShortName: "Sending same election ID from two clients",
+		},
+	}, {
+		In: Test{
+			Fn:        TestElectionIDAsZero,
+			ShortName: "Sending election ID as zero",
+		},
 	}}
 )
 

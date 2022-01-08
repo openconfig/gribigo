@@ -139,7 +139,7 @@ func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts 
 
 	clientA, clientB := clientAB(c, t, opts...)
 
-	clientA.Connection().WithInitialElectionID(10, 10).
+	clientA.Connection().WithInitialElectionID(electionID.Load(), 0).
 		WithRedundancyMode(fluent.ElectedPrimaryClient).
 		WithPersistence()
 	clientA.Start(context.Background(), t)

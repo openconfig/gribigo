@@ -133,7 +133,11 @@ func TestDifferingElectionParameters(c *fluent.GRIBIClient, t testing.TB, opts .
 }
 
 // TestParamsDifferFromOtherClients checks that when a client A is connected as a SINGLE_PRIMARY
-// and client B connects with ALL_PRIMARY, an error is returned to client B.
+// and client B connects with ALL_PRIMARY, an PARAMS_DIFFER_FROM_OTHER_CLIENTS error is returned to client B.
+
+// TODO (deepgajjar): The fake implementation does not support ALL_PRIMARY. Ignore
+// the current tests since the return error would be UNSUPPORTED_PARAMS instead of PARAMS_DIFFER_FROM_OTHER_CLIENTS.
+// Add tests once the support for ALL_PRIMARY comes in.
 func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
 	defer electionID.Inc()
 

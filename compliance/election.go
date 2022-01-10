@@ -165,14 +165,13 @@ func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts 
 	chk.HasNSendErrors(t, clientBErr, 0)
 	chk.HasNRecvErrors(t, clientBErr, 1)
 
-	chk.HasRecvClientErrorWithStatus(
-		t,
-		clientBErr,
-		fluent.ModifyError().
-			WithCode(codes.FailedPrecondition).
-			WithReason(fluent.ParamsDifferFromOtherClients).
-			AsStatus(t),
-	)
+	want := fluent.
+		ModifyError().
+		WithCode(codes.FailedPrecondition).
+		WithReason(fluent.ParamsDifferFromOtherClients).
+		AsStatus(t)
+
+    chk.HasRecvClientErrorWithStatus(t, err, want, chk.AllowUnimplemented())
 }
 
 // TestMatchingElectionParameters tests whether two clients can connect with the same

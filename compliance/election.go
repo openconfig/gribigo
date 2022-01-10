@@ -132,7 +132,7 @@ func TestDifferingElectionParameters(c *fluent.GRIBIClient, t testing.TB, opts .
 	)
 }
 
-// TestParamsDifferFromOtherClients checks that when a client A is connected with election ID of 10
+// TestParamsDifferFromOtherClients checks that when a client A is connected as a SINGLE_PRIMARY
 // and client B connects with ALL_PRIMARY, an error is returned to client B.
 func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
 	defer electionID.Inc()

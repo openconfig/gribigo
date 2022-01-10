@@ -171,7 +171,11 @@ func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts 
 		WithReason(fluent.ParamsDifferFromOtherClients).
 		AsStatus(t)
 
-    chk.HasRecvClientErrorWithStatus(t, err, want, chk.AllowUnimplemented())
+	chk.HasRecvClientErrorWithStatus(
+		t,
+		clientBErr,
+        want, chk.AllowUnimplemented())
+	)
 }
 
 // TestMatchingElectionParameters tests whether two clients can connect with the same

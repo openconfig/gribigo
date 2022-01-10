@@ -165,16 +165,14 @@ func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts 
 	chk.HasNSendErrors(t, clientBErr, 0)
 	chk.HasNRecvErrors(t, clientBErr, 1)
 
-	want := fluent.
-		ModifyError().
-		WithCode(codes.FailedPrecondition).
-		WithReason(fluent.ParamsDifferFromOtherClients).
-		AsStatus(t)
-
 	chk.HasRecvClientErrorWithStatus(
 		t,
 		clientBErr,
-        want, chk.AllowUnimplemented())
+		fluent.ModifyError().
+			WithCode(codes.FailedPrecondition).
+			WithReason(fluent.ParamsDifferFromOtherClients).
+			AsStatus(t),
+		chk.AllowUnimplemented(),
 	)
 }
 

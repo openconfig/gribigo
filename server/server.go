@@ -452,7 +452,7 @@ func (s *Server) checkParams(id string, p *spb.SessionParameters, gotMsg bool) (
 	// mode of operations.
 	if p.Redundancy == spb.SessionParameters_ALL_PRIMARY {
 		return nil, addModifyErrDetailsOrReturn(status.Newf(codes.Unimplemented, "ALL_PRIMARY redundancy are not supported"), &spb.ModifyRPCErrorDetails{
-			Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+			Reason: spb.ModifyRPCErrorDetails_UNKNOWN,
 		})
 	}
 

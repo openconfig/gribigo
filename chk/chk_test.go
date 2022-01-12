@@ -542,6 +542,21 @@ func TestHasRecvClientErrorWithStatus(t *testing.T) {
 		}(),
 		inWant: status.New(codes.InvalidArgument, ""),
 		inOpts: []ErrorOpt{AllowUnimplemented()},
+	}, {
+		desc: "mismatched details specified but ignored",
+		inError: func() error {
+			s, err := status.New(codes.InvalidArgument, "bad argument").WithDetails(&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED,
+			})
+			if err != nil {
+				panic("invalid generated error")
+			}
+			return &client.ClientErr{
+				Recv: []error{s.Err()},
+			}
+		}(),
+		inWant: status.New(codes.InvalidArgument, "bad argument"),
+		inOpts: []ErrorOpt{IgnoreDetails()},
 	}}
 
 	for _, tt := range tests {

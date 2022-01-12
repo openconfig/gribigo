@@ -229,18 +229,22 @@ func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, 
 	t.Helper()
 
 	okMsgs := []*status.Status{want}
-	var ignoreUnimplDetails bool
+	var (
+		ignoreUnimplDets bool
+		ignoreDets       bool
+	)
 	for _, o := range opts {
 		if _, ok := o.(*allowUnimplemented); ok {
 			uProto := proto.Clone(want.Proto()).(*gspb.Status)
 			uProto.Code = int32(codes.Unimplemented)
 			okMsgs = append(okMsgs, status.FromProto(uProto))
-			ignoreUnimplDetails = true
+			ignoreUnimplDets = true
 		}
 		if _, ok := o.(*ignoreDetails); ok {
 			iDetails := proto.Clone(want.Proto()).(*gspb.Status)
 			iDetails.Details = nil
 			okMsgs = append(okMsgs, status.FromProto(iDetails))
+			ignoreDets = true
 		}
 	}
 
@@ -258,7 +262,7 @@ func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, 
 				ns.Message = "" // blank out message so that we don't compare it.
 			}
 
-			if ignoreUnimplDetails && wo.Code() == codes.Unimplemented {
+			if ignoreUnimplDets && wo.Code() == codes.Unimplemented || ignoreDets {
 				ns.Details = nil
 			}
 

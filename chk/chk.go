@@ -210,6 +210,17 @@ func AllowUnimplemented() *allowUnimplemented {
 	return &allowUnimplemented{}
 }
 
+// ignoreDetails is used to set DetailReason as nil in wanted modifyError
+type ignoreDetails struct{}
+
+// isErrorOpt marks ignoreDetails as an ErrorOpt.
+func (*ignoreDetails) isErrorOpt() {}
+
+// IgnoreDetails set Details as nil in modifyError
+func IgnoreDetails() *ignoreDetails {
+	return &ignoreDetails{}
+}
+
 // HasRecvClientErrorWithStatus checks whether the supplied ClientErr ce contains a status with
 // the code and details set to the values supplied in want.
 //
@@ -226,6 +237,12 @@ func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, 
 			unimpl := status.FromProto(uProto)
 			okMsgs = append(okMsgs, unimpl)
 			ignoreUnimplDetails = true
+		}
+		if _, ok := o.(*ignoreDetails); ok {
+			iDetails := proto.Clone(want.Proto()).(*gspb.Status)
+			iDetails.Details = nil
+			igdetails := status.FromProto(iDetails)
+			okMsgs = append(okMsgs, igdetails)
 		}
 	}
 

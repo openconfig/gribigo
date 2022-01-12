@@ -517,7 +517,7 @@ func TestHasRecvClientErrorWithStatus(t *testing.T) {
 			}
 			return s
 		}(),
-		expectFatalMsg: `client does not have receive error with status code:3  message:"bad argument"  details:{[type.googleapis.com/gribi.ModifyRPCErrorDetails]:{reason:ELECTION_ID_IN_ALL_PRIMARY}}`,
+		expectFatalMsg: `client does not have receive error with status code:3 message:"bad argument" details:{[type.googleapis.com/gribi.ModifyRPCErrorDetails]:{reason:ELECTION_ID_IN_ALL_PRIMARY}}`,
 	}, {
 		desc: "allow unimplemented specified",
 		inError: &client.ClientErr{

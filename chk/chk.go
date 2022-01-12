@@ -235,9 +235,9 @@ func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, 
 	)
 	for _, o := range opts {
 		if _, ok := o.(*allowUnimplemented); ok {
-			uProto := proto.Clone(want.Proto()).(*gspb.Status)
-			uProto.Code = int32(codes.Unimplemented)
-			okMsgs = append(okMsgs, status.FromProto(uProto))
+			okMsgs = append(okMsgs, status.FromProto(&gspb.Status{
+				Code: int32(codes.Unimplemented),
+			}))
 			ignoreUnimplDets = true
 		}
 		if _, ok := o.(*ignoreDetails); ok {

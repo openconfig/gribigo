@@ -557,6 +557,29 @@ func TestHasRecvClientErrorWithStatus(t *testing.T) {
 		}(),
 		inWant: status.New(codes.InvalidArgument, "bad argument"),
 		inOpts: []ErrorOpt{IgnoreDetails()},
+	}, {
+		desc: "allow unimplemented specified with details in expected error",
+		inError: func() error {
+			s, err := status.New(codes.Unimplemented, "didn't write this yet").WithDetails(&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_UNKNOWN,
+			})
+			if err != nil {
+				panic("invalid generated error")
+			}
+			return &client.ClientErr{
+				Recv: []error{s.Err()},
+			}
+		}(),
+		inWant: func() *status.Status {
+			s, err := status.New(codes.InvalidArgument, "bad argument").WithDetails(&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY,
+			})
+			if err != nil {
+				panic("invalid generated error")
+			}
+			return s
+		}(),
+		inOpts: []ErrorOpt{AllowUnimplemented()},
 	}}
 
 	for _, tt := range tests {

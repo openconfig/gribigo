@@ -204,7 +204,8 @@ func (*allowUnimplemented) isErrorOpt() {}
 
 // AllowUnimplemented specifies that receive error with a particular status can be unimplemented
 // OR the specified error type. It can be used to not return a fatal error when a server does
-// not support a particular functionality.
+// not support a particular functionality. When AllowUnimplemented is specified, the details of
+// the error are not checked.
 func AllowUnimplemented() *allowUnimplemented {
 	return &allowUnimplemented{}
 }
@@ -217,12 +218,14 @@ func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, 
 	t.Helper()
 
 	okMsgs := []*status.Status{want}
+	var ignoreDetails bool
 	for _, o := range opts {
 		if _, ok := o.(*allowUnimplemented); ok {
 			uProto := proto.Clone(want.Proto()).(*gspb.Status)
 			uProto.Code = int32(codes.Unimplemented)
 			unimpl := status.FromProto(uProto)
 			okMsgs = append(okMsgs, unimpl)
+			ignoreDetails = true
 		}
 	}
 
@@ -235,7 +238,16 @@ func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, 
 				continue
 			}
 			ns := s.Proto()
-			ns.Message = "" // blank out message so that we don't compare it.
+
+			if wo.Message() == "" {
+				ns.Message = "" // blank out message so that we don't compare it.
+			}
+
+			if ignoreDetails {
+				ns.Details = nil
+			}
+
+			fmt.Printf("compare %v (%T) and %+v (%T)\n", ns, ns, wo.Proto(), wo)
 
 			if proto.Equal(ns, wo.Proto()) {
 				found = true

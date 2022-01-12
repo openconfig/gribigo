@@ -22,6 +22,8 @@ import (
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/negtest"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
@@ -439,6 +441,121 @@ func TestGetResponseHasEntries(t *testing.T) {
 				return
 			}
 			GetResponseHasEntries(t, tt.inGetRes, tt.inWants...)
+		})
+	}
+}
+
+func TestHasRecvClientErrorWithStatus(t *testing.T) {
+	tests := []struct {
+		desc           string
+		inError        error
+		inWant         *status.Status
+		inOpts         []ErrorOpt
+		expectFatalMsg string
+	}{{
+		desc: "has error - message checked",
+		inError: &client.ClientErr{
+			Recv: []error{
+				status.New(codes.InvalidArgument, "bad argument").Err(),
+			},
+		},
+		inWant: status.New(codes.InvalidArgument, "bad argument"),
+	}, {
+		desc: "has error - message not checked",
+		inError: &client.ClientErr{
+			Recv: []error{
+				status.New(codes.Aborted, "message that is ignored").Err(),
+			},
+		},
+		inWant: status.New(codes.Aborted, ""),
+	}, {
+		desc:           "does not have error",
+		inError:        &client.ClientErr{},
+		inWant:         status.New(codes.NotFound, ""),
+		expectFatalMsg: "client does not have receive error with status code:5",
+	}, {
+		desc: "has error - details specified",
+		inError: func() error {
+			s, err := status.New(codes.InvalidArgument, "bad argument").WithDetails(&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY,
+			})
+			if err != nil {
+				panic("invalid generated error")
+			}
+			return &client.ClientErr{
+				Recv: []error{s.Err()},
+			}
+		}(),
+		inWant: func() *status.Status {
+			s, err := status.New(codes.InvalidArgument, "bad argument").WithDetails(&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY,
+			})
+			if err != nil {
+				panic("invalid generated error")
+			}
+			return s
+		}(),
+	}, {
+		desc: "mismatched details specified",
+		inError: func() error {
+			s, err := status.New(codes.InvalidArgument, "bad argument").WithDetails(&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED,
+			})
+			if err != nil {
+				panic("invalid generated error")
+			}
+			return &client.ClientErr{
+				Recv: []error{s.Err()},
+			}
+		}(),
+		inWant: func() *status.Status {
+			s, err := status.New(codes.InvalidArgument, "bad argument").WithDetails(&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY,
+			})
+			if err != nil {
+				panic("invalid generated error")
+			}
+			return s
+		}(),
+		expectFatalMsg: `client does not have receive error with status code:3  message:"bad argument"  details:{[type.googleapis.com/gribi.ModifyRPCErrorDetails]:{reason:ELECTION_ID_IN_ALL_PRIMARY}}`,
+	}, {
+		desc: "allow unimplemented specified",
+		inError: &client.ClientErr{
+			Recv: []error{
+				status.New(codes.Unimplemented, "").Err(),
+			},
+		},
+		inWant: status.New(codes.InvalidArgument, ""),
+		inOpts: []ErrorOpt{AllowUnimplemented()},
+	}, {
+		desc: "allow unimplemented when details are specified",
+		inError: func() error {
+			s, err := status.New(codes.Unimplemented, "").WithDetails(&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_MODIFY_NOT_ALLOWED,
+			})
+			if err != nil {
+				panic("invalid generated error")
+			}
+			return &client.ClientErr{
+				Recv: []error{s.Err()},
+			}
+		}(),
+		inWant: status.New(codes.InvalidArgument, ""),
+		inOpts: []ErrorOpt{AllowUnimplemented()},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if tt.expectFatalMsg != "" {
+				got := negtest.ExpectFatal(t, func(t testing.TB) {
+					HasRecvClientErrorWithStatus(t, tt.inError, tt.inWant, tt.inOpts...)
+				})
+				if !strings.Contains(got, tt.expectFatalMsg) {
+					t.Fatalf("did not get expected fatal message, but test called Fatal, got: %s, want: %s", got, tt.expectFatalMsg)
+				}
+				return
+			}
+			HasRecvClientErrorWithStatus(t, tt.inError, tt.inWant, tt.inOpts...)
 		})
 	}
 }

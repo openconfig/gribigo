@@ -62,8 +62,8 @@ func TestUnsupportedElectionParams(c *fluent.GRIBIClient, t testing.TB, _ ...Tes
 		t,
 		err,
 		fluent.ModifyError().
-			WithCode(codes.FailedPrecondition).
-			WithReason(fluent.UnsupportedParameters).
+			WithCode(codes.Unimplemented).
+			WithReason(fluent.ParamsDifferFromOtherClients).
 			AsStatus(t),
 		chk.AllowUnimplemented(),
 	)
@@ -173,7 +173,7 @@ func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts 
 		t,
 		clientBErr,
 		fluent.ModifyError().
-			WithCode(codes.FailedPrecondition).
+			WithCode(codes.Unimplemented).
 			WithReason(fluent.ParamsDifferFromOtherClients).
 			AsStatus(t),
 		chk.AllowUnimplemented(),

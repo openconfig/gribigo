@@ -343,7 +343,7 @@ func TestCheckParams(t *testing.T) {
 		},
 		wantErrCode: codes.Unimplemented,
 		wantErrDetails: &spb.ModifyRPCErrorDetails{
-			Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+			Reason: spb.ModifyRPCErrorDetails_PARAMS_DIFFER_FROM_OTHER_CLIENTS,
 		},
 	}, {
 		desc: "nil parameters",

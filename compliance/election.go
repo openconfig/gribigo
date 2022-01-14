@@ -62,7 +62,7 @@ func TestUnsupportedElectionParams(c *fluent.GRIBIClient, t testing.TB, _ ...Tes
 		t,
 		err,
 		fluent.ModifyError().
-			WithCode(codes.Unimplemented).
+			WithCode(codes.FailedPrecondition).
 			WithReason(fluent.ParamsDifferFromOtherClients).
 			AsStatus(t),
 		chk.AllowUnimplemented(),

@@ -173,7 +173,7 @@ func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts 
 		t,
 		clientBErr,
 		fluent.ModifyError().
-			WithCode(codes.Unimplemented).
+			WithCode(codes.FailedPrecondition).
 			WithReason(fluent.ParamsDifferFromOtherClients).
 			AsStatus(t),
 		chk.AllowUnimplemented(),

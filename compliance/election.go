@@ -570,3 +570,96 @@ func TestDecElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			AsResult(),
 	)
 }
+
+// TestSameElectionIDFromTwoClients is the test to start 2 clients with same election ID.
+// The client A should be master and client B should be non-master. The AFT operation
+// from the client B should be rejected.
+func TestSameElectionIDFromTwoClients(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
+	defer electionID.Inc()
+
+	clientA, clientB := clientAB(c, t, opts...)
+
+	clientA.Connection().WithInitialElectionID(electionID.Load(), 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence()
+
+	clientA.Start(context.Background(), t)
+	clientA.StartSending(context.Background(), t)
+	defer clientA.Stop(t)
+
+	clientB.Connection().WithInitialElectionID(electionID.Load(), 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence()
+
+	clientB.Start(context.Background(), t)
+	clientB.StartSending(context.Background(), t)
+	defer clientB.Stop(t)
+
+	clientA.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))
+	clientB.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))
+
+	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)
+	if err := clientAErr; err != nil {
+		t.Fatalf("did not expect error from server in client A, got: %v", err)
+	}
+
+	clientBErr := awaitTimeout(context.Background(), clientB, t, time.Minute)
+	if err := clientBErr; err != nil {
+		t.Fatalf("did not expect error from server in client A, got: %v", err)
+	}
+
+	chk.HasNSendErrors(t, clientAErr, 0)
+	chk.HasNRecvErrors(t, clientAErr, 0)
+	chk.HasNSendErrors(t, clientBErr, 0)
+	chk.HasNRecvErrors(t, clientBErr, 0)
+
+	chk.HasResult(t, clientA.Results(t),
+		fluent.OperationResult().
+			WithCurrentServerElectionID(electionID.Load(), 0).
+			AsResult(),
+	)
+
+	chk.HasResult(t, clientB.Results(t),
+		fluent.OperationResult().
+			WithCurrentServerElectionID(electionID.Load(), 0).
+			AsResult(),
+	)
+
+	chk.HasResult(t, clientA.Results(t),
+		fluent.OperationResult().
+			WithOperationID(1).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+	)
+
+	chk.HasResult(t, clientB.Results(t),
+		fluent.OperationResult().
+			WithOperationID(1).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+	)
+}
+
+// TestElectionIDAsZero is the test to send (0, 0) as the election ID
+// The server should respond with RPC error Invalid Argument
+func TestElectionIDAsZero(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	c.Connection().WithInitialElectionID(0, 0).WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence()
+	c.Start(context.Background(), t)
+	defer c.Stop(t)
+	c.StartSending(context.Background(), t)
+
+	err := awaitTimeout(context.Background(), c, t, time.Minute)
+	if err == nil {
+		t.Fatalf("did not get expected error from server, got: nil")
+	}
+
+	chk.HasNSendErrors(t, err, 0)
+	chk.HasNRecvErrors(t, err, 1)
+
+	chk.HasRecvClientErrorWithStatus(
+		t,
+		err,
+		fluent.ModifyError().
+			WithCode(codes.InvalidArgument).
+			AsStatus(t),
+		chk.IgnoreDetails(),
+	)
+}

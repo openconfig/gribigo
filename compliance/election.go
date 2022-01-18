@@ -586,12 +586,20 @@ func TestSameElectionIDFromTwoClients(c *fluent.GRIBIClient, t testing.TB, opts 
 	clientA.StartSending(context.Background(), t)
 	defer clientA.Stop(t)
 
+	if err := awaitTimeout(context.Background(), clientA, t, time.Minute); err != nil {
+		t.Fatalf("did not expect error from server in client A, got: %v", err)
+	}
+
 	clientB.Connection().WithInitialElectionID(electionID.Load(), 0).
 		WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence()
 
 	clientB.Start(context.Background(), t)
 	clientB.StartSending(context.Background(), t)
 	defer clientB.Stop(t)
+
+	if err := awaitTimeout(context.Background(), clientB, t, time.Minute); err != nil {
+		t.Fatalf("did not expect error from server in client B, got: %v", err)
+	}
 
 	clientA.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))
 	clientB.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))

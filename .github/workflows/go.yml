@@ -39,7 +39,7 @@ jobs:
 
     - name: Deflake
       run: |
-          go test -count=100
+          go test -v -count=100 ./...
 
     - name: Coveralls
       if: ${{ matrix.go == '1.x' }}

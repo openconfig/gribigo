@@ -37,10 +37,6 @@ jobs:
       run: |
           go test -race ./...
 
-    - name: Deflake
-      run: |
-          go test -v -count=100 ./...
-
     - name: Coveralls
       if: ${{ matrix.go == '1.x' }}
       uses: shogo82148/actions-goveralls@v1

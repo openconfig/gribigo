@@ -546,6 +546,10 @@ func TestSameElectionIDFromTwoClients(c *fluent.GRIBIClient, t testing.TB, opts 
 	defer clientB.Stop(t)
 
 	clientA.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))
+  // Ensure that clientA's request is the one that is honoured, rather than clientB.
+  // Since the requests are being sent in the background, immediately sending the same
+  // request might result in clientB succeeding.
+  time.Sleep(1*time.Second)
 	clientB.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))
 
 	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)

@@ -31,5 +31,5 @@ jobs:
       run: go build -v ./...
 
     - name: Test
-      run: cd compliance && go test -v -run "TestCompliance/Sending_same_election_ID_from_two_clients" -alsologtostderr
+      run: cd compliance && go test -v -alsologtostderr
 

@@ -314,6 +314,11 @@ var (
 		},
 	}, {
 		In: Test{
+			Fn:        TestParamsDifferFromOtherClients,
+			ShortName: "Ensure client with differing parameters is rejected",
+		},
+	}, {
+		In: Test{
 			Fn:        TestLowerElectionID,
 			ShortName: "Lower election ID from new client",
 		},

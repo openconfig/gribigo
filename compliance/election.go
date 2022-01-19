@@ -63,7 +63,7 @@ func TestUnsupportedElectionParams(c *fluent.GRIBIClient, t testing.TB, _ ...Tes
 		err,
 		fluent.ModifyError().
 			WithCode(codes.FailedPrecondition).
-			WithReason(fluent.UnsupportedParameters).
+			WithReason(fluent.ParamsDifferFromOtherClients).
 			AsStatus(t),
 		chk.AllowUnimplemented(),
 	)
@@ -129,6 +129,54 @@ func TestDifferingElectionParameters(c *fluent.GRIBIClient, t testing.TB, opts .
 			WithCode(codes.FailedPrecondition).
 			WithReason(fluent.ParamsDifferFromOtherClients).
 			AsStatus(t),
+	)
+}
+
+// TestParamsDifferFromOtherClients checks that when a client A is connected as a SINGLE_PRIMARY
+// and client B connects with ALL_PRIMARY, an PARAMS_DIFFER_FROM_OTHER_CLIENTS error is returned to client B.
+
+// TODO (deepgajjar): The fake implementation does not support ALL_PRIMARY. Ignore
+// the current tests since the return error would be UNSUPPORTED_PARAMS instead of PARAMS_DIFFER_FROM_OTHER_CLIENTS.
+// Add tests once the support for ALL_PRIMARY comes in.
+func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
+	defer electionID.Inc()
+
+	clientA, clientB := clientAB(c, t, opts...)
+
+	clientA.Connection().WithInitialElectionID(electionID.Load(), 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence()
+	clientA.Start(context.Background(), t)
+	defer clientA.Stop(t)
+	clientA.StartSending(context.Background(), t)
+
+	clientB.Connection().WithRedundancyMode(fluent.AllPrimaryClients)
+
+	clientB.Start(context.Background(), t)
+	defer clientB.Stop(t)
+	clientB.StartSending(context.Background(), t)
+
+	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)
+	if err := clientAErr; err != nil {
+		t.Fatalf("did not expect error from server in client A, got: %v", err)
+	}
+
+	clientBErr := awaitTimeout(context.Background(), clientB, t, time.Minute)
+	if err := clientBErr; err == nil {
+		t.Fatalf("did not get expected error from server, got: %v", err)
+	}
+
+	chk.HasNSendErrors(t, clientBErr, 0)
+	chk.HasNRecvErrors(t, clientBErr, 1)
+
+	chk.HasRecvClientErrorWithStatus(
+		t,
+		clientBErr,
+		fluent.ModifyError().
+			WithCode(codes.FailedPrecondition).
+			WithReason(fluent.ParamsDifferFromOtherClients).
+			AsStatus(t),
+		chk.AllowUnimplemented(),
 	)
 }
 
@@ -538,12 +586,20 @@ func TestSameElectionIDFromTwoClients(c *fluent.GRIBIClient, t testing.TB, opts 
 	clientA.StartSending(context.Background(), t)
 	defer clientA.Stop(t)
 
+	if err := awaitTimeout(context.Background(), clientA, t, time.Minute); err != nil {
+		t.Fatalf("did not expect error from server in client A, got: %v", err)
+	}
+
 	clientB.Connection().WithInitialElectionID(electionID.Load(), 0).
 		WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence()
 
 	clientB.Start(context.Background(), t)
 	clientB.StartSending(context.Background(), t)
 	defer clientB.Stop(t)
+
+	if err := awaitTimeout(context.Background(), clientB, t, time.Minute); err != nil {
+		t.Fatalf("did not expect error from server in client B, got: %v", err)
+	}
 
 	clientA.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))
 	clientB.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))

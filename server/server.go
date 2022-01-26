@@ -17,9 +17,11 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
@@ -36,6 +38,10 @@ const (
 	// DefaultNetworkInstanceName specifies the name of the default network instance on the system.
 	DefaultNetworkInstanceName = "DEFAULT"
 )
+
+// unixTS is used to determine the current unix timestamp in nanoseconds since the
+// epoch. It is defined such that it can be overloaded by unit tests.
+var unixTS = time.Now().UnixNano
 
 // Server implements the gRIBI service.
 type Server struct {
@@ -355,6 +361,11 @@ func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
 		}
 	}
 	return nil
+}
+
+// Flush implements the gRIBI Flush RPC - used for removing entries from the server.
+func (s *Server) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushResponse, error) {
+	return s.doFlush(req)
 }
 
 // newClient creates a new client context within the server using the specified string
@@ -936,6 +947,98 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 			return
 		}
 	}
+}
+
+func (s *Server) doFlush(req *spb.FlushRequest) (*spb.FlushResponse, error) {
+	if err := s.checkFlushRequest(req); err != nil {
+		return nil, err
+	}
+
+	nis := []string{}
+	switch t := req.GetNetworkInstance().(type) {
+	case *spb.FlushRequest_All:
+		nis = s.masterRIB.KnownNetworkInstances()
+	case *spb.FlushRequest_Name:
+		if _, ok := s.masterRIB.NetworkInstanceRIB(t.Name); !ok {
+			return nil, addFlushErrDetailsOrReturn(status.Newf(codes.InvalidArgument, "could not find network instance %s", t.Name), &spb.FlushResponseError{
+				Status: spb.FlushResponseError_INVALID_NETWORK_INSTANCE,
+			})
+		}
+		nis = []string{t.Name}
+	}
+
+	// TODO(robjs): call Flush on the underlying RIB. This likely needs to be implemented
+	// as a Delete of:
+	//  - each prefix
+	//  - each NHG
+	//  - each NH
+	// using the existing delete logic. This is more expensive than just re-initialising
+	// the RIB and replacing the ptr, but it means that all of the hooks that are required
+	// will be called.
+	_ = nis
+
+	return &spb.FlushResponse{
+		Timestamp: unixTS(),
+	}, nil
+
+}
+
+// addFlushErrDetailsOrReturn
+func addFlushErrDetailsOrReturn(s *status.Status, d *spb.FlushResponseError) error {
+	se, err := s.WithDetails(d)
+	if err != nil {
+		return s.Err()
+	}
+	return se.Err()
+}
+
+// checkFlushRequest ensures that the FlushRequest that was supplied from a client is valid - particularly,
+// validating that the election parameters are consistent, and correct, and that the Flush should be
+// completed.
+func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
+	e := req.GetElection()
+	switch {
+	case e == nil && s.curElecID != nil:
+		// We are in SINGLE_PRIMARY mode but we were not given an election behaviour.
+		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "unsupported election behaviour, client in SINGLE_PRIMARY mode"), &spb.FlushResponseError{
+			Status: spb.FlushResponseError_UNSPECIFIED_ELECTION_BEHAVIOR,
+		})
+	case e != nil && s.curElecID == nil:
+		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "received election ID in ALL_PRIMARY mode"), &spb.FlushResponseError{
+			Status: spb.FlushResponseError_ELECTION_ID_IN_ALL_PRIMARY,
+		})
+	}
+
+	if t, ok := e.(*spb.FlushRequest_Id); ok {
+		// If the Flush specified an ID, then we need to check that it is valid according
+		// to the logic that is defined in the specification - it must be either equal to
+		// or higher than the value that is the current master,
+		candidate := uint128.New(t.Id.Low, t.Id.High)
+
+		if uint128.New(0, 0).Equals(candidate) {
+			return addFlushErrDetailsOrReturn(status.Newf(codes.InvalidArgument, "zero is an invalid election ID"), &spb.FlushResponseError{
+				Status: spb.FlushResponseError_INVALID_ELECTION_ID,
+			})
+		}
+
+		existing := uint128.New(s.curElecID.Low, s.curElecID.High)
+		if candidate.Cmp(existing) < 0 {
+			return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "election ID specified (%v) is not primary", candidate), &spb.FlushResponseError{
+				Status: spb.FlushResponseError_NOT_PRIMARY,
+			})
+		}
+	}
+
+	if o, ok := e.(*spb.FlushRequest_Override); ok {
+		if !o.Override {
+			// TODO(robjs): see github.com/openconfig/gribi/pull/30, if this change is made
+			// then we will not need this check here.
+			return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "election ID was not overridden"), &spb.FlushResponseError{
+				Status: spb.FlushResponseError_NOT_PRIMARY,
+			})
+		}
+	}
+	return nil
 }
 
 // FakeServer is a wrapper around the server with functions to enable testing

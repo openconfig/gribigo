@@ -546,9 +546,8 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 		return nil, nil, status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
 	}
 
-	// TODO(robjs): after merging chain --> #60, then make sure that the hook
-	// is called for deletes of IPv4 prefixes to clean up.
-
+	// TODO(robjs): currently, the post-change hook is not called for deletes. Add
+	// support for calling this hook after delete.
 	switch {
 	case err != nil:
 		fails = append(fails, &OpResult{

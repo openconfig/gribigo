@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
@@ -1801,6 +1802,142 @@ func TestDoGet(t *testing.T) {
 					return prototext.Format(a) < prototext.Format(b)
 				})); diff != "" {
 				t.Fatalf("did not get expected responses, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestCheckFlushRequest(t *testing.T) {
+	tests := []struct {
+		desc           string
+		inServer       *Server
+		inRequest      *spb.FlushRequest
+		wantErrCode    codes.Code
+		wantErrDetails *spb.FlushResponseError
+	}{{
+		desc: "election unspecified, but server is in SINGLE_PRIMARY",
+		inServer: &Server{
+			curElecID: &spb.Uint128{High: 1, Low: 1},
+		},
+		inRequest:   &spb.FlushRequest{},
+		wantErrCode: codes.FailedPrecondition,
+		wantErrDetails: &spb.FlushResponseError{
+			Status: spb.FlushResponseError_UNSPECIFIED_ELECTION_BEHAVIOR,
+		},
+	}, {
+		desc:     "server is ALL_PRIMARY, but election ID is specified",
+		inServer: &Server{},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 42, Low: 42},
+			},
+		},
+		wantErrCode: codes.FailedPrecondition,
+		wantErrDetails: &spb.FlushResponseError{
+			Status: spb.FlushResponseError_ELECTION_ID_IN_ALL_PRIMARY,
+		},
+	}, {
+		desc: "zero election ID specified",
+		inServer: &Server{
+			curElecID: &spb.Uint128{High: 1, Low: 1},
+		},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 0, Low: 0},
+			},
+		},
+		wantErrCode: codes.InvalidArgument,
+		wantErrDetails: &spb.FlushResponseError{
+			Status: spb.FlushResponseError_INVALID_ELECTION_ID,
+		},
+	}, {
+		desc: "specified ID is not master",
+		inServer: &Server{
+			curElecID: &spb.Uint128{High: 0, Low: 2},
+		},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 0, Low: 1},
+			},
+		},
+		wantErrCode: codes.FailedPrecondition,
+		wantErrDetails: &spb.FlushResponseError{
+			Status: spb.FlushResponseError_NOT_PRIMARY,
+		},
+	}, {
+		desc: "specified ID is OK - equal",
+		inServer: &Server{
+			curElecID: &spb.Uint128{High: 0, Low: 3},
+		},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 0, Low: 3},
+			},
+		},
+	}, {
+		desc: "specified ID is OK - greater than",
+		inServer: &Server{
+			curElecID: &spb.Uint128{High: 0, Low: 3},
+		},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 0, Low: 4},
+			},
+		},
+	}, {
+		desc: "override specified as true",
+		inServer: &Server{
+			curElecID: &spb.Uint128{High: 0, Low: 3},
+		},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Override{
+				Override: true,
+			},
+		},
+	}, {
+		desc: "override specified as false",
+		inServer: &Server{
+			curElecID: &spb.Uint128{High: 0, Low: 3},
+		},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Override{
+				Override: false,
+			},
+		},
+		wantErrCode: codes.FailedPrecondition,
+		wantErrDetails: &spb.FlushResponseError{
+			Status: spb.FlushResponseError_NOT_PRIMARY,
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			err := tt.inServer.checkFlushRequest(tt.inRequest)
+			if err == nil && tt.wantErrCode != codes.OK {
+				t.Fatalf("got unexpected nil error, want: (code: %s, details: %v)", tt.wantErrCode, tt.wantErrDetails)
+			}
+
+			gotErr, ok := status.FromError(err)
+			if !ok {
+				t.Fatalf("got unexpected non-status.Status error, got: %T, want: status.Status", err)
+			}
+
+			if got, want := gotErr.Code(), tt.wantErrCode; got != want {
+				t.Fatalf("did not get expected error code, got: %s, want: %s", gotErr.Proto(), want)
+			}
+
+			if tt.wantErrDetails != nil {
+				gotDets := gotErr.Details()
+				if len(gotDets) != 1 {
+					t.Fatalf("did not get error details, got: %v, want: 1 FlushErrorDetails", gotDets)
+				}
+				gotD, ok := gotDets[0].(*spb.FlushResponseError)
+				if !ok {
+					t.Fatalf("did not get expected details type, got: %T, want: *spb.FlushResponseError", gotDets[0])
+				}
+				if got, want := gotD, tt.wantErrDetails; !proto.Equal(got, want) {
+					t.Fatalf("did not get expected error details, got: %s, want: %s", prototext.Format(got), prototext.Format(want))
+				}
 			}
 		})
 	}

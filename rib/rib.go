@@ -1616,7 +1616,7 @@ func (f *FlushErr) Error() string {
 	return b.String()
 }
 
-// FlushRIB cleanly removes all entries from the specified RIB. This is achieved
+// Flush cleanly removes all entries from the specified RIB. This is achieved
 // through sequentially calling DeleteXXX for the entries that are contained within
 // it. We use the Delete methods to ensure that we call all relevant hooks as changes
 // are made.
@@ -1629,7 +1629,7 @@ func (f *FlushErr) Error() string {
 //	  of backup NHGs, which we may allow today. we remove the backup NHGs.
 //  - we remove the remaining NHGs.
 //  - we remove the NHs.
-func (r *RIBHolder) FlushRIB() error {
+func (r *RIBHolder) Flush() error {
 	errs := []error{}
 
 	for p := range r.r.Afts.Ipv4Entry {

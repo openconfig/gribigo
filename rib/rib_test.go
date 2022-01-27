@@ -3346,3 +3346,225 @@ func mustSharedNHRIB(nhNI string) *RIB {
 
 	return r
 }
+
+func TestFlush(t *testing.T) {
+	tests := []struct {
+		desc             string
+		inRIB            *RIBHolder
+		wantErrSubstring string
+	}{{
+		desc: "nh only",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					ProgrammedIndex: &wpb.UintValue{Value: 42},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop, %v", err))
+			}
+			return r
+		}(),
+	}, {
+		desc: "nhg + nh",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					ProgrammedIndex: &wpb.UintValue{Value: 42},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop, %v", err))
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop-group, %v", err))
+			}
+
+			return r
+		}(),
+	}, {
+		desc: "nhg with backup + nh",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					ProgrammedIndex: &wpb.UintValue{Value: 42},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop, %v", err))
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop-group, %v", err))
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 2,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+					BackupNextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop-group, %v", err))
+			}
+
+			return r
+		}(),
+	}, {
+		desc: "circular reference to NHG",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					ProgrammedIndex: &wpb.UintValue{Value: 42},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop, %v", err))
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+					BackupNextHopGroup: &wpb.UintValue{Value: 2},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop-group, %v", err))
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 2,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+					BackupNextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop-group, %v", err))
+			}
+
+			return r
+		}(),
+	}, {
+		desc: "ipv4 + nhg + nh",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					ProgrammedIndex: &wpb.UintValue{Value: 42},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop, %v", err))
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add next-hop-group, %v", err))
+			}
+
+			_, _, err = r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+				Prefix: "192.0.2.1/32",
+				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+					NextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			}, false)
+			if err != nil {
+				panic(fmt.Sprintf("cannot add ipv4 entry, %v", err))
+			}
+
+			return r
+		}(),
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got := tt.inRIB.Flush()
+			if diff := errdiff.Substring(got, tt.wantErrSubstring); diff != "" {
+				t.Fatalf("did not get expected error when flushing RIB, %s", diff)
+			}
+		})
+
+		if l := len(tt.inRIB.r.Afts.Ipv4Entry); l != 0 {
+			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+		}
+
+		if l := len(tt.inRIB.r.Afts.NextHopGroup); l != 0 {
+			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+		}
+
+		if l := len(tt.inRIB.r.Afts.NextHop); l != 0 {
+			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+		}
+	}
+}

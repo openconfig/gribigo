@@ -1603,3 +1603,90 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 
 	return nil
 }
+
+type FlushErr struct {
+	Errs []error
+}
+
+func (f *FlushErr) Error() string {
+	b := &bytes.Buffer{}
+	for _, err := range f.Errs {
+		b.WriteString(fmt.Sprintf("%s\n", err))
+	}
+	return b.String()
+}
+
+// Flush cleanly removes all entries from the specified RIB. This is achieved
+// through sequentially calling DeleteXXX for the entries that are contained within
+// it. We use the Delete methods to ensure that we call all relevant hooks as changes
+// are made.
+//
+// The order of operations for deletes considers the dependency tree:
+//  - we remove IPv4 entries first, since these are never referenced counted,
+//    and the order of removing them never matters.
+//  - we check for any backup NHGs, and remove these first - since otherwise we
+//    may end up with referenced NHGs. note, we need to consider circular references
+//	  of backup NHGs, which we may allow today. we remove the backup NHGs.
+//  - we remove the remaining NHGs.
+//  - we remove the NHs.
+func (r *RIBHolder) Flush() error {
+	errs := []error{}
+
+	for p := range r.r.Afts.Ipv4Entry {
+		ok, _, err := r.DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
+			Prefix: p,
+		})
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !ok {
+			errs = append(errs, fmt.Errorf("cannot delete IPv4 entry %s", p))
+		}
+	}
+
+	backupNHGs := []uint64{}
+	for _, nhg := range r.r.Afts.NextHopGroup {
+		if nhg.BackupNextHopGroup != nil {
+			backupNHGs = append(backupNHGs, *nhg.BackupNextHopGroup)
+		}
+	}
+
+	delNHG := func(id uint64) {
+		ok, _, err := r.DeleteNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+			Id: id,
+		})
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if !ok {
+			errs = append(errs, fmt.Errorf("cannot delete NHG ID %d", id))
+		}
+	}
+
+	for _, id := range backupNHGs {
+		delNHG(id)
+	}
+
+	for n := range r.r.Afts.NextHopGroup {
+		delNHG(n)
+	}
+
+	for n := range r.r.Afts.NextHop {
+		ok, _, err := r.DeleteNextHop(&aftpb.Afts_NextHopKey{
+			Index: n,
+		})
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !ok {
+			errs = append(errs, fmt.Errorf("cannot delete NH entry %d", n))
+		}
+	}
+
+	if len(errs) != 0 {
+		return &FlushErr{Errs: errs}
+	}
+	return nil
+}

@@ -16,5 +16,6 @@ require (
 	google.golang.org/genproto v0.0.0-20201214200347-8c77b98c765d
 	google.golang.org/grpc v1.37.0
 	google.golang.org/protobuf v1.26.0
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	lukechampine.com/uint128 v1.1.1
 )

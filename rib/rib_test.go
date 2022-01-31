@@ -129,7 +129,7 @@ func TestAdd(t *testing.T) {
 					EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 				},
 			}, false); err != nil {
-				panic(err)
+				t.Fatalf("cannot init test case, %v", err)
 			}
 			return r
 		}(),
@@ -187,7 +187,7 @@ func TestAdd(t *testing.T) {
 				Id:           1,
 				NextHopGroup: &aftpb.Afts_NextHopGroup{},
 			}, false); err != nil {
-				panic(err)
+				t.Fatalf("cannot init test case, %v", err)
 			}
 			return r
 		}(),
@@ -215,7 +215,7 @@ func TestAdd(t *testing.T) {
 				Index:   1,
 				NextHop: &aftpb.Afts_NextHop{},
 			}, false); err != nil {
-				panic(err)
+				t.Fatalf("cannot init test case, %v", err)
 			}
 			return r
 		}(),
@@ -243,7 +243,7 @@ func TestAdd(t *testing.T) {
 				Id:           1,
 				NextHopGroup: &aftpb.Afts_NextHopGroup{},
 			}, false); err != nil {
-				panic(err)
+				t.Fatalf("cannot init test case, %v", err)
 			}
 			return r
 		}(),
@@ -275,7 +275,7 @@ func TestAdd(t *testing.T) {
 				Index:   1,
 				NextHop: &aftpb.Afts_NextHop{},
 			}, false); err != nil {
-				panic(err)
+				t.Fatalf("cannot init test case, %v", err)
 			}
 			return r
 		}(),
@@ -309,7 +309,7 @@ func TestAdd(t *testing.T) {
 					EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
 				},
 			}, false); err != nil {
-				panic(err)
+				t.Fatalf("cannot init test case, %v", err)
 			}
 			return r
 		}(),
@@ -1704,7 +1704,7 @@ func TestRIBAddEntry(t *testing.T) {
 		inRIB: func() *RIB {
 			r := New(defName)
 			if err := r.AddNetworkInstance("VRF-1"); err != nil {
-				panic(fmt.Sprintf("cannot add network instance, %v", err))
+				t.Fatalf(fmt.Sprintf("cannot add network instance, %v", err))
 			}
 
 			_, fails, err := r.AddEntry(defName, &spb.AFTOperation{
@@ -1717,7 +1717,7 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			})
 			if err != nil || len(fails) != 0 {
-				panic(fmt.Sprintf("cannot build test case, cannot add NH, got: %v or failed ops %d", err, len(fails)))
+				t.Fatalf(fmt.Sprintf("cannot build test case, cannot add NH, got: %v or failed ops %d", err, len(fails)))
 			}
 
 			_, fails, err = r.AddEntry(defName, &spb.AFTOperation{
@@ -1735,7 +1735,7 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			})
 			if err != nil || len(fails) != 0 {
-				panic(fmt.Sprintf("cannot build test case, cannot add NHG, got: %v or failed ops %d", err, len(fails)))
+				t.Fatalf("cannot build test case, cannot add NHG, got: %v or failed ops %d", err, len(fails))
 			}
 
 			return r
@@ -1793,7 +1793,7 @@ func TestRIBAddEntry(t *testing.T) {
 		inRIB: func() *RIB {
 			r := New(defName)
 			if err := r.AddNetworkInstance("VRF-1"); err != nil {
-				panic(fmt.Sprintf("cannot add network instance, %v", err))
+				t.Fatalf("cannot add network instance, %v", err)
 			}
 
 			_, fails, err := r.AddEntry(defName, &spb.AFTOperation{
@@ -1807,7 +1807,7 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			})
 			if err != nil || len(fails) != 0 {
-				panic(fmt.Sprintf("cannot build test case, cannot add NH, got: %v or failed ops %d", err, len(fails)))
+				t.Fatalf("cannot build test case, cannot add NH, got: %v or failed ops %d", err, len(fails))
 			}
 
 			_, fails, err = r.AddEntry(defName, &spb.AFTOperation{
@@ -1826,7 +1826,7 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			})
 			if err != nil || len(fails) != 0 {
-				panic(fmt.Sprintf("cannot build test case, cannot add NHG, got: %v or failed ops %d", err, len(fails)))
+				t.Fatalf("cannot build test case, cannot add NHG, got: %v or failed ops %d", err, len(fails))
 			}
 
 			_, fails, err = r.AddEntry("VRF-1", &spb.AFTOperation{
@@ -1843,7 +1843,7 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			})
 			if err != nil || len(fails) != 0 {
-				panic(fmt.Sprintf("cannot build test case, cannot add NHG, got: %v or failed ops %d", err, len(fails)))
+				t.Fatalf("cannot build test case, cannot add NHG, got: %v or failed ops %d", err, len(fails))
 			}
 
 			return r
@@ -1901,7 +1901,7 @@ func TestRIBAddEntry(t *testing.T) {
 		inRIB: func() *RIB {
 			r := New(defName)
 			if err := r.AddNetworkInstance("VRF-1"); err != nil {
-				panic(fmt.Sprintf("cannot add network instance, %v", err))
+				t.Fatalf("cannot add network instance, %v", err)
 			}
 
 			_, fails, err := r.AddEntry(defName, &spb.AFTOperation{
@@ -1914,7 +1914,7 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			})
 			if err != nil || len(fails) != 0 {
-				panic(fmt.Sprintf("cannot build test case, cannot add NH, got: %v or failed ops %d", err, len(fails)))
+				t.Fatalf("cannot build test case, cannot add NH, got: %v or failed ops %d", err, len(fails))
 			}
 
 			_, fails, err = r.AddEntry(defName, &spb.AFTOperation{
@@ -1932,7 +1932,7 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			})
 			if err != nil || len(fails) != 0 {
-				panic(fmt.Sprintf("cannot build test case, cannot add NHG, got: %v or failed ops %d", err, len(fails)))
+				t.Fatalf("cannot build test case, cannot add NHG, got: %v or failed ops %d", err, len(fails))
 			}
 
 			_, fails, err = r.AddEntry("VRF-1", &spb.AFTOperation{
@@ -1949,7 +1949,7 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			})
 			if err != nil || len(fails) != 0 {
-				panic(fmt.Sprintf("cannot build test case, cannot add IPv4, got: %v or failed ops %d", err, len(fails)))
+				t.Fatalf("cannot build test case, cannot add IPv4, got: %v or failed ops %d", err, len(fails))
 			}
 
 			return r
@@ -2055,7 +2055,7 @@ func TestDeleteEntry(t *testing.T) {
 					},
 				},
 			}); err != nil {
-				panic(fmt.Sprintf("cannot set up test case, %v", err))
+				t.Fatalf("cannot set up test case, %v", err)
 			}
 			return r
 		}(),
@@ -2120,7 +2120,7 @@ func TestDeleteEntry(t *testing.T) {
 					},
 				},
 			}); err != nil {
-				panic(fmt.Sprintf("cannot set up test case, %v", err))
+				t.Fatalf("cannot set up test case, %v", err)
 			}
 			return r
 		}(),
@@ -2159,7 +2159,7 @@ func TestDeleteEntry(t *testing.T) {
 					},
 				},
 			}); err != nil {
-				panic(fmt.Sprintf("cannot set up test case, %v", err))
+				t.Fatalf("cannot set up test case, %v", err)
 			}
 			return r
 		}(),
@@ -2322,7 +2322,7 @@ func TestDeleteEntry(t *testing.T) {
 		wantReferenceCheckPre: func(r *RIB) error {
 			niR, ok := r.NetworkInstanceRIB(defName)
 			if !ok {
-				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", defName))
+				t.Fatalf("cannot build test case, can't get %s RIB", defName)
 			}
 
 			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
@@ -2350,7 +2350,7 @@ func TestDeleteEntry(t *testing.T) {
 		wantReferenceCheckPost: func(r *RIB) error {
 			niR, ok := r.NetworkInstanceRIB(defName)
 			if !ok {
-				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", defName))
+				t.Fatalf("cannot build test case, can't get %s RIB", defName)
 			}
 
 			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
@@ -2403,7 +2403,7 @@ func TestDeleteEntry(t *testing.T) {
 		wantReferenceCheckPre: func(r *RIB) error {
 			niR, ok := r.NetworkInstanceRIB("VRF-42")
 			if !ok {
-				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", "VRF-42"))
+				t.Fatalf("cannot build test case, can't get %s RIB", "VRF-42")
 			}
 
 			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
@@ -2431,7 +2431,7 @@ func TestDeleteEntry(t *testing.T) {
 		wantReferenceCheckPost: func(r *RIB) error {
 			niR, ok := r.NetworkInstanceRIB("VRF-42")
 			if !ok {
-				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", "VRF-42"))
+				t.Fatalf("cannot build test case, can't get %s RIB", "VRF-42")
 			}
 
 			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
@@ -2484,7 +2484,7 @@ func TestDeleteEntry(t *testing.T) {
 		wantReferenceCheckPre: func(r *RIB) error {
 			niR, ok := r.NetworkInstanceRIB(defName)
 			if !ok {
-				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", defName))
+				t.Fatalf("cannot build test case, can't get %s RIB", defName)
 			}
 
 			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
@@ -2513,7 +2513,7 @@ func TestDeleteEntry(t *testing.T) {
 		wantReferenceCheckPost: func(r *RIB) error {
 			niR, ok := r.NetworkInstanceRIB(defName)
 			if !ok {
-				panic(fmt.Sprintf("cannot build test case, can't get %s RIB", defName))
+				t.Fatalf("cannot build test case, can't get %s RIB", defName)
 			}
 
 			// nhChecks is keyed by the NH Index and has a value of the expected reference count.
@@ -2618,7 +2618,7 @@ func TestGetRIB(t *testing.T) {
 		nh.IpAddress = ygot.String("1.1.1.1/32")
 
 		if _, err := r.doAddNH(1, cr); err != nil {
-			panic(fmt.Sprintf("cannot build RIB, %v", err))
+			t.Fatalf("cannot build RIB, %v", err)
 		}
 
 		cr = &aft.RIB{}
@@ -2626,7 +2626,7 @@ func TestGetRIB(t *testing.T) {
 		nhg.Weight = ygot.Uint64(1)
 
 		if _, err := r.doAddNHG(42, cr); err != nil {
-			panic(fmt.Sprintf("cannot build RIB, %v", err))
+			t.Fatalf("cannot build RIB, %v", err)
 		}
 
 		cr = &aft.RIB{}
@@ -2634,7 +2634,7 @@ func TestGetRIB(t *testing.T) {
 		ipv4.NextHopGroup = ygot.Uint64(42)
 
 		if _, err := r.doAddIPv4("42.42.42.42/32", cr); err != nil {
-			panic(fmt.Sprintf("cannot build RIB, %v", err))
+			t.Fatalf("cannot build RIB, %v", err)
 		}
 
 		return r
@@ -2663,7 +2663,7 @@ func TestGetRIB(t *testing.T) {
 			ipv4.NextHopGroup = ygot.Uint64(42)
 
 			if _, err := r.doAddIPv4("1.1.1.1/32", cr); err != nil {
-				panic(fmt.Sprintf("cannot build RIB, %v", err))
+				t.Fatalf("cannot build RIB, %v", err)
 			}
 			return r
 		}(),
@@ -2693,7 +2693,7 @@ func TestGetRIB(t *testing.T) {
 			nhg.Color = ygot.Uint64(1)
 
 			if _, err := r.doAddNHG(42, cr); err != nil {
-				panic(fmt.Sprintf("cannot build RIB, %v", err))
+				t.Fatalf("cannot build RIB, %v", err)
 			}
 			return r
 		}(),
@@ -2723,7 +2723,7 @@ func TestGetRIB(t *testing.T) {
 			nh.IpAddress = ygot.String("1.1.1.1/32")
 
 			if _, err := r.doAddNH(1, cr); err != nil {
-				panic(fmt.Sprintf("cannot build RIB, %v", err))
+				t.Fatalf("cannot build RIB, %v", err)
 			}
 			return r
 		}(),
@@ -3030,7 +3030,7 @@ func TestCanDelete(t *testing.T) {
 					},
 				},
 			}); err != nil {
-				panic(fmt.Sprintf("cannot build testcase, got err: %v", err))
+				t.Fatalf("cannot build testcase, got err: %v", err)
 			}
 
 			return r
@@ -3101,7 +3101,7 @@ func TestCanDelete(t *testing.T) {
 					},
 				},
 			}); err != nil {
-				panic(fmt.Sprintf("cannot build testcase, got err: %v", err))
+				t.Fatalf("cannot build testcase, got err: %v", err)
 			}
 
 			return r
@@ -3345,4 +3345,226 @@ func mustSharedNHRIB(nhNI string) *RIB {
 	}
 
 	return r
+}
+
+func TestFlush(t *testing.T) {
+	tests := []struct {
+		desc             string
+		inRIB            *RIBHolder
+		wantErrSubstring string
+	}{{
+		desc: "nh only",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					ProgrammedIndex: &wpb.UintValue{Value: 42},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop, %v", err)
+			}
+			return r
+		}(),
+	}, {
+		desc: "nhg + nh",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					ProgrammedIndex: &wpb.UintValue{Value: 42},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop, %v", err)
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop-group, %v", err)
+			}
+
+			return r
+		}(),
+	}, {
+		desc: "nhg with backup + nh",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					ProgrammedIndex: &wpb.UintValue{Value: 42},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop, %v", err)
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop-group, %v", err)
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 2,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+					BackupNextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop-group, %v", err)
+			}
+
+			return r
+		}(),
+	}, {
+		desc: "circular reference to NHG",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					ProgrammedIndex: &wpb.UintValue{Value: 42},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop, %v", err)
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+					BackupNextHopGroup: &wpb.UintValue{Value: 2},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop-group, %v", err)
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 2,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+					BackupNextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop-group, %v", err)
+			}
+
+			return r
+		}(),
+	}, {
+		desc: "ipv4 + nhg + nh",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					ProgrammedIndex: &wpb.UintValue{Value: 42},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop, %v", err)
+			}
+
+			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					ProgrammedId: &wpb.UintValue{Value: 1},
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add next-hop-group, %v", err)
+			}
+
+			_, _, err = r.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+				Prefix: "192.0.2.1/32",
+				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+					NextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add ipv4 entry, %v", err)
+			}
+
+			return r
+		}(),
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got := tt.inRIB.Flush()
+			if diff := errdiff.Substring(got, tt.wantErrSubstring); diff != "" {
+				t.Fatalf("did not get expected error when flushing RIB, %s", diff)
+			}
+		})
+
+		if l := len(tt.inRIB.r.Afts.Ipv4Entry); l != 0 {
+			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+		}
+
+		if l := len(tt.inRIB.r.Afts.NextHopGroup); l != 0 {
+			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+		}
+
+		if l := len(tt.inRIB.r.Afts.NextHop); l != 0 {
+			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+		}
+	}
 }

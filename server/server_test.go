@@ -15,6 +15,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"testing"
@@ -1937,6 +1938,268 @@ func TestCheckFlushRequest(t *testing.T) {
 				}
 				if got, want := gotD, tt.wantErrDetails; !proto.Equal(got, want) {
 					t.Fatalf("did not get expected error details, got: %s, want: %s", prototext.Format(got), prototext.Format(want))
+				}
+			}
+		})
+	}
+}
+
+func TestFlush(t *testing.T) {
+	addEntry := func(r *rib.RIB, ni string) {
+		if oks, _, err := r.AddEntry(ni, &spb.AFTOperation{
+			Op: spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}); err != nil || len(oks) != 1 {
+			t.Fatalf("cannot add NextHop to server, %v", err)
+		}
+
+		if oks, _, err := r.AddEntry(ni, &spb.AFTOperation{
+			Op: spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index:   1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+						}},
+					},
+				},
+			},
+		}); err != nil || len(oks) != 1 {
+			t.Fatalf("cannot add NextHopGroup to server, %v", err)
+		}
+
+		if oks, _, err := r.AddEntry(ni, &spb.AFTOperation{
+			Op: spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}); err != nil || len(oks) != 1 {
+			t.Fatalf("cannot add IPv4Entry to server, %v", err)
+		}
+	}
+
+	// singleNI creates a server with the default network instance with one entry.
+	singleNI := func() *Server {
+		s := NewFake()
+		r := rib.New(DefaultNetworkInstanceName)
+		addEntry(r, DefaultNetworkInstanceName)
+		s.InjectRIB(r)
+		return s.Server
+	}
+
+	// singleNIWithElection creates a server with a default network instance with
+	// one entry, and sets the specified election ID.
+	singleNIWithElection := func(id *spb.Uint128) *Server {
+		s := singleNI()
+		s.curElecID = id
+		return s
+	}
+
+	// multiNI creates a server with a default network instance along with the
+	// other network instances specified, it contains one entry per network
+	// instance.
+	multiNI := func(names []string) *Server {
+		s := NewFake()
+		r := rib.New(DefaultNetworkInstanceName)
+		addEntry(r, DefaultNetworkInstanceName)
+		for _, n := range names {
+			if err := r.AddNetworkInstance(n); err != nil {
+				t.Fatalf("cannot add network instance %s to server, %v", n, err)
+			}
+			addEntry(r, n)
+		}
+		s.InjectRIB(r)
+		return s.Server
+	}
+
+	tests := []struct {
+		desc            string
+		inServer        *Server
+		inReq           *spb.FlushRequest
+		wantErrCode     codes.Code
+		wantEntriesInNI map[string]int
+	}{{
+		desc:     "remove all entries in single NI as ALL",
+		inServer: singleNI(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+		},
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 0,
+		},
+	}, {
+		desc:     "remove all entries in single NI with explicit name",
+		inServer: singleNI(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+		},
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 0,
+		},
+	}, {
+		desc:     "remove entries in only one NI - explicit name",
+		inServer: multiNI([]string{"one"}),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: "one",
+			},
+		},
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 3,
+		},
+	}, {
+		desc:     "don't remove any entries",
+		inServer: multiNI([]string{"two"}),
+		inReq:    &spb.FlushRequest{},
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 3,
+			"two":                      3,
+		},
+	}, {
+		desc:     "remove entries in all NIs",
+		inServer: multiNI([]string{"three"}),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+		},
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 0,
+			"three":                    0,
+		},
+	}, {
+		desc:     "election ID specified explicitly - valid",
+		inServer: singleNIWithElection(&spb.Uint128{High: 0, Low: 1}),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 0, Low: 1},
+			},
+		},
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 0,
+		},
+	}, {
+		desc:     "election ID specified explicitly - not master",
+		inServer: singleNIWithElection(&spb.Uint128{High: 0, Low: 2}),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 0, Low: 1},
+			},
+		},
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 3,
+		},
+		wantErrCode: codes.FailedPrecondition,
+	}, {
+		desc:     "election ID specified explicitly - override",
+		inServer: singleNIWithElection(&spb.Uint128{High: 0, Low: 42}),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+			Election: &spb.FlushRequest_Override{
+				Override: true,
+			},
+		},
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 0,
+		},
+	}, {
+		desc:     "network instance does not exist",
+		inServer: singleNI(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: "does-not-exist",
+			},
+		},
+		wantErrCode: codes.InvalidArgument,
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 3,
+		},
+	}, {
+		desc:     "election ID when server is not in an election",
+		inServer: singleNI(),
+		inReq: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 1, Low: 1},
+			},
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: "does-not-exist",
+			},
+		},
+		wantErrCode: codes.FailedPrecondition,
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 3,
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if _, err := tt.inServer.Flush(context.Background(), tt.inReq); err != nil {
+				s, ok := status.FromError(err)
+				if !ok {
+					t.Fatalf("did not get status.Status as error, got: %T %v", err, err)
+				}
+				if got, want := s.Code(), tt.wantErrCode; got != want {
+					t.Fatalf("did not get expected error code, got: %s, want: %s", got, want)
+				}
+			}
+
+			for ni, wantEntries := range tt.wantEntriesInNI {
+				r, ok := tt.inServer.masterRIB.NetworkInstanceRIB(ni)
+				if !ok {
+					t.Fatalf("cannot find RIB %s on server", ni)
+				}
+
+				msgCh := make(chan *spb.GetResponse)
+				stopCh := make(chan struct{})
+
+				doneCh := make(chan struct{})
+				defer close(doneCh)
+
+				got := []*spb.GetResponse{}
+				go func() {
+					for {
+						select {
+						case r := <-msgCh:
+							got = append(got, r)
+						case <-doneCh:
+							return
+						}
+					}
+				}()
+
+				if err := r.GetRIB(map[spb.AFTType]bool{
+					spb.AFTType_ALL: true,
+				}, msgCh, stopCh); err != nil {
+					t.Fatalf("could not perform Get on RIB, %v", err)
+				}
+				doneCh <- struct{}{}
+
+				if len(got) != wantEntries {
+					t.Fatalf("got unexpected entries in NI %s, got: %d entries, want: %d, contents:\n%+v", ni, len(got), wantEntries, got)
 				}
 			}
 		})

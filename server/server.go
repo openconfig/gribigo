@@ -17,6 +17,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -365,7 +366,51 @@ func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
 
 // Flush implements the gRIBI Flush RPC - used for removing entries from the server.
 func (s *Server) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushResponse, error) {
-	return s.doFlush(req)
+	if err := s.checkFlushRequest(req); err != nil {
+		return nil, err
+	}
+
+	nis := []string{}
+	switch t := req.GetNetworkInstance().(type) {
+	case *spb.FlushRequest_All:
+		nis = s.masterRIB.KnownNetworkInstances()
+	case *spb.FlushRequest_Name:
+		if _, ok := s.masterRIB.NetworkInstanceRIB(t.Name); !ok {
+			return nil, addFlushErrDetailsOrReturn(status.Newf(codes.InvalidArgument, "could not find network instance %s", t.Name), &spb.FlushResponseError{
+				Status: spb.FlushResponseError_INVALID_NETWORK_INSTANCE,
+			})
+		}
+		nis = []string{t.Name}
+	}
+
+	msgs := []string{}
+	for _, n := range nis {
+		niR, ok := s.masterRIB.NetworkInstanceRIB(n)
+		if !ok {
+			// non-fatal, this means that a network instnace that we checked for
+			// was removed during the flush.
+			log.Errorf("network instance %s was removed during Flush", n)
+			continue
+		}
+		if err := niR.Flush(); err != nil {
+			msgs = append(msgs, fmt.Sprintf("cannot flush RIB for network instance, %s", n))
+		}
+	}
+
+	if len(msgs) != 0 {
+		det := &bytes.Buffer{}
+		for _, msg := range msgs {
+			det.WriteString(fmt.Sprintf("%s\n", msg))
+		}
+		// Always use codes.Internal here since any error (not being able to flush, or
+		// not finding an NI that we already checked existed is some internal logic
+		// error).
+		return nil, status.Errorf(codes.Internal, det.String())
+	}
+
+	return &spb.FlushResponse{
+		Timestamp: unixTS(),
+	}, nil
 }
 
 // newClient creates a new client context within the server using the specified string
@@ -947,40 +992,6 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 			return
 		}
 	}
-}
-
-func (s *Server) doFlush(req *spb.FlushRequest) (*spb.FlushResponse, error) {
-	if err := s.checkFlushRequest(req); err != nil {
-		return nil, err
-	}
-
-	nis := []string{}
-	switch t := req.GetNetworkInstance().(type) {
-	case *spb.FlushRequest_All:
-		nis = s.masterRIB.KnownNetworkInstances()
-	case *spb.FlushRequest_Name:
-		if _, ok := s.masterRIB.NetworkInstanceRIB(t.Name); !ok {
-			return nil, addFlushErrDetailsOrReturn(status.Newf(codes.InvalidArgument, "could not find network instance %s", t.Name), &spb.FlushResponseError{
-				Status: spb.FlushResponseError_INVALID_NETWORK_INSTANCE,
-			})
-		}
-		nis = []string{t.Name}
-	}
-
-	// TODO(robjs): call Flush on the underlying RIB. This likely needs to be implemented
-	// as a Delete of:
-	//  - each prefix
-	//  - each NHG
-	//  - each NH
-	// using the existing delete logic. This is more expensive than just re-initialising
-	// the RIB and replacing the ptr, but it means that all of the hooks that are required
-	// will be called.
-	_ = nis
-
-	return &spb.FlushResponse{
-		Timestamp: unixTS(),
-	}, nil
-
 }
 
 // addFlushErrDetailsOrReturn

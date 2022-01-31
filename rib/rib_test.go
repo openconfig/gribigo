@@ -3366,6 +3366,7 @@ func TestFlush(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot add next-hop, %v", err)
 			}
+
 			return r
 		}(),
 	}, {

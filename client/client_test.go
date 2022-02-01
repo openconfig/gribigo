@@ -1136,3 +1136,249 @@ func TestOpResultString(t *testing.T) {
 		})
 	}
 }
+
+func TestFlush(t *testing.T) {
+	tests := []struct {
+		desc         string
+		inClient     *Client
+		inReq        *spb.FlushRequest
+		inRIB        *rib.RIB
+		inElectionID *spb.Uint128
+		wantResponse *spb.FlushResponse
+		wantErr      bool
+	}{{
+		desc: "missing election ID when client is SINGLE_PRIMARY",
+		inClient: func() *Client {
+			c, err := New(
+				ElectedPrimaryClient(&spb.Uint128{
+					High: 0,
+					Low:  1,
+				}),
+			)
+			if err != nil {
+				t.Fatalf("can't initialise client, %v", err)
+			}
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "specified election ID when client is SINGLE_PRIMARY",
+		inClient: func() *Client {
+			c, err := New(
+				ElectedPrimaryClient(&spb.Uint128{
+					High: 0,
+					Low:  1,
+				}),
+			)
+			if err != nil {
+				t.Fatalf("can't initialise client, %v", err)
+			}
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 0, Low: 1},
+			},
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+		},
+		inElectionID: &spb.Uint128{High: 0, Low: 1},
+	}, {
+		desc: "overridden Election ID when client is SINGLE_PRIMARY",
+		inClient: func() *Client {
+			c, err := New(
+				ElectedPrimaryClient(&spb.Uint128{
+					High: 0,
+					Low:  1,
+				}),
+			)
+			if err != nil {
+				t.Fatalf("can't initialise client, %v", err)
+			}
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Override{
+				Override: true,
+			},
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+		},
+		inElectionID: &spb.Uint128{High: 0, Low: 1},
+	}, {
+		desc: "named NI - exists",
+		inClient: func() *Client {
+			c, err := New()
+			if err != nil {
+				t.Fatalf("can't initialise client, %v", err)
+			}
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: server.DefaultNetworkInstanceName,
+			},
+		},
+	}, {
+		desc: "named NI - missing",
+		inClient: func() *Client {
+			c, err := New()
+			if err != nil {
+				t.Fatalf("can't initialise client, %v", err)
+			}
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: "doesn't-exist",
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "named NI - empty string",
+		inClient: func() *Client {
+			c, err := New()
+			if err != nil {
+				t.Fatalf("can't initialise client, %v", err)
+			}
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: "",
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "election ID when client is not single primary",
+		inClient: func() *Client {
+			c, err := New()
+			if err != nil {
+				t.Fatalf("can't initialise client, %v", err)
+			}
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: server.DefaultNetworkInstanceName,
+			},
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{
+					High: 1,
+					Low:  1,
+				},
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "override set to false",
+		inClient: func() *Client {
+			c, err := New()
+			if err != nil {
+				t.Fatalf("can't initialise client, %v", err)
+			}
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: server.DefaultNetworkInstanceName,
+			},
+			Election: &spb.FlushRequest_Override{
+				Override: false,
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "override with non-SINGLE_PRIMARY client",
+		inClient: func() *Client {
+			c, err := New()
+			if err != nil {
+				t.Fatalf("can't initialise client, %v", err)
+			}
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: server.DefaultNetworkInstanceName,
+			},
+			Election: &spb.FlushRequest_Override{
+				Override: true,
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "nil flush request",
+		inClient: func() *Client {
+			c, err := New()
+			if err != nil {
+				t.Fatalf("can't initialise client, %v", err)
+			}
+			return c
+		}(),
+		wantErr: true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			creds, err := credentials.NewServerTLSFromFile(testcommon.TLSCreds())
+			if err != nil {
+				t.Fatalf("cannot load TLS credentials, got err: %v", err)
+			}
+			srv := grpc.NewServer(grpc.Creds(creds))
+			s := server.NewFake(
+				server.DisableRIBCheckFn(),
+			)
+
+			s.InjectRIB(rib.New(server.DefaultNetworkInstanceName))
+			if tt.inRIB != nil {
+				s.InjectRIB(tt.inRIB)
+			}
+
+			if tt.inElectionID != nil {
+				s.InjectElectionID(tt.inElectionID)
+			}
+
+			l, err := net.Listen("tcp", "localhost:0")
+			if err != nil {
+				t.Fatalf("cannot create gRIBI server, %v", err)
+			}
+
+			spb.RegisterGRIBIServer(srv, s)
+
+			go srv.Serve(l)
+			defer srv.Stop()
+
+			dctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			if err := tt.inClient.Dial(dctx, l.Addr().String()); err != nil {
+				t.Fatalf("cannot connect to fake server, %v", err)
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			res, err := tt.inClient.Flush(ctx, tt.inReq)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+
+			if res == nil {
+				return
+			}
+
+			// ensure that the timestamp is numerically before the current time.
+			if got, now := res.Timestamp, time.Now().UnixNano(); got > now {
+				t.Fatalf("received impossible timestamp, got: %v, want: timestamp < %d", res, now)
+			}
+		})
+	}
+
+}

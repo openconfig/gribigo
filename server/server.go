@@ -1071,3 +1071,9 @@ func NewFake(opt ...ServerOpt) *FakeServer {
 func (f *FakeServer) InjectRIB(r *rib.RIB) {
 	f.Server.masterRIB = r
 }
+
+// InjectElectionID allows a client to set an initial election ID on the server as
+// though it was received from the client.
+func (f *FakeServer) InjectElectionID(id *spb.Uint128) {
+	f.Server.curElecID = id
+}

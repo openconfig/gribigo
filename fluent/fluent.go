@@ -332,6 +332,71 @@ func (g *gRIBIGet) Send() (*spb.GetResponse, error) {
 	return g.parent.c.Get(g.parent.ctx, g.pb)
 }
 
+// gRIBIFlush is a container for arguments to the Flush RPC.
+type gRIBIFlush struct {
+	// parent is a reference to the parent client.
+	parent *GRIBIClient
+	// pb is the FlushRequest protobuf.
+	pb *spb.FlushRequest
+}
+
+// Flush is a wrapper for the gRIBI Flush RPC which is used to remove the current
+// entries from the active gRIBI RIB. Flush operations can be restricted based on
+// a single network-instnace, or applied to all NIs on the server. Where the server
+// is in SINGLE_PRIMARY mode Flush can either consider the current ID, or override
+// it.
+func (g *GRIBIClient) Flush() *gRIBIFlush {
+	return &gRIBIFlush{
+		parent: g,
+		pb:     &spb.FlushRequest{},
+	}
+}
+
+// WithElectionID sets the election ID that is sent to the server to a specific
+// value specified by the low and high arguments, which make up the lower and upper
+// 64 bits respectively of the uint128 election ID.
+func (g *gRIBIFlush) WithElectionID(low, high uint64) *gRIBIFlush {
+	g.pb.Election = &spb.FlushRequest_Id{
+		Id: &spb.Uint128{
+			Low:  low,
+			High: high,
+		},
+	}
+	return g
+}
+
+// WithElectionOverride specifies that the client should override the election
+// status on the gRIBI server when calling the Flush operation.
+func (g *gRIBIFlush) WithElectionOverride() *gRIBIFlush {
+	g.pb.Election = &spb.FlushRequest_Override{
+		Override: true,
+	}
+	return g
+}
+
+// WithNetworkInstance specifies that the Flush should be performed on the specific
+// named network instance.
+func (g *gRIBIFlush) WithNetworkInstance(n string) *gRIBIFlush {
+	g.pb.NetworkInstance = &spb.FlushRequest_Name{
+		Name: n,
+	}
+	return g
+}
+
+// WithAllNetworkInstances specifies that the Flush should be applied to all of
+// the network instances on the server.
+func (g *gRIBIFlush) WithAllNetworkInstances() *gRIBIFlush {
+	g.pb.NetworkInstance = &spb.FlushRequest_All{
+		All: &spb.Empty{},
+	}
+	return g
+}
+
+// Send sends the flush operation to the device.
+func (g *gRIBIFlush) Send() (*spb.FlushResponse, error) {
+	return g.parent.c.Flush(g.parent.ctx, g.pb)
+}
+
 // Modify wraps methods that trigger operations within the gRIBI Modify RPC.
 func (g *GRIBIClient) Modify() *gRIBIModify {
 	return &gRIBIModify{parent: g}

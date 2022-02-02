@@ -27,6 +27,7 @@ import (
 	"github.com/openconfig/gribigo/compliance"
 	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/negtest"
+	"github.com/openconfig/gribigo/server"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -42,6 +43,7 @@ var (
 	initialElectionID = flag.Uint("initial_electionid", 0, "initial election ID to be used")
 	skipFIBACK        = flag.Bool("skip_fiback", false, "skip tests that rely on FIB ACK")
 	skipSrvReorder    = flag.Bool("skip_reordering", false, "skip tests that rely on server side transaction reordering")
+	defaultNIName     = flag.String("default_ni_name", server.DefaultNetworkInstanceName, "default network instance name to be used for the server")
 )
 
 // flagCred implements credentials.PerRPCCredentials by populating the
@@ -70,6 +72,8 @@ func TestCompliance(t *testing.T) {
 	if *initialElectionID != 0 {
 		compliance.SetElectionID(uint64(*initialElectionID))
 	}
+
+	compliance.SetDefaultNetworkInstanceName(*defaultNIName)
 
 	dialOpts := []grpc.DialOption{grpc.WithBlock()}
 	if *insecure {

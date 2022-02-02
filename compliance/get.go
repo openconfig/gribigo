@@ -27,7 +27,6 @@ import (
 	"github.com/openconfig/gribigo/client"
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/fluent"
-	"github.com/openconfig/gribigo/server"
 )
 
 // GetNH validates that an installed next-hop is returned via the Get RPC.
@@ -36,7 +35,7 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
 					WithIPAddress("1.1.1.1"))
 		},
@@ -57,7 +56,7 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 	c.Start(ctx, t)
 	defer c.Stop(t)
 	gr, err := c.Get().
-		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithNetworkInstance(defaultNetworkInstanceName).
 		WithAFT(fluent.NextHop).
 		Send()
 
@@ -67,7 +66,7 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 
 	chk.GetResponseHasEntries(t, gr,
 		fluent.NextHopEntry().
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithIndex(1).
 			WithIPAddress("1.1.1.1"))
 }
@@ -78,14 +77,14 @@ func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.T
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
 					WithIPAddress("1.1.1.1"))
 		},
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithID(1).
 					AddNextHop(1, 1))
 		},
@@ -115,7 +114,7 @@ func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.T
 	c.Start(ctx, t)
 	defer c.Stop(t)
 	gr, err := c.Get().
-		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithNetworkInstance(defaultNetworkInstanceName).
 		WithAFT(fluent.NextHopGroup).
 		Send()
 
@@ -125,7 +124,7 @@ func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.T
 
 	chk.GetResponseHasEntries(t, gr,
 		fluent.NextHopGroupEntry().
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithID(1).
 			AddNextHop(1, 1),
 	)
@@ -137,21 +136,21 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
 					WithIPAddress("1.1.1.1"))
 		},
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithID(1).
 					AddNextHop(1, 1))
 		},
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.IPv4Entry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithNextHopGroup(1).
 					WithPrefix("42.42.42.42/32"))
 		},
@@ -190,7 +189,7 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 	c.Start(ctx, t)
 	defer c.Stop(t)
 	gr, err := c.Get().
-		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithNetworkInstance(defaultNetworkInstanceName).
 		WithAFT(fluent.IPv4).
 		Send()
 
@@ -200,7 +199,7 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 
 	chk.GetResponseHasEntries(t, gr,
 		fluent.IPv4Entry().
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithNextHopGroup(1).
 			WithPrefix("42.42.42.42/32"),
 	)
@@ -213,21 +212,21 @@ func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
 					WithIPAddress("1.1.1.1"))
 		},
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithID(1).
 					AddNextHop(1, 1))
 		},
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.IPv4Entry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithNextHopGroup(1).
 					WithPrefix("42.42.42.42/32"))
 		},
@@ -266,7 +265,7 @@ func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 	c.Start(ctx, t)
 	defer c.Stop(t)
 	gr, err := c.Get().
-		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithNetworkInstance(defaultNetworkInstanceName).
 		WithAFT(fluent.AllAFTs).
 		Send()
 
@@ -276,15 +275,15 @@ func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 
 	chk.GetResponseHasEntries(t, gr,
 		fluent.IPv4Entry().
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithNextHopGroup(1).
 			WithPrefix("42.42.42.42/32"),
 		fluent.NextHopGroupEntry().
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithID(1).
 			AddNextHop(1, 1),
 		fluent.NextHopEntry().
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithIndex(1).
 			WithIPAddress("1.1.1.1"),
 	)
@@ -308,7 +307,7 @@ func populateNNHs(c *fluent.GRIBIClient, n int, wantACK fluent.ProgrammingResult
 		ops = append(ops, func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(uint64(j)).
 					WithIPAddress(indexAsIPv4(uint32(i), 1)))
 		})
@@ -343,7 +342,7 @@ func GetBenchmarkNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t t
 
 		start := time.Now()
 		_, err := c.Get().
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithAFT(fluent.NextHop).
 			Send()
 		end := time.Now()

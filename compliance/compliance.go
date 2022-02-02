@@ -50,6 +50,17 @@ func SetElectionID(v uint64) {
 	electionID.Store(v)
 }
 
+// defaultNetworkInstance name is the string name of the default network instance
+// on the server. It can be overridden by tests that have pushed a configuration
+// to a server where they have specified a value for the default network instance.
+var defaultNetworkInstanceName = server.DefaultNetworkInstanceName
+
+// SetDefaultNetworkInstanceName allows an external caler to specify a network
+// instance name to be used for the default network instance.
+func SetDefaultNetworkInstanceName(n string) {
+	defaultNetworkInstanceName = n
+}
+
 // Test describes a test within the compliance library.
 type Test struct {
 	// Fn is the function to be run for a test. Tests must not error if additional
@@ -434,13 +445,13 @@ func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB, 
 func AddIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
 		},
 		func() {
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
 		},
 		func() {
-			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
+			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(42))
 		},
 	}
 
@@ -474,13 +485,13 @@ func AddIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1))
 		},
 		func() {
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
 		},
 		func() {
-			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(42))
+			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(42))
 		},
 	}
 
@@ -524,12 +535,12 @@ func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 		func() {
 			c.Modify().AddEntry(t, fluent.IPv4Entry().
 				WithPrefix("1.1.1.1/32").
-				WithNetworkInstance(server.DefaultNetworkInstanceName).
+				WithNetworkInstance(defaultNetworkInstanceName).
 				WithNextHopGroup(1).
 				WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
 			)
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName).AddNextHop(1, 1))
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(server.DefaultNetworkInstanceName).WithIPAddress("2.2.2.2"))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(defaultNetworkInstanceName).WithIPAddress("2.2.2.2"))
 		},
 	}
 
@@ -571,7 +582,7 @@ func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.Programmin
 				WithPrefix("1.1.1.1/32").
 				WithNetworkInstance("NON-DEFAULT").
 				WithNextHopGroup(1).
-				WithNextHopGroupNetworkInstance(server.DefaultNetworkInstanceName))
+				WithNextHopGroupNetworkInstance(defaultNetworkInstanceName))
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).AddNextHop(1, 1))
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithIPAddress("2.2.2.2"))
 		},
@@ -649,10 +660,10 @@ func doModifyOps(c *fluent.GRIBIClient, t testing.TB, ops []func(), wantACK flue
 func AddUnreferencedNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
 		},
 		func() {
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
 		},
 	}
 
@@ -681,14 +692,14 @@ func ImplicitReplaceNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
 					WithIPAddress("192.0.2.1"))
 		},
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
 					WithIPAddress("192.0.2.2"))
 		},
@@ -726,27 +737,27 @@ func ImplicitReplaceNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
 					WithIPAddress("192.0.2.1"))
 
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(2).
 					WithIPAddress("192.0.2.2"))
 
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().
 					WithID(1).
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					AddNextHop(1, 1))
 		},
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().
 					WithID(1).
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					AddNextHop(2, 1))
 		},
 	}
@@ -795,39 +806,39 @@ func ImplicitReplaceIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
 					WithIPAddress("192.0.2.1"))
 
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(2).
 					WithIPAddress("192.0.2.1"))
 
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().
 					WithID(1).
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					AddNextHop(1, 1))
 
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().
 					WithID(2).
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					AddNextHop(2, 1))
 
 			c.Modify().AddEntry(t,
 				fluent.IPv4Entry().
 					WithPrefix("1.0.0.0/8").
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithNextHopGroup(1))
 		},
 		func() {
 			c.Modify().AddEntry(t,
 				fluent.IPv4Entry().
 					WithPrefix("1.0.0.0/8").
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithNextHopGroup(2))
 		},
 	}
@@ -892,7 +903,7 @@ func ReplaceMissingNH(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 		func() {
 			c.Modify().ReplaceEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(42))
 		},
 	}
@@ -916,12 +927,12 @@ func ReplaceMissingNHG(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			// Make sure that our replace does not get rejected because of a missing reference.
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(42))
 
 			c.Modify().ReplaceEntry(t,
 				fluent.NextHopGroupEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithID(42).
 					AddNextHop(42, 1))
 		},
@@ -929,7 +940,7 @@ func ReplaceMissingNHG(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			// Remove the NH we added.
 			c.Modify().DeleteEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(42))
 		},
 	}
@@ -969,18 +980,18 @@ func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) 
 
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(42))
 
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithID(42).
 					AddNextHop(42, 1))
 
 			c.Modify().ReplaceEntry(t,
 				fluent.IPv4Entry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithPrefix("192.0.2.1/32").
 					WithNextHopGroup(42))
 		},
@@ -989,12 +1000,12 @@ func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) 
 
 			c.Modify().DeleteEntry(t,
 				fluent.NextHopGroupEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithID(42))
 
 			c.Modify().DeleteEntry(t,
 				fluent.NextHopEntry().
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(42))
 		},
 	}
@@ -1062,10 +1073,10 @@ func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) 
 // baseTopologyEntries creates the entries shown in the diagram above using
 // separate ModifyRequests for each entry.
 func baseTopologyEntries(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
-	c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
-	c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(2).WithIPAddress("192.0.2.5"))
-	c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(1).AddNextHop(1, 1).AddNextHop(2, 1))
-	c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(1))
+	c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
+	c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(2).WithIPAddress("192.0.2.5"))
+	c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(1).AddNextHop(1, 1).AddNextHop(2, 1))
+	c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(1))
 }
 
 // validateBaseEntries checks that the entries in the base topology are correctly
@@ -1111,10 +1122,10 @@ func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, wantACK fluent.Pro
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
-				fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"),
-				fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(2).WithIPAddress("192.0.2.5"),
-				fluent.NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(1).AddNextHop(1, 1).AddNextHop(2, 1),
-				fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(1))
+				fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"),
+				fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(2).WithIPAddress("192.0.2.5"),
+				fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(1).AddNextHop(1, 1).AddNextHop(2, 1),
+				fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(1))
 		},
 	}
 
@@ -1142,7 +1153,7 @@ func DeleteIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t 
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
-			c.Modify().DeleteEntry(t, fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName))
+			c.Modify().DeleteEntry(t, fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(defaultNetworkInstanceName))
 		},
 	}
 	res := doModifyOps(c, t, ops, wantACK, false)
@@ -1164,7 +1175,7 @@ func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, wantACK fluent.Programmin
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
-			c.Modify().DeleteEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName))
+			c.Modify().DeleteEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName))
 		},
 	}
 	res := doModifyOps(c, t, ops, wantACK, false)
@@ -1185,10 +1196,10 @@ func DeleteReferencedNHFailure(c *fluent.GRIBIClient, wantACK fluent.Programming
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 		func() {
-			c.Modify().DeleteEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(server.DefaultNetworkInstanceName))
+			c.Modify().DeleteEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(defaultNetworkInstanceName))
 		},
 		func() {
-			c.Modify().DeleteEntry(t, fluent.NextHopEntry().WithIndex(2).WithNetworkInstance(server.DefaultNetworkInstanceName))
+			c.Modify().DeleteEntry(t, fluent.NextHopEntry().WithIndex(2).WithNetworkInstance(defaultNetworkInstanceName))
 		},
 	}
 	res := doModifyOps(c, t, ops, wantACK, false)
@@ -1212,8 +1223,8 @@ func DeleteNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 		func() { baseTopologyEntries(c, t) },
 		func() {
 			c.Modify().DeleteEntry(t,
-				fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName),
-				fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName),
+				fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(defaultNetworkInstanceName),
+				fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName),
 			)
 		},
 	}
@@ -1245,10 +1256,10 @@ func DeleteNextHop(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 		func() { baseTopologyEntries(c, t) },
 		func() {
 			c.Modify().DeleteEntry(t,
-				fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(server.DefaultNetworkInstanceName),
-				fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(server.DefaultNetworkInstanceName),
-				fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(server.DefaultNetworkInstanceName),
-				fluent.NextHopEntry().WithIndex(2).WithNetworkInstance(server.DefaultNetworkInstanceName),
+				fluent.IPv4Entry().WithPrefix("1.0.0.0/8").WithNetworkInstance(defaultNetworkInstanceName),
+				fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName),
+				fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(defaultNetworkInstanceName),
+				fluent.NextHopEntry().WithIndex(2).WithNetworkInstance(defaultNetworkInstanceName),
 			)
 		},
 	}
@@ -1296,16 +1307,16 @@ func AddDeleteAdd(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 			c.Modify().AddEntry(t,
 				fluent.IPv4Entry().
 					WithPrefix("2.0.0.0/8").
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithNextHopGroup(1))
 			c.Modify().DeleteEntry(t,
 				fluent.IPv4Entry().
 					WithPrefix("2.0.0.0/8").
-					WithNetworkInstance(server.DefaultNetworkInstanceName))
+					WithNetworkInstance(defaultNetworkInstanceName))
 			c.Modify().AddEntry(t,
 				fluent.IPv4Entry().
 					WithPrefix("2.0.0.0/8").
-					WithNetworkInstance(server.DefaultNetworkInstanceName).
+					WithNetworkInstance(defaultNetworkInstanceName).
 					WithNextHopGroup(1))
 		},
 	}

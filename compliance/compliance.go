@@ -363,6 +363,26 @@ var (
 			Fn:        TestElectionIDAsZero,
 			ShortName: "Sending election ID as zero",
 		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(FlushFromMasterDefaultNI, fluent.InstalledInRIB),
+			ShortName: "Flush of all entries in default NI by elected master",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(FlushFromNonMasterDefaultNI, fluent.InstalledInRIB),
+			ShortName: "Flush from non-elected master is ignored",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(FlushFromOverrideDefaultNI, fluent.InstalledInRIB),
+			ShortName: "Flush from client overriding election is honoured",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(FlushOfSpecificNI, fluent.InstalledInRIB),
+			ShortName: "Flush to specific network instance is honoured",
+		},
 	}}
 )
 

@@ -1048,7 +1048,7 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, *aft.Afts_Ipv4
 		return false, nil, errors.New("invalid RIB structure, nil")
 	}
 
-	de := r.r.Afts.Ipv4Entry[e.GetPrefix()]
+	de := r.retrieveIPv4(e.GetPrefix())
 	if de == nil {
 		// Return a failure for this operation, but there was no error.
 		return false, nil, nil
@@ -1077,6 +1077,30 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, *aft.Afts_Ipv4
 	return true, de, nil
 }
 
+// retrieveIPv4 returns the specified IPv4Entry, holding a lock
+// on the RIBHolder as it does so.
+func (r *RIBHolder) retrieveIPv4(prefix string) *aft.Afts_Ipv4Entry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.r.Afts.Ipv4Entry[prefix]
+}
+
+// locklessDeleteIPv4 removes the next-hop with the specified prefix without
+// holding a lock on the RIB. The caller MUST hold the relevant lock. It returns
+// an error if the entry cannot be found.
+func (r *RIBHolder) locklessDeleteIPv4(prefix string) error {
+	de := r.r.Afts.Ipv4Entry[prefix]
+	if de == nil {
+		return fmt.Errorf("cannot find prefix %s", prefix)
+	}
+
+	delete(r.r.Afts.Ipv4Entry, prefix)
+	if r.postChangeHook != nil {
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
+	}
+	return nil
+}
+
 // DeleteNextHopGroup removes the NextHopGroup entry e from the RIB. It returns a boolean
 // indicating whether the entry has been removed, a copy of the next-hop-group that was
 // removed and an error if the message cannot be parsed. Per the gRIBI specification, the
@@ -1094,7 +1118,7 @@ func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, *af
 		return false, nil, errors.New("invalid NHG ID 0")
 	}
 
-	de := r.r.Afts.NextHopGroup[e.GetId()]
+	de := r.retrieveNHG(e.GetId())
 	if de == nil {
 		// Return failed for this case, sicne there was no such NHG.
 		return false, nil, fmt.Errorf("cannot delete NHG ID %d since it does not exist", e.GetId())
@@ -1123,6 +1147,30 @@ func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, *af
 	return true, de, nil
 }
 
+// retrieveNHG returns the specified NextHopGroup, holding a lock
+// on the RIBHolder as it does so.
+func (r *RIBHolder) retrieveNHG(id uint64) *aft.Afts_NextHopGroup {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.r.Afts.NextHopGroup[id]
+}
+
+// locklessDeleteNHG removes the next-hop-group with the specified ID without
+// holding a lock on the RIB. The caller MUST hold the relevant lock. It returns
+// an error if the entry cannot be found.
+func (r *RIBHolder) locklessDeleteNHG(id uint64) error {
+	de := r.r.Afts.NextHopGroup[id]
+	if de == nil {
+		return fmt.Errorf("cannot find NHG %d", id)
+	}
+
+	delete(r.r.Afts.NextHopGroup, id)
+	if r.postChangeHook != nil {
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
+	}
+	return nil
+}
+
 // DeleteNextHop removes the NextHop entry e from the RIB. It returns a boolean
 // indicating whether the entry has been removed, a copy of the group that was
 // removed and an error if the message cannot be parsed. Per the gRIBI specification,
@@ -1140,7 +1188,7 @@ func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, *aft.Afts_Nex
 		return false, nil, fmt.Errorf("invalid NH index 0")
 	}
 
-	de := r.r.Afts.NextHop[e.GetIndex()]
+	de := r.retrieveNH(e.GetIndex())
 	if de == nil {
 		// we mark that this operation failed, because there was no such entry.
 		return false, nil, fmt.Errorf("cannot delete NH Index %d since it does not exist", e.GetIndex())
@@ -1173,6 +1221,30 @@ func (r *RIBHolder) doDeleteIPv4(pfx string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.r.Afts.Ipv4Entry, pfx)
+}
+
+// retrieveNH returns the specified NextHop, holding a lock
+// on the RIBHolder as it does so.
+func (r *RIBHolder) retrieveNH(index uint64) *aft.Afts_NextHop {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.r.Afts.NextHop[index]
+}
+
+// locklessDeleteNH removes the next-hop with the specified index without
+// holding a lock on the RIB. The caller MUST hold the relevant lock. It returns
+// an error if the entry cannot be found.
+func (r *RIBHolder) locklessDeleteNH(index uint64) error {
+	de := r.r.Afts.NextHop[index]
+	if de == nil {
+		return fmt.Errorf("cannot find NH %d", index)
+	}
+
+	delete(r.r.Afts.NextHop, index)
+	if r.postChangeHook != nil {
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
+	}
+	return nil
 }
 
 // doDeleteNHG deletes the NHG with index idx from the NHG AFTm holding the shortest
@@ -1224,6 +1296,7 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey, explicitRepla
 			return false, false, err
 		}
 		if !ok {
+			log.Infof("NextHopGroup %d added to pending queue - not installed", e.GetId())
 			// Entry is not valid for installation right now.
 			return false, false, nil
 		}
@@ -1616,10 +1689,9 @@ func (f *FlushErr) Error() string {
 	return b.String()
 }
 
-// Flush cleanly removes all entries from the specified RIB. This is achieved
-// through sequentially calling DeleteXXX for the entries that are contained within
-// it. We use the Delete methods to ensure that we call all relevant hooks as changes
-// are made.
+// Flush cleanly removes all entries from the specified RIB. A lock on the RIB
+// is held throughout the flush so that no entries can be added during this
+// time.
 //
 // The order of operations for deletes considers the dependency tree:
 //  - we remove IPv4 entries first, since these are never referenced counted,
@@ -1632,16 +1704,15 @@ func (f *FlushErr) Error() string {
 func (r *RIBHolder) Flush() error {
 	errs := []error{}
 
+	// We hold a long lock during the Flush operation since we need to ensure that
+	// no entries are added to it whilst we remove all entries. This also means
+	// that we use the locklessDeleteXXX functions below to avoid deadlocking.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	for p := range r.r.Afts.Ipv4Entry {
-		ok, _, err := r.DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{
-			Prefix: p,
-		})
-		if err != nil {
+		if err := r.locklessDeleteIPv4(p); err != nil {
 			errs = append(errs, err)
-			continue
-		}
-		if !ok {
-			errs = append(errs, fmt.Errorf("cannot delete IPv4 entry %s", p))
 		}
 	}
 
@@ -1653,14 +1724,8 @@ func (r *RIBHolder) Flush() error {
 	}
 
 	delNHG := func(id uint64) {
-		ok, _, err := r.DeleteNextHopGroup(&aftpb.Afts_NextHopGroupKey{
-			Id: id,
-		})
-		if err != nil {
+		if err := r.locklessDeleteNHG(id); err != nil {
 			errs = append(errs, err)
-		}
-		if !ok {
-			errs = append(errs, fmt.Errorf("cannot delete NHG ID %d", id))
 		}
 	}
 
@@ -1673,15 +1738,8 @@ func (r *RIBHolder) Flush() error {
 	}
 
 	for n := range r.r.Afts.NextHop {
-		ok, _, err := r.DeleteNextHop(&aftpb.Afts_NextHopKey{
-			Index: n,
-		})
-		if err != nil {
+		if err := r.locklessDeleteNH(n); err != nil {
 			errs = append(errs, err)
-			continue
-		}
-		if !ok {
-			errs = append(errs, fmt.Errorf("cannot delete NH entry %d", n))
 		}
 	}
 

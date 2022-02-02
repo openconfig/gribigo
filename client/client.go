@@ -1059,3 +1059,43 @@ func (c *Client) Get(ctx context.Context, sreq *spb.GetRequest) (*spb.GetRespons
 	}
 	return result, nil
 }
+
+// Flush implements the gRIBI Flush RPC.
+func (c *Client) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushResponse, error) {
+	if req == nil {
+		return nil, errors.New("flush request cannot be nil")
+	}
+
+	switch t := req.GetNetworkInstance().(type) {
+	case *spb.FlushRequest_All:
+	case *spb.FlushRequest_Name:
+		if t.Name == "" {
+			return nil, errors.New("cannot specify an empty network instance name")
+		}
+	}
+
+	if req.GetElection() == nil && c.state.ElectionID != nil {
+		return nil, fmt.Errorf("must specify an election behaviour for a SINGLE_PRIMARY client")
+	}
+
+	switch t := req.GetElection().(type) {
+	case *spb.FlushRequest_Id:
+		if c.state.SessParams == nil || c.state.SessParams.Redundancy != spb.SessionParameters_SINGLE_PRIMARY {
+			return nil, fmt.Errorf("invalid to specify an election ID when the client is not in SINGLE_PRIMARY mode")
+		}
+	case *spb.FlushRequest_Override:
+		if !t.Override {
+			return nil, fmt.Errorf("invalid override value set to false")
+		}
+		if c.state.SessParams == nil || c.state.SessParams.Redundancy != spb.SessionParameters_SINGLE_PRIMARY {
+			return nil, fmt.Errorf("cannot override election ID when the client is in SINGLE_PRIMARY mode")
+		}
+	}
+
+	res, err := c.c.Flush(ctx, req)
+	if err != nil {
+		// return err directly here so that the client can receive the type of error.
+		return nil, err
+	}
+	return res, nil
+}

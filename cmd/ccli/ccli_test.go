@@ -89,14 +89,6 @@ func TestCompliance(t *testing.T) {
 		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(flagCred{}))
 	}
 
-	ctx := context.Background()
-	conn, err := grpc.DialContext(ctx, *addr, dialOpts...)
-	if err != nil {
-		t.Fatalf("Could not dial gRPC: %v", err)
-	}
-	defer conn.Close()
-	stub := spb.NewGRIBIClient(conn)
-
 	for _, tt := range compliance.TestSuite {
 		if skip := *skipFIBACK; skip && tt.In.RequiresFIBACK {
 			continue
@@ -107,12 +99,35 @@ func TestCompliance(t *testing.T) {
 		}
 
 		t.Run(tt.In.ShortName, func(t *testing.T) {
+
+			ctx := context.Background()
+			conn, err := grpc.DialContext(ctx, *addr, dialOpts...)
+			if err != nil {
+				t.Fatalf("Could not dial gRPC: %v", err)
+			}
+			defer conn.Close()
+			stub := spb.NewGRIBIClient(conn)
+
+			secondConn, err := grpc.DialContext(ctx, *addr, dialOpts...)
+			if err != nil {
+				t.Fatalf("could not dial gRPC for second client: %v", err)
+			}
+			defer secondConn.Close()
+			scStub := spb.NewGRIBIClient(conn)
+
 			c := fluent.NewClient()
 			c.Connection().WithStub(stub)
 
+			sc := fluent.NewClient()
+			sc.Connection().WithStub(scStub)
+
+			opts := []compliance.TestOpt{
+				compliance.SecondClient(sc),
+			}
+
 			if tt.FatalMsg != "" {
 				if got := negtest.ExpectFatal(t, func(t testing.TB) {
-					tt.In.Fn(c, t)
+					tt.In.Fn(c, t, opts...)
 				}); !strings.Contains(got, tt.FatalMsg) {
 					t.Fatalf("Did not get expected fatal error, got: %s, want: %s", got, tt.FatalMsg)
 				}
@@ -121,17 +136,14 @@ func TestCompliance(t *testing.T) {
 
 			if tt.ErrorMsg != "" {
 				if got := negtest.ExpectError(t, func(t testing.TB) {
-					tt.In.Fn(c, t)
+					tt.In.Fn(c, t, opts...)
 				}); !strings.Contains(got, tt.ErrorMsg) {
 					t.Fatalf("Did not get expected error, got: %s, want: %s", got, tt.ErrorMsg)
 				}
 			}
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
-			tt.In.Fn(c, t)
-
-			// before moving on to the next test, explicitly flush the contents of the gRIBI server's RIB.
-			compliance.FlushServer(c, t)
+			tt.In.Fn(c, t, opts...)
 		})
 	}
 }

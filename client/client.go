@@ -1094,7 +1094,8 @@ func (c *Client) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 
 	res, err := c.c.Flush(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("received error from server, %v", err)
+		// return err directly here so that the client can receive the type of error.
+		return nil, err
 	}
 	return res, nil
 }

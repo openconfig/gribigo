@@ -20,7 +20,6 @@ import (
 	"github.com/openconfig/gribigo/chk"
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/fluent"
-	"github.com/openconfig/gribigo/server"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -30,7 +29,7 @@ import (
 // master's election ID. It validates that no entries remain in the default network
 // instance using the Get RPC.
 func FlushFromMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
-	addFlushEntriesToNI(c, server.DefaultNetworkInstanceName, wantACK, t)
+	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
 
 	// addFlushEntriesToNI increments the election ID so to check with the current value,
 	// we need to subtract one from the current election ID.
@@ -51,7 +50,7 @@ func FlushFromMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 		t.Fatalf("got nil response from flush, got: %v", fr)
 	}
 
-	checkNIHasNEntries(ctx, c, server.DefaultNetworkInstanceName, 0, t)
+	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
 }
 
 // FlushFromOverrideDefaultNI programs a chain of entries into the default NI with the
@@ -59,7 +58,7 @@ func FlushFromMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 // the election ID should be overridden and ensures that entries are removed using the
 // Get RPC.
 func FlushFromOverrideDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
-	addFlushEntriesToNI(c, server.DefaultNetworkInstanceName, wantACK, t)
+	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
 
 	ctx := context.Background()
 	c.Start(ctx, t)
@@ -76,14 +75,14 @@ func FlushFromOverrideDefaultNI(c *fluent.GRIBIClient, wantACK fluent.Programmin
 		t.Fatalf("got nil response from flush, got: %v", fr)
 	}
 
-	checkNIHasNEntries(ctx, c, server.DefaultNetworkInstanceName, 0, t)
+	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
 }
 
 // FlushFromNonMasterDefaultNI sends a Flush to the server using an old election ID
 // and  validates that the programmed chain of entries are not removed form the
 // default NI using the Get RPC.
 func FlushFromNonMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
-	addFlushEntriesToNI(c, server.DefaultNetworkInstanceName, wantACK, t)
+	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
 
 	// addFlushEntriesToNI increments the election ID so to check with the current value,
 	// we need to subtract two to ensure that we are not the current master.
@@ -109,7 +108,7 @@ func FlushFromNonMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.Programmi
 		t.Fatalf("did not get expected error from server, got code: %s (error: %v), want: %s", got, flushErr, want)
 	}
 
-	checkNIHasNEntries(ctx, c, server.DefaultNetworkInstanceName, 3, t)
+	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 3, t)
 }
 
 // FlushOfSpecificNI programs entries into two network-instances, the default and a named
@@ -121,7 +120,7 @@ func FlushOfSpecificNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 
 	vrfName := "TEST-VRF"
 
-	addFlushEntriesToNI(c, server.DefaultNetworkInstanceName, wantACK, t)
+	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
 	addFlushEntriesToNI(c, vrfName, wantACK, t)
 
 	// addFlushEntriesToNI increments the election ID so to check with the current value,
@@ -134,7 +133,7 @@ func FlushOfSpecificNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 
 	fr, err := c.Flush().
 		WithElectionID(curID, 0).
-		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithNetworkInstance(defaultNetworkInstanceName).
 		Send()
 	switch {
 	case err != nil:
@@ -143,7 +142,7 @@ func FlushOfSpecificNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 		t.Fatalf("got nil response from flush, got: %v", fr)
 	}
 
-	checkNIHasNEntries(ctx, c, server.DefaultNetworkInstanceName, 0, t)
+	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
 	checkNIHasNEntries(ctx, c, vrfName, 3, t)
 }
 
@@ -156,7 +155,7 @@ func FlushOfAllNIs(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 
 	vrfName := "TEST-VRF"
 
-	addFlushEntriesToNI(c, server.DefaultNetworkInstanceName, wantACK, t)
+	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
 	addFlushEntriesToNI(c, vrfName, wantACK, t)
 
 	// addFlushEntriesToNI increments the election ID so to check with the current value,
@@ -178,8 +177,24 @@ func FlushOfAllNIs(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 		t.Fatalf("got nil response from flush, got: %v", fr)
 	}
 
-	checkNIHasNEntries(ctx, c, server.DefaultNetworkInstanceName, 0, t)
+	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
 	checkNIHasNEntries(ctx, c, vrfName, 0, t)
+}
+
+// FlushServer flushes all the state on the server, but does not validate it
+// specifically. It can be called from external tests that need to clean up
+// a server between test cases.
+func FlushServer(c *fluent.GRIBIClient, t testing.TB) {
+	ctx := context.Background()
+	c.Start(ctx, t)
+	defer c.Stop(t)
+
+	if _, err := c.Flush().
+		WithElectionOverride().
+		WithAllNetworkInstances().
+		Send(); err != nil {
+		t.Fatalf("could not remove all entries from server, got: %v", err)
+	}
 }
 
 // addFlushEntriesToNI is a helper that programs a chain of IPv4->NHG->NH entries

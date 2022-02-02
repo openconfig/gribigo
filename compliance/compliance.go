@@ -544,8 +544,6 @@ func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			AsResult(),
 		chk.IgnoreOperationID(),
 	)
-
-	// TODO(robjs): add gNMI subscription using generated telemetry library.
 }
 
 // AddIPv4Metadata adds an IPv4 Entry (and its dependencies) with metadata alongside the
@@ -745,9 +743,6 @@ func ImplicitReplaceNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 			WithProgrammingResult(wantACK).
 			AsResult())
 
-	// TODO(robjs): validate that the entry was actually updated - currently this just checks
-	// the gRIBI API logic, but we should validate via AFT telemetry or Get that the RIB was
-	// actually updated.
 }
 
 // ImplicitReplaceNHG performs two add operations for the same NextHopGroup entry, validating that the
@@ -815,8 +810,6 @@ func ImplicitReplaceNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 			WithOperationType(constants.Add).
 			WithProgrammingResult(wantACK).
 			AsResult())
-
-	// TODO(robjs): add validation that the entry was actually updated.
 }
 
 // ImplicitReplaceIPv4Entry performs two add operations for the same NextHopGroup entry, validating that the
@@ -912,8 +905,6 @@ func ImplicitReplaceIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 			WithOperationType(constants.Add).
 			WithProgrammingResult(wantACK).
 			AsResult())
-
-	// TODO(robjs): add validation that the entry was actually updated.
 }
 
 // ReplaceMissingNH validates that an operation for a next-hop entry that does not exist

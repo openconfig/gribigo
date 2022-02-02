@@ -129,6 +129,9 @@ func TestCompliance(t *testing.T) {
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
 			tt.In.Fn(c, t)
+
+			// before moving on to the next test, explicitly flush the contents of the gRIBI server's RIB.
+			compliance.FlushServer(c, t)
 		})
 	}
 }

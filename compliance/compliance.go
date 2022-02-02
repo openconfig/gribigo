@@ -939,7 +939,8 @@ func ReplaceMissingNHG(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
 					WithNetworkInstance(defaultNetworkInstanceName).
-					WithIndex(42))
+					WithIndex(42).
+					WithIPAddress("1.1.1.1"))
 
 			c.Modify().ReplaceEntry(t,
 				fluent.NextHopGroupEntry().

@@ -257,7 +257,7 @@ var (
 	}, {
 		In: Test{
 			Fn:        ReplaceMissingIPv4Entry,
-			ShortName: "Ensure failure for a IPv4 entry that does not exist",
+			ShortName: "Ensure failure for an IPv4 entry that does not exist",
 		},
 	}, {
 		In: Test{
@@ -989,11 +989,11 @@ func ReplaceMissingNHG(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	ops := []func(){
 		func() {
-
 			c.Modify().AddEntry(t,
 				fluent.NextHopEntry().
 					WithNetworkInstance(defaultNetworkInstanceName).
-					WithIndex(42))
+					WithIndex(42).
+					WithIPAddress("2.2.2.2"))
 
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().
@@ -1128,7 +1128,7 @@ func validateBaseTopologyEntries(res []*client.OpResult, wantACK fluent.Programm
 }
 
 // AddIPv4ToMultipleNHsSingleRequest is the internal implementation of the single request installation
-// of a IPv4Entry referencing a NHG that contains multiple NHs. It uses the wantACK parameter to determine the
+// of an IPv4Entry referencing a NHG that contains multiple NHs. It uses the wantACK parameter to determine the
 // type of acknowledgement that is expected from the server.
 func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	ops := []func(){

@@ -23,7 +23,6 @@ import (
 	"github.com/openconfig/gribigo/chk"
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/fluent"
-	"github.com/openconfig/gribigo/server"
 	"google.golang.org/grpc/codes"
 )
 
@@ -90,7 +89,7 @@ func clientAB(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) (*fluent.GRI
 // opts must contain a SecondClient option such that there is a second stub to be used to
 // the device.
 func TestDifferingElectionParameters(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
-	defer electionID.Inc()
+	defer electionID.Add(2)
 
 	clientA, clientB := clientAB(c, t, opts...)
 
@@ -101,18 +100,18 @@ func TestDifferingElectionParameters(c *fluent.GRIBIClient, t testing.TB, opts .
 	defer clientA.Stop(t)
 	clientA.StartSending(context.Background(), t)
 
-	clientB.Connection().WithInitialElectionID(electionID.Load(), 1).
+	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)
+	if err := clientAErr; err != nil {
+		t.Fatalf("did not expect error from server in client A, got: %v", err)
+	}
+
+	clientB.Connection().WithInitialElectionID(electionID.Load()+1, 0).
 		WithRedundancyMode(fluent.ElectedPrimaryClient).
 		WithPersistence().
 		WithFIBACK()
 	clientB.Start(context.Background(), t)
 	defer clientB.Stop(t)
 	clientB.StartSending(context.Background(), t)
-
-	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)
-	if err := clientAErr; err != nil {
-		t.Fatalf("did not expect error from server in client A, got: %v", err)
-	}
 
 	clientBErr := awaitTimeout(context.Background(), clientB, t, time.Minute)
 	if err := clientBErr; err == nil {
@@ -183,29 +182,30 @@ func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts 
 // TestMatchingElectionParameters tests whether two clients can connect with the same
 // parameters and the connection is succesful.
 func TestMatchingElectionParameters(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
-	defer electionID.Inc()
+	defer electionID.Add(2)
 
 	clientA, clientB := clientAB(c, t, opts...)
 
-	connect := func(cc *fluent.GRIBIClient) func(testing.TB) {
-		cc.Connection().WithInitialElectionID(electionID.Load(), 0).
-			WithRedundancyMode(fluent.ElectedPrimaryClient).
-			WithPersistence().
-			WithFIBACK()
-		cc.Start(context.Background(), t)
-		cc.StartSending(context.Background(), t)
-		// Ensure that the next client uses a higher election ID.
-		electionID.Inc()
-		return cc.Stop
-	}
-
-	defer connect(clientA)(t)
-	defer connect(clientB)(t)
+	clientA.Connection().WithInitialElectionID(electionID.Load(), 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence().
+		WithFIBACK()
+	clientA.Start(context.Background(), t)
+	clientA.StartSending(context.Background(), t)
+	defer clientA.Stop(t)
 
 	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)
 	if err := clientAErr; err != nil {
 		t.Fatalf("did not expect error from server in client A, got: %v", err)
 	}
+
+	clientB.Connection().WithInitialElectionID(electionID.Load()+1, 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence().
+		WithFIBACK()
+	clientB.Start(context.Background(), t)
+	clientB.StartSending(context.Background(), t)
+	defer clientB.Stop(t)
 
 	clientBErr := awaitTimeout(context.Background(), clientB, t, time.Minute)
 	if err := clientBErr; err != nil {
@@ -219,13 +219,13 @@ func TestMatchingElectionParameters(c *fluent.GRIBIClient, t testing.TB, opts ..
 
 	chk.HasResult(t, clientA.Results(t),
 		fluent.OperationResult().
-			WithCurrentServerElectionID(electionID.Load()-2, 0).
+			WithCurrentServerElectionID(electionID.Load(), 0).
 			AsResult(),
 	)
 
 	chk.HasResult(t, clientB.Results(t),
 		fluent.OperationResult().
-			WithCurrentServerElectionID(electionID.Load()-1, 0).
+			WithCurrentServerElectionID(electionID.Load()+1, 0).
 			AsResult(),
 	)
 }
@@ -245,6 +245,11 @@ func TestLowerElectionID(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
 	clientA.StartSending(context.Background(), t)
 	defer clientA.Stop(t)
 
+	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)
+	if err := clientAErr; err != nil {
+		t.Fatalf("did not expect error from server in client A, got: %v", err)
+	}
+
 	clientB.Connection().WithInitialElectionID(electionID.Load(), 0).
 		WithRedundancyMode(fluent.ElectedPrimaryClient).
 		WithPersistence().
@@ -252,11 +257,6 @@ func TestLowerElectionID(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
 	clientB.Start(context.Background(), t)
 	clientB.StartSending(context.Background(), t)
 	defer clientB.Stop(t)
-
-	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)
-	if err := clientAErr; err != nil {
-		t.Fatalf("did not expect error from server in client A, got: %v", err)
-	}
 
 	clientBErr := awaitTimeout(context.Background(), clientB, t, time.Minute)
 	if err := clientBErr; err != nil {
@@ -298,20 +298,20 @@ func TestActiveAfterMasterChange(c *fluent.GRIBIClient, t testing.TB, opts ...Te
 
 	clientA.Modify().AddEntry(t,
 		fluent.NextHopEntry().
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithIndex(1).
 			WithIPAddress("192.0.2.1"))
 
 	clientA.Modify().AddEntry(t,
 		fluent.NextHopGroupEntry().
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithID(42).
 			AddNextHop(1, 1))
 
 	clientA.Modify().AddEntry(t,
 		fluent.IPv4Entry().
 			WithPrefix("1.1.1.1/32").
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithNextHopGroup(42))
 
 	if err := awaitTimeout(context.Background(), clientA, t, time.Minute); err != nil {
@@ -347,7 +347,7 @@ func TestActiveAfterMasterChange(c *fluent.GRIBIClient, t testing.TB, opts ...Te
 
 	chkIPv4 := func(c *fluent.GRIBIClient, t testing.TB, errDetails string) {
 		gr, err := c.Get().
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithAFT(fluent.IPv4).
 			Send()
 
@@ -359,7 +359,7 @@ func TestActiveAfterMasterChange(c *fluent.GRIBIClient, t testing.TB, opts ...Te
 
 		chk.GetResponseHasEntries(t, gr,
 			fluent.IPv4Entry().
-				WithNetworkInstance(server.DefaultNetworkInstanceName).
+				WithNetworkInstance(defaultNetworkInstanceName).
 				WithNextHopGroup(42).
 				WithPrefix("1.1.1.1/32"),
 		)
@@ -394,16 +394,16 @@ func TestNewElectionIDNoUpdateRejected(c *fluent.GRIBIClient, t testing.TB, _ ..
 	entries := []fluent.GRIBIEntry{
 		fluent.NextHopEntry().
 			WithIndex(1).
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithElectionID(electionID.Load()+1, 0),
 		fluent.NextHopGroupEntry().
 			WithID(1).
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			AddNextHop(1, 1).
 			WithElectionID(electionID.Load()+1, 0),
 		fluent.IPv4Entry().
 			WithPrefix("1.1.1.1/32").
-			WithNetworkInstance(server.DefaultNetworkInstanceName).
+			WithNetworkInstance(defaultNetworkInstanceName).
 			WithElectionID(electionID.Load()+1, 0),
 	}
 
@@ -455,7 +455,7 @@ func TestIncElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 
 	c.Modify().AddEntry(t, fluent.
 		NextHopEntry().
-		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithNetworkInstance(defaultNetworkInstanceName).
 		WithIndex(1).
 		WithIPAddress("1.1.1.1"))
 
@@ -490,7 +490,7 @@ func TestIncElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	// check old ID is not honoured.
 	c.Modify().AddEntry(t, fluent.
 		NextHopEntry().
-		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithNetworkInstance(defaultNetworkInstanceName).
 		WithIndex(1).
 		WithIPAddress("2.2.2.2").
 		WithElectionID(electionID.Load()-1, 0))
@@ -511,7 +511,7 @@ func TestIncElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	// check new ID is honoured.
 	c.Modify().AddEntry(t, fluent.
 		NextHopEntry().
-		WithNetworkInstance(server.DefaultNetworkInstanceName).
+		WithNetworkInstance(defaultNetworkInstanceName).
 		WithIndex(1).
 		WithIPAddress("3.3.3.3").
 		WithElectionID(electionID.Load(), 0))
@@ -601,8 +601,8 @@ func TestSameElectionIDFromTwoClients(c *fluent.GRIBIClient, t testing.TB, opts 
 		t.Fatalf("did not expect error from server in client B, got: %v", err)
 	}
 
-	clientA.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))
-	clientB.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))
+	clientA.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))
+	clientB.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(10).WithIPAddress("192.0.2.1"))
 
 	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)
 	if err := clientAErr; err != nil {

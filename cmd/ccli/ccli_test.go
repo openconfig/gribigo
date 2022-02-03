@@ -27,6 +27,7 @@ import (
 	"github.com/openconfig/gribigo/compliance"
 	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/negtest"
+	"github.com/openconfig/gribigo/server"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -42,6 +43,7 @@ var (
 	initialElectionID = flag.Uint("initial_electionid", 0, "initial election ID to be used")
 	skipFIBACK        = flag.Bool("skip_fiback", false, "skip tests that rely on FIB ACK")
 	skipSrvReorder    = flag.Bool("skip_reordering", false, "skip tests that rely on server side transaction reordering")
+	defaultNIName     = flag.String("default_ni_name", server.DefaultNetworkInstanceName, "default network instance name to be used for the server")
 )
 
 // flagCred implements credentials.PerRPCCredentials by populating the
@@ -71,6 +73,8 @@ func TestCompliance(t *testing.T) {
 		compliance.SetElectionID(uint64(*initialElectionID))
 	}
 
+	compliance.SetDefaultNetworkInstanceName(*defaultNIName)
+
 	dialOpts := []grpc.DialOption{grpc.WithBlock()}
 	if *insecure {
 		dialOpts = append(dialOpts, grpc.WithInsecure())
@@ -85,14 +89,6 @@ func TestCompliance(t *testing.T) {
 		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(flagCred{}))
 	}
 
-	ctx := context.Background()
-	conn, err := grpc.DialContext(ctx, *addr, dialOpts...)
-	if err != nil {
-		t.Fatalf("Could not dial gRPC: %v", err)
-	}
-	defer conn.Close()
-	stub := spb.NewGRIBIClient(conn)
-
 	for _, tt := range compliance.TestSuite {
 		if skip := *skipFIBACK; skip && tt.In.RequiresFIBACK {
 			continue
@@ -103,12 +99,35 @@ func TestCompliance(t *testing.T) {
 		}
 
 		t.Run(tt.In.ShortName, func(t *testing.T) {
+
+			ctx := context.Background()
+			conn, err := grpc.DialContext(ctx, *addr, dialOpts...)
+			if err != nil {
+				t.Fatalf("Could not dial gRPC: %v", err)
+			}
+			defer conn.Close()
+			stub := spb.NewGRIBIClient(conn)
+
+			secondConn, err := grpc.DialContext(ctx, *addr, dialOpts...)
+			if err != nil {
+				t.Fatalf("could not dial gRPC for second client: %v", err)
+			}
+			defer secondConn.Close()
+			scStub := spb.NewGRIBIClient(conn)
+
 			c := fluent.NewClient()
 			c.Connection().WithStub(stub)
 
+			sc := fluent.NewClient()
+			sc.Connection().WithStub(scStub)
+
+			opts := []compliance.TestOpt{
+				compliance.SecondClient(sc),
+			}
+
 			if tt.FatalMsg != "" {
 				if got := negtest.ExpectFatal(t, func(t testing.TB) {
-					tt.In.Fn(c, t)
+					tt.In.Fn(c, t, opts...)
 				}); !strings.Contains(got, tt.FatalMsg) {
 					t.Fatalf("Did not get expected fatal error, got: %s, want: %s", got, tt.FatalMsg)
 				}
@@ -117,14 +136,14 @@ func TestCompliance(t *testing.T) {
 
 			if tt.ErrorMsg != "" {
 				if got := negtest.ExpectError(t, func(t testing.TB) {
-					tt.In.Fn(c, t)
+					tt.In.Fn(c, t, opts...)
 				}); !strings.Contains(got, tt.ErrorMsg) {
 					t.Fatalf("Did not get expected error, got: %s, want: %s", got, tt.ErrorMsg)
 				}
 			}
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
-			tt.In.Fn(c, t)
+			tt.In.Fn(c, t, opts...)
 		})
 	}
 }

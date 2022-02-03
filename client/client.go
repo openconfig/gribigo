@@ -1088,7 +1088,7 @@ func (c *Client) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 			return nil, fmt.Errorf("invalid override value set to false")
 		}
 		if c.state.SessParams == nil || c.state.SessParams.Redundancy != spb.SessionParameters_SINGLE_PRIMARY {
-			return nil, fmt.Errorf("cannot override election ID when the client is in SINGLE_PRIMARY mode")
+			return nil, fmt.Errorf("cannot override election ID when the client is in ALL_PRIMARY mode")
 		}
 	}
 

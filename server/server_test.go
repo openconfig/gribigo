@@ -2046,6 +2046,11 @@ func TestFlush(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cannot create server, error: %v", err)
 		}
+		addEntry(s.masterRIB, DefaultNetworkInstanceName)
+		for _, n := range names {
+			addEntry(s.masterRIB, n)
+		}
+
 		return s.Server
 	}
 
@@ -2087,6 +2092,7 @@ func TestFlush(t *testing.T) {
 		},
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 3,
+			"one":                      0,
 		},
 	}, {
 		desc:     "don't remove any entries",

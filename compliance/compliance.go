@@ -50,15 +50,28 @@ func SetElectionID(v uint64) {
 	electionID.Store(v)
 }
 
-// defaultNetworkInstance name is the string name of the default network instance
-// on the server. It can be overridden by tests that have pushed a configuration
-// to a server where they have specified a value for the default network instance.
-var defaultNetworkInstanceName = server.DefaultNetworkInstanceName
+var (
+	// defaultNetworkInstance name is the string name of the default network instance
+	// on the server. It can be overridden by tests that have pushed a configuration
+	// to a server where they have specified a value for the default network instance.
+	defaultNetworkInstanceName = server.DefaultNetworkInstanceName
 
-// SetDefaultNetworkInstanceName allows an external caler to specify a network
+	// vrfName is a name of a non-default VRF that exists on the server. It can be
+	// overriden by tests that have pushed a configuration to the server where they
+	// have created a name that is not the specified string.
+	vrfName = "NON-DEFAULT-VRF"
+)
+
+// SetDefaultNetworkInstanceName allows an external caller to specify a network
 // instance name to be used for the default network instance.
 func SetDefaultNetworkInstanceName(n string) {
 	defaultNetworkInstanceName = n
+}
+
+// SetNonDefaultVRFName allows an external caller to specify a network-instance
+// name to be used as a non-default Layer 3 VRF.
+func SetNonDefaultVRFName(n string) {
+	vrfName = n
 }
 
 // Test describes a test within the compliance library.
@@ -596,15 +609,12 @@ func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 // AddIPv4EntryDifferentNINHG adds an IPv4 entry that references a next-hop-group within a
 // different network instance, and validates that the entry is successfully installed.
 func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
-	// TODO(robjs): Server needs to be initialised with >1 VRF.
-	t.Skip()
-
 	defer flushServer(c, t)
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t, fluent.IPv4Entry().
 				WithPrefix("1.1.1.1/32").
-				WithNetworkInstance("NON-DEFAULT").
+				WithNetworkInstance(vrfName).
 				WithNextHopGroup(1).
 				WithNextHopGroupNetworkInstance(defaultNetworkInstanceName))
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).AddNextHop(1, 1))

@@ -51,6 +51,7 @@ func FlushFromMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
+	flushServer(c, t)
 }
 
 // FlushFromOverrideDefaultNI programs a chain of entries into the default NI with the
@@ -76,6 +77,7 @@ func FlushFromOverrideDefaultNI(c *fluent.GRIBIClient, wantACK fluent.Programmin
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
+	flushServer(c, t)
 }
 
 // FlushFromNonMasterDefaultNI sends a Flush to the server using an old election ID
@@ -109,6 +111,7 @@ func FlushFromNonMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.Programmi
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 3, t)
+	flushServer(c, t)
 }
 
 // FlushOfSpecificNI programs entries into two network-instances, the default and a named
@@ -144,6 +147,7 @@ func FlushOfSpecificNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
 	checkNIHasNEntries(ctx, c, vrfName, 3, t)
+	flushServer(c, t)
 }
 
 // FlushOfAllNIs programs entries in two network instances - the default and a
@@ -179,12 +183,13 @@ func FlushOfAllNIs(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
 	checkNIHasNEntries(ctx, c, vrfName, 0, t)
+	flushServer(c, t)
 }
 
 // FlushServer flushes all the state on the server, but does not validate it
-// specifically. It can be called from external tests that need to clean up
+// specifically. It can be called from tests that need to clean up
 // a server between test cases.
-func FlushServer(c *fluent.GRIBIClient, t testing.TB) {
+func flushServer(c *fluent.GRIBIClient, t testing.TB) {
 	ctx := context.Background()
 	c.Start(ctx, t)
 	defer c.Stop(t)

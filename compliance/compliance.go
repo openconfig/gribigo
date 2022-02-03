@@ -311,57 +311,57 @@ var (
 	}, {
 		In: Test{
 			Fn:        TestUnsupportedElectionParams,
-			ShortName: "Ensure that election ID is not accepted in ALL_PRIMARY mode",
+			ShortName: "Election - Ensure that election ID is not accepted in ALL_PRIMARY mode",
 		},
 	}, {
 		In: Test{
 			Fn:        TestDifferingElectionParameters,
-			ShortName: "Ensure that a client with mismatched parameters is rejected",
+			ShortName: "Election - Ensure that a client with mismatched parameters is rejected",
 		},
 	}, {
 		In: Test{
 			Fn:        TestMatchingElectionParameters,
-			ShortName: "Matching parameters for two clients in election",
+			ShortName: "Election - Matching parameters for two clients in election",
 		},
 	}, {
 		In: Test{
 			Fn:        TestParamsDifferFromOtherClients,
-			ShortName: "Ensure client with differing parameters is rejected",
+			ShortName: "Election - Ensure client with differing parameters is rejected",
 		},
 	}, {
 		In: Test{
 			Fn:        TestLowerElectionID,
-			ShortName: "Lower election ID from new client",
+			ShortName: "Election - Lower election ID from new client",
 		},
 	}, {
 		In: Test{
 			Fn:        TestActiveAfterMasterChange,
-			ShortName: "Active entries after new master connects",
+			ShortName: "Election - Active entries after new master connects",
 		},
 	}, {
 		In: Test{
 			Fn:        TestNewElectionIDNoUpdateRejected,
-			ShortName: "Unannounced master operations are rejected",
+			ShortName: "Election - Unannounced master operations are rejected",
 		},
 	}, {
 		In: Test{
 			Fn:        TestIncElectionID,
-			ShortName: "Incrementing election ID is honoured, and older IDs are rejected",
+			ShortName: "Election - Incrementing election ID is honoured, and older IDs are rejected",
 		},
 	}, {
 		In: Test{
 			Fn:        TestDecElectionID,
-			ShortName: "Decrementing election ID is ignored",
+			ShortName: "Election - Decrementing election ID is ignored",
 		},
 	}, {
 		In: Test{
 			Fn:        TestSameElectionIDFromTwoClients,
-			ShortName: "Sending same election ID from two clients",
+			ShortName: "Election - Sending same election ID from two clients",
 		},
 	}, {
 		In: Test{
 			Fn:        TestElectionIDAsZero,
-			ShortName: "Sending election ID as zero",
+			ShortName: "Election - Sending election ID as zero",
 		},
 	}, {
 		In: Test{
@@ -498,6 +498,8 @@ func AddIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 			WithProgrammingResult(wantACK).
 			AsResult(),
 	)
+
+	flushServer(c, t)
 }
 
 // addIPv4Random adds an IPv4 Entry, shuffling the order of the entries, and
@@ -544,6 +546,8 @@ func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			AsResult(),
 		chk.IgnoreOperationID(),
 	)
+
+	flushServer(c, t)
 }
 
 // AddIPv4Metadata adds an IPv4 Entry (and its dependencies) with metadata alongside the
@@ -587,6 +591,8 @@ func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			WithProgrammingResult(fluent.InstalledInRIB).
 			AsResult(),
 		chk.IgnoreOperationID())
+
+	flushServer(c, t)
 }
 
 // AddIPv4EntryDifferentNINHG adds an IPv4 entry that references a next-hop-group within a
@@ -631,6 +637,8 @@ func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.Programmin
 			WithOperationType(constants.Add).
 			AsResult(),
 		chk.IgnoreOperationID())
+
+	flushServer(c, t)
 }
 
 // doModifyOps performs the series of operations in ops using the context
@@ -701,6 +709,8 @@ func AddUnreferencedNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.Programmi
 			WithProgrammingResult(wantACK).
 			AsResult(),
 	)
+
+	flushServer(c, t)
 }
 
 // ImplicitReplaceNH performs two add operations for the same NextHop entry, validating that the
@@ -743,6 +753,7 @@ func ImplicitReplaceNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 			WithProgrammingResult(wantACK).
 			AsResult())
 
+	flushServer(c, t)
 }
 
 // ImplicitReplaceNHG performs two add operations for the same NextHopGroup entry, validating that the
@@ -810,6 +821,8 @@ func ImplicitReplaceNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 			WithOperationType(constants.Add).
 			WithProgrammingResult(wantACK).
 			AsResult())
+
+	flushServer(c, t)
 }
 
 // ImplicitReplaceIPv4Entry performs two add operations for the same NextHopGroup entry, validating that the
@@ -905,6 +918,7 @@ func ImplicitReplaceIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 			WithOperationType(constants.Add).
 			WithProgrammingResult(wantACK).
 			AsResult())
+	flushServer(c, t)
 }
 
 // ReplaceMissingNH validates that an operation for a next-hop entry that does not exist
@@ -928,6 +942,7 @@ func ReplaceMissingNH(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			WithOperationType(constants.Replace).
 			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult())
+	flushServer(c, t)
 }
 
 // ReplaceMissingNHG validates that an operation for a next-hop-group entry that does not exist
@@ -982,6 +997,7 @@ func ReplaceMissingNHG(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			WithOperationType(constants.Delete).
 			WithProgrammingResult(fluent.InstalledInRIB).
 			AsResult())
+	flushServer(c, t)
 }
 
 // ReplaceMissingIPv4Entry validates that an operation for an IPv4 entry that does not exist
@@ -1063,6 +1079,7 @@ func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) 
 			WithOperationType(constants.Delete).
 			WithProgrammingResult(fluent.InstalledInRIB).
 			AsResult())
+	flushServer(c, t)
 }
 
 // For the following tests, the base topology shown below is assumed.
@@ -1142,6 +1159,7 @@ func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, wantACK fluent.Pro
 	}
 
 	validateBaseTopologyEntries(doModifyOps(c, t, ops, wantACK, false), wantACK, t)
+	flushServer(c, t)
 }
 
 // AddIPv4ToMultipleNHsMultipleRequests creates an IPv4 entry which references a NHG containing
@@ -1179,6 +1197,7 @@ func DeleteIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t 
 			AsResult(),
 		chk.IgnoreOperationID(),
 	)
+	flushServer(c, t)
 }
 
 // DeleteReferencedNHGFailure attempts to delete a NextHopGroup entry that is referenced
@@ -1200,6 +1219,7 @@ func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, wantACK fluent.Programmin
 			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult(),
 		chk.IgnoreOperationID())
+	flushServer(c, t)
 }
 
 // DeleteReferencedNHFailure attempts to delete a NH entry that is referened from the RIB
@@ -1226,6 +1246,7 @@ func DeleteReferencedNHFailure(c *fluent.GRIBIClient, wantACK fluent.Programming
 				AsResult(),
 			chk.IgnoreOperationID())
 	}
+	flushServer(c, t)
 }
 
 // DeleteNextHopGroup attempts to delete a NHG entry that is not referenced and expects
@@ -1259,6 +1280,7 @@ func DeleteNextHopGroup(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 			WithProgrammingResult(wantACK).
 			AsResult(),
 		chk.IgnoreOperationID())
+	flushServer(c, t)
 }
 
 // DeleteNextHop attempts to delete the NH entries within the base topology and expects
@@ -1304,6 +1326,7 @@ func DeleteNextHop(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 			WithProgrammingResult(wantACK).
 			AsResult(),
 		chk.IgnoreOperationID())
+	flushServer(c, t)
 }
 
 // AddDeleteAdd tests that when a single ModifyRequest contains a sequence of operations,
@@ -1359,4 +1382,5 @@ func AddDeleteAdd(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 			WithProgrammingResult(wantACK).
 			AsResult(),
 		chk.IgnoreOperationID())
+	flushServer(c, t)
 }

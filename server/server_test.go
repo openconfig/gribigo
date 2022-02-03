@@ -68,7 +68,11 @@ func TestNewClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			s := New(nil)
+			s, err := New(nil)
+			if err != nil {
+				t.Fatalf("cannot create server, got error: %v", err)
+			}
+
 			for i, c := range tt.inIDs {
 				wantErr := tt.wantClientErrCode[i]
 				gotErr := s.newClient(c)
@@ -713,16 +717,25 @@ func TestDoModify(t *testing.T) {
 		inOps    []*spb.AFTOperation
 		wantMsg  []*expectedMsg
 	}{{
-		desc:     "unknown client",
-		inServer: New(),
-		inCID:    "unknown",
+		desc: "unknown client",
+		inServer: func() *Server {
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, %v", err)
+			}
+			return s
+		}(),
+		inCID: "unknown",
 		wantMsg: []*expectedMsg{{
 			errCode: codes.Internal,
 		}},
 	}, {
 		desc: "unsupported default parameters",
 		inServer: func() *Server {
-			s := New()
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
 			s.cs["testclient"] = &clientState{}
 			return s
 		}(),
@@ -734,7 +747,10 @@ func TestDoModify(t *testing.T) {
 	}, {
 		desc: "not expecting election ID",
 		inServer: func() *Server {
-			s := New()
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
 			s.cs["testclient"] = &clientState{
 				params: &clientParams{
 					ExpectElecID: false,
@@ -750,7 +766,10 @@ func TestDoModify(t *testing.T) {
 	}, {
 		desc: "not expecting persist=false",
 		inServer: func() *Server {
-			s := New()
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
 			s.cs["testclient"] = &clientState{
 				params: &clientParams{
 					Persist: false,
@@ -766,7 +785,10 @@ func TestDoModify(t *testing.T) {
 	}, {
 		desc: "add to default network instance",
 		inServer: func() *Server {
-			s := New()
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
 			s.cs["testclient"] = &clientState{
 				params: &clientParams{
 					Persist:      true,
@@ -803,7 +825,10 @@ func TestDoModify(t *testing.T) {
 	}, {
 		desc: "add to unknown network instance",
 		inServer: func() *Server {
-			s := New()
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
 			s.cs["testclient"] = &clientState{
 				params: &clientParams{
 					Persist:      true,
@@ -842,7 +867,10 @@ func TestDoModify(t *testing.T) {
 	}, {
 		desc: "invalid operation",
 		inServer: func() *Server {
-			s := New()
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
 			s.cs["testclient"] = &clientState{
 				params: &clientParams{
 					Persist:      true,
@@ -878,7 +906,10 @@ func TestDoModify(t *testing.T) {
 	}, {
 		desc: "two valid operations",
 		inServer: func() *Server {
-			s := New()
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
 			s.cs["testclient"] = &clientState{
 				params: &clientParams{
 					Persist:      true,
@@ -933,7 +964,10 @@ func TestDoModify(t *testing.T) {
 	}, {
 		desc: "ipv4 to one next-hop group containing two next-hops",
 		inServer: func() *Server {
-			s := New()
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
 			s.cs["testclient"] = &clientState{
 				params: &clientParams{
 					Persist:      true,
@@ -1553,7 +1587,10 @@ func TestDoGet(t *testing.T) {
 	// populated.
 	serverAllRIBs := func() *Server {
 		// use a nil function to check the RIB so that addEntry always succeeds
-		s := New(DisableRIBCheckFn())
+		s, err := New(DisableRIBCheckFn())
+		if err != nil {
+			t.Fatalf("cannot create server, %v", err)
+		}
 
 		if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
 			Id:              1,
@@ -1632,12 +1669,13 @@ func TestDoGet(t *testing.T) {
 			},
 		},
 		inServer: func() *Server {
-			s := New(DisableRIBCheckFn())
 			vrfNames := []string{"ONE", "EIGHT", "FOUR"}
-			for _, v := range vrfNames {
-				if err := s.masterRIB.AddNetworkInstance(v); err != nil {
-					panic(fmt.Sprintf("cannot build testcase, %v", err))
-				}
+			s, err := New(
+				DisableRIBCheckFn(),
+				WithVRFs(vrfNames),
+			)
+			if err != nil {
+				t.Fatalf("cannot create server, err: %v", err)
 			}
 
 			prefixes := []string{"1.1.1.1/32", "8.8.8.8/32", "8.8.4.4/32"}
@@ -1770,7 +1808,11 @@ func TestDoGet(t *testing.T) {
 
 			s := tt.inServer
 			if tt.inServer == nil {
-				s = New()
+				var err error
+				s, err = New()
+				if err != nil {
+					t.Fatalf("cannot create server, %v", err)
+				}
 			}
 			go s.doGet(tt.inReq, msgCh, doneCh, stopCh, errCh)
 
@@ -1978,7 +2020,10 @@ func TestFlush(t *testing.T) {
 
 	// singleNI creates a server with the default network instance with one entry.
 	singleNI := func() *Server {
-		s := NewFake()
+		s, err := NewFake()
+		if err != nil {
+			t.Fatalf("cannot create server, error: %v", err)
+		}
 		r := rib.New(DefaultNetworkInstanceName)
 		addEntry(r, DefaultNetworkInstanceName)
 		s.InjectRIB(r)
@@ -1997,16 +2042,10 @@ func TestFlush(t *testing.T) {
 	// other network instances specified, it contains one entry per network
 	// instance.
 	multiNI := func(names []string) *Server {
-		s := NewFake()
-		r := rib.New(DefaultNetworkInstanceName)
-		addEntry(r, DefaultNetworkInstanceName)
-		for _, n := range names {
-			if err := r.AddNetworkInstance(n); err != nil {
-				t.Fatalf("cannot add network instance %s to server, %v", n, err)
-			}
-			addEntry(r, n)
+		s, err := NewFake(WithVRFs(names))
+		if err != nil {
+			t.Fatalf("cannot create server, error: %v", err)
 		}
-		s.InjectRIB(r)
 		return s.Server
 	}
 

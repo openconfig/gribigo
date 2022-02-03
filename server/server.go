@@ -198,10 +198,10 @@ func DisableRIBCheckFn() *disableCheckFn { return &disableCheckFn{} }
 // disableCheckFn is the internal implementation of DisableRIBCheckFn.
 type disableCheckFn struct{}
 
-// isRIBOpt implements the RIBOpt interface
+// isServerOpt implements the ServerOpt interface
 func (*disableCheckFn) isServerOpt() {}
 
-// hasDisableCheckFn checks whether the RIBOpt slice supplied contains the
+// hasDisableCheckFn checks whether the ServerOpt slice supplied contains the
 // disableCheckFn option.
 func hasDisableCheckFn(opt []ServerOpt) bool {
 	for _, o := range opt {
@@ -212,8 +212,33 @@ func hasDisableCheckFn(opt []ServerOpt) bool {
 	return false
 }
 
+// WithVRFs specifies that the server should be initialised with the L3VRF
+// network instances specified in the names list. Each is created in the
+// server's RIB such that it can be referenced.
+func WithVRFs(names []string) *withVRFs { return &withVRFs{names: names} }
+
+// withVRFs is the internal implementation of WithVRFs that can be read by the
+// server.
+type withVRFs struct {
+	names []string
+}
+
+// isServerOpt implements the ServerOpt interface.
+func (*withVRFs) isServerOpt() {}
+
+// hasWithVRFs checks whether the ServerOpt slice supplied contains the withVRFs
+// option and returns it if so.
+func hasWithVRFs(opt []ServerOpt) []string {
+	for _, o := range opt {
+		if v, ok := o.(*withVRFs); ok {
+			return v.names
+		}
+	}
+	return nil
+}
+
 // New creates a new gRIBI server.
-func New(opt ...ServerOpt) *Server {
+func New(opt ...ServerOpt) (*Server, error) {
 	ribOpt := []rib.RIBOpt{}
 	if hasDisableCheckFn(opt) {
 		ribOpt = append(ribOpt, rib.DisableRIBCheckFn())
@@ -234,7 +259,15 @@ func New(opt ...ServerOpt) *Server {
 		s.masterRIB.SetResolvedEntryHook(v.fn)
 	}
 
-	return s
+	if vrfs := hasWithVRFs(opt); vrfs != nil {
+		for _, n := range vrfs {
+			if err := s.masterRIB.AddNetworkInstance(n); err != nil {
+				return nil, fmt.Errorf("cannot create network instance %s, %v", n, err)
+			}
+		}
+	}
+
+	return s, nil
 }
 
 // Modify implements the gRIBI Modify RPC.
@@ -1054,9 +1087,12 @@ type FakeServer struct {
 // NewFake returns a new version of the fake server. This implementation wraps
 // the Server implementation with functions to insert specific state into
 // the server without a need to use the public APIs.
-func NewFake(opt ...ServerOpt) *FakeServer {
-	s := New(opt...)
-	return &FakeServer{Server: s}
+func NewFake(opt ...ServerOpt) (*FakeServer, error) {
+	s, err := New(opt...)
+	if err != nil {
+		return nil, err
+	}
+	return &FakeServer{Server: s}, nil
 }
 
 // InjectRIB allows a client to inject a RIB into the server as though it was

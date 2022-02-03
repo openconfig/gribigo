@@ -22,7 +22,10 @@ import (
 	"github.com/openconfig/gribigo/device"
 	"github.com/openconfig/gribigo/fluent"
 	"github.com/openconfig/gribigo/negtest"
+	"github.com/openconfig/gribigo/ocrt"
+	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
+	"github.com/openconfig/ygot/ygot"
 )
 
 func TestCompliance(t *testing.T) {
@@ -35,8 +38,16 @@ func TestCompliance(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 
 			defer cancel()
-			d, err := device.New(ctx, creds)
 
+			cfg := &ocrt.Device{}
+			cfg.GetOrCreateNetworkInstance(server.DefaultNetworkInstanceName).Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
+			cfg.GetOrCreateNetworkInstance(vrfName).Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_L3VRF
+			jsonConfig, err := ygot.Marshal7951(cfg)
+			if err != nil {
+				t.Fatalf("cannot create configuration for device, error: %v", err)
+			}
+
+			d, err := device.New(ctx, creds, device.DeviceConfig(jsonConfig))
 			if err != nil {
 				t.Fatalf("cannot start server, %v", err)
 			}

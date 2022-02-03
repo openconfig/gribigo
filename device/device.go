@@ -142,22 +142,28 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 	d := &Device{}
 
 	jcfg := optDeviceCfg(opts)
+	dev := &ocrt.Device{}
 	switch jcfg {
 	case nil:
-		dev := &ocrt.Device{}
-		dev.GetOrCreateNetworkInstance("DEFAULT").Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
-		sr, err := sysrib.NewSysRIB(dev)
-		if err != nil {
-			return nil, fmt.Errorf("cannot build system RIB, %v", err)
-		}
-		d.sysRIB = sr
+		dev.GetOrCreateNetworkInstance(server.DefaultNetworkInstanceName).Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
 	default:
-		sr, err := sysrib.NewSysRIBFromJSON(jcfg)
-		if err != nil {
-			return nil, fmt.Errorf("cannot build system RIB, %v", err)
+		if err := ocrt.Unmarshal(jcfg, dev); err != nil {
+			return nil, fmt.Errorf("cannot unmarshal JSON configuration, %v", err)
 		}
-		d.sysRIB = sr
 	}
+
+	networkInstances := []string{}
+	for name, ni := range dev.NetworkInstance {
+		if ni.Type == ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_L3VRF {
+			networkInstances = append(networkInstances, name)
+		}
+	}
+
+	sr, err := sysrib.NewSysRIB(dev)
+	if err != nil {
+		return nil, fmt.Errorf("cannot build system RIB, %v", err)
+	}
+	d.sysRIB = sr
 
 	ribHookfn := func(o constants.OpType, ts int64, ni string, data ygot.GoStruct) {
 		_, _, _ = o, ni, data
@@ -215,6 +221,7 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 	gRIBIStop, err := d.startgRIBI(ctx, gr.host, gr.port, creds,
 		server.WithPostChangeRIBHook(ribHookfn),
 		server.WithRIBResolvedEntryHook(ribAddfn),
+		server.WithVRFs(networkInstances),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("cannot start gRIBI server, %v", err)
@@ -282,11 +289,14 @@ func optTLSCreds(opts []DevOpt) *tlsCreds {
 func (d *Device) startgRIBI(ctx context.Context, host string, port int, creds *tlsCreds, opt ...server.ServerOpt) (func(), error) {
 	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
-		return nil, fmt.Errorf("cannot create gRIBI server, %v", err)
+		return nil, fmt.Errorf("cannot create gRPC server for gRIBI, %v", err)
 	}
 
 	s := grpc.NewServer(grpc.Creds(creds.c))
-	ts := server.New(opt...)
+	ts, err := server.New(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create gRIBI server, %v", err)
+	}
 	spb.RegisterGRIBIServer(s, ts)
 	d.gribiAddr = l.Addr().String()
 	d.gribiSrv = ts

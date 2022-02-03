@@ -119,11 +119,7 @@ func FlushFromNonMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.Programmi
 // L3VRF. It subsequently issues a Flush RPC and ensures that entries that are within the
 // flushed network instance (the default) are removed, but the others are preserved.
 func FlushOfSpecificNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
-	// TODO(robjs): we need to initialise the server with >1 network instance.
-	t.Skip()
 	defer flushServer(c, t)
-
-	vrfName := "TEST-VRF"
 
 	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
 	addFlushEntriesToNI(c, vrfName, wantACK, t)

@@ -1062,7 +1062,10 @@ func TestGet(t *testing.T) {
 				t.Fatalf("cannot load TLS credentials, got err: %v", err)
 			}
 			srv := grpc.NewServer(grpc.Creds(creds))
-			s := server.NewFake(server.DisableRIBCheckFn())
+			s, err := server.NewFake(server.DisableRIBCheckFn())
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
 
 			s.InjectRIB(nr)
 
@@ -1314,9 +1317,12 @@ func TestFlush(t *testing.T) {
 				t.Fatalf("cannot load TLS credentials, got err: %v", err)
 			}
 			srv := grpc.NewServer(grpc.Creds(creds))
-			s := server.NewFake(
+			s, err := server.NewFake(
 				server.DisableRIBCheckFn(),
 			)
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
 
 			s.InjectRIB(rib.New(server.DefaultNetworkInstanceName))
 			if tt.inRIB != nil {

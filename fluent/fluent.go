@@ -441,12 +441,12 @@ func (g *gRIBIModify) ReplaceEntry(t testing.TB, entries ...GRIBIEntry) *gRIBIMo
 // UpdateElectionID updates the election ID on the gRIBI Modify channel using value provided.
 // The election ID is a uint128 made up of concatenating the low and high uint64 values provided.
 func (g *gRIBIModify) UpdateElectionID(t testing.TB, low, high uint64) *gRIBIModify {
-	g.parent.c.Q(&spb.ModifyRequest{
-		ElectionId: &spb.Uint128{
-			Low:  low,
-			High: high,
-		},
-	})
+	eid := &spb.Uint128{
+		Low:  low,
+		High: high,
+	}
+	g.parent.currentElectionID = eid
+	g.parent.c.Q(&spb.ModifyRequest{ElectionId: eid})
 	return g
 }
 

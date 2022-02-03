@@ -214,7 +214,7 @@ func (g *GRIBIClient) Start(ctx context.Context, t testing.TB) {
 func (g *GRIBIClient) Stop(t testing.TB) {
 	g.c.StopSending()
 	if err := g.c.Close(); err != nil {
-		t.Fatalf("cannot disconnect from server, %v", err)
+		log.Infof("cannot disconnect from server, %v", err)
 	}
 }
 

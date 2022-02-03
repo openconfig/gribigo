@@ -29,6 +29,7 @@ import (
 // master's election ID. It validates that no entries remain in the default network
 // instance using the Get RPC.
 func FlushFromMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
 	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
 
 	// addFlushEntriesToNI increments the election ID so to check with the current value,
@@ -51,7 +52,6 @@ func FlushFromMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
-	flushServer(c, t)
 }
 
 // FlushFromOverrideDefaultNI programs a chain of entries into the default NI with the
@@ -59,6 +59,7 @@ func FlushFromMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 // the election ID should be overridden and ensures that entries are removed using the
 // Get RPC.
 func FlushFromOverrideDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
 	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
 
 	ctx := context.Background()
@@ -77,13 +78,13 @@ func FlushFromOverrideDefaultNI(c *fluent.GRIBIClient, wantACK fluent.Programmin
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
-	flushServer(c, t)
 }
 
 // FlushFromNonMasterDefaultNI sends a Flush to the server using an old election ID
 // and  validates that the programmed chain of entries are not removed form the
 // default NI using the Get RPC.
 func FlushFromNonMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
 	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
 
 	// addFlushEntriesToNI increments the election ID so to check with the current value,
@@ -111,7 +112,6 @@ func FlushFromNonMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.Programmi
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 3, t)
-	flushServer(c, t)
 }
 
 // FlushOfSpecificNI programs entries into two network-instances, the default and a named
@@ -120,6 +120,7 @@ func FlushFromNonMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.Programmi
 func FlushOfSpecificNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	// TODO(robjs): we need to initialise the server with >1 network instance.
 	t.Skip()
+	defer flushServer(c, t)
 
 	vrfName := "TEST-VRF"
 
@@ -147,7 +148,6 @@ func FlushOfSpecificNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
 	checkNIHasNEntries(ctx, c, vrfName, 3, t)
-	flushServer(c, t)
 }
 
 // FlushOfAllNIs programs entries in two network instances - the default and a
@@ -156,6 +156,7 @@ func FlushOfSpecificNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 func FlushOfAllNIs(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	// TODO(robjs): we need to initialise the server with >1 network instance.
 	t.Skip()
+	defer flushServer(c, t)
 
 	vrfName := "TEST-VRF"
 
@@ -183,7 +184,6 @@ func FlushOfAllNIs(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
 	checkNIHasNEntries(ctx, c, vrfName, 0, t)
-	flushServer(c, t)
 }
 
 // FlushServer flushes all the state on the server, but does not validate it

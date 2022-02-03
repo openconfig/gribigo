@@ -31,6 +31,7 @@ import (
 
 // GetNH validates that an installed next-hop is returned via the Get RPC.
 func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -69,11 +70,12 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithIndex(1).
 			WithIPAddress("1.1.1.1"))
-	flushServer(c, t)
+
 }
 
 // GetNHG validates that an installed next-hop-group is returned via the Get RPC.
 func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -129,11 +131,12 @@ func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.T
 			WithID(1).
 			AddNextHop(1, 1),
 	)
-	flushServer(c, t)
 }
 
 // GetIPv4 validates that an installed IPv4 entry is returned via the Get RPC.
 func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -205,12 +208,13 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 			WithNextHopGroup(1).
 			WithPrefix("42.42.42.42/32"),
 	)
-	flushServer(c, t)
 }
 
 // GetIPv4Chain validates that Get for all AFTs returns the chain of IPv4Entry->NHG->NH
 // required.
 func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t,
@@ -290,7 +294,6 @@ func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 			WithIndex(1).
 			WithIPAddress("1.1.1.1"),
 	)
-	flushServer(c, t)
 }
 
 // indexAsIPv4 converts a uint32 index into an IP address, using the baseSlashEight argument as the
@@ -351,6 +354,7 @@ func GetBenchmarkNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t t
 			Send()
 		end := time.Now()
 		if err != nil {
+			flushServer(c, t)
 			t.Fatalf("got unexpected error, %v", err)
 		}
 

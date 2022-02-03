@@ -1040,15 +1040,8 @@ func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
 		}
 	}
 
-	if o, ok := e.(*spb.FlushRequest_Override); ok {
-		if !o.Override {
-			// TODO(robjs): see github.com/openconfig/gribi/pull/30, if this change is made
-			// then we will not need this check here.
-			return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "election ID was not overridden"), &spb.FlushResponseError{
-				Status: spb.FlushResponseError_NOT_PRIMARY,
-			})
-		}
-	}
+	// By default, override must have been specified as Election was non-nil.
+	// return successfully.
 	return nil
 }
 

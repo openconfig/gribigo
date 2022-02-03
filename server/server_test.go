@@ -1886,28 +1886,14 @@ func TestCheckFlushRequest(t *testing.T) {
 			},
 		},
 	}, {
-		desc: "override specified as true",
+		desc: "override specified",
 		inServer: &Server{
 			curElecID: &spb.Uint128{High: 0, Low: 3},
 		},
 		inRequest: &spb.FlushRequest{
 			Election: &spb.FlushRequest_Override{
-				Override: true,
+				Override: &spb.Empty{},
 			},
-		},
-	}, {
-		desc: "override specified as false",
-		inServer: &Server{
-			curElecID: &spb.Uint128{High: 0, Low: 3},
-		},
-		inRequest: &spb.FlushRequest{
-			Election: &spb.FlushRequest_Override{
-				Override: false,
-			},
-		},
-		wantErrCode: codes.FailedPrecondition,
-		wantErrDetails: &spb.FlushResponseError{
-			Status: spb.FlushResponseError_NOT_PRIMARY,
 		},
 	}}
 
@@ -2120,7 +2106,7 @@ func TestFlush(t *testing.T) {
 				All: &spb.Empty{},
 			},
 			Election: &spb.FlushRequest_Override{
-				Override: true,
+				Override: &spb.Empty{},
 			},
 		},
 		wantEntriesInNI: map[string]int{

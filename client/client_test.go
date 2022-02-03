@@ -1205,7 +1205,7 @@ func TestFlush(t *testing.T) {
 		}(),
 		inReq: &spb.FlushRequest{
 			Election: &spb.FlushRequest_Override{
-				Override: true,
+				Override: &spb.Empty{},
 			},
 			NetworkInstance: &spb.FlushRequest_All{
 				All: &spb.Empty{},
@@ -1278,24 +1278,6 @@ func TestFlush(t *testing.T) {
 		},
 		wantErr: true,
 	}, {
-		desc: "override set to false",
-		inClient: func() *Client {
-			c, err := New()
-			if err != nil {
-				t.Fatalf("can't initialise client, %v", err)
-			}
-			return c
-		}(),
-		inReq: &spb.FlushRequest{
-			NetworkInstance: &spb.FlushRequest_Name{
-				Name: server.DefaultNetworkInstanceName,
-			},
-			Election: &spb.FlushRequest_Override{
-				Override: false,
-			},
-		},
-		wantErr: true,
-	}, {
 		desc: "override with non-SINGLE_PRIMARY client",
 		inClient: func() *Client {
 			c, err := New()
@@ -1309,7 +1291,7 @@ func TestFlush(t *testing.T) {
 				Name: server.DefaultNetworkInstanceName,
 			},
 			Election: &spb.FlushRequest_Override{
-				Override: true,
+				Override: &spb.Empty{},
 			},
 		},
 		wantErr: true,

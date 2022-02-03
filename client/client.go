@@ -1078,15 +1078,12 @@ func (c *Client) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 		return nil, fmt.Errorf("must specify an election behaviour for a SINGLE_PRIMARY client")
 	}
 
-	switch t := req.GetElection().(type) {
+	switch req.GetElection().(type) {
 	case *spb.FlushRequest_Id:
 		if c.state.SessParams == nil || c.state.SessParams.Redundancy != spb.SessionParameters_SINGLE_PRIMARY {
 			return nil, fmt.Errorf("invalid to specify an election ID when the client is not in SINGLE_PRIMARY mode")
 		}
 	case *spb.FlushRequest_Override:
-		if !t.Override {
-			return nil, fmt.Errorf("invalid override value set to false")
-		}
 		if c.state.SessParams == nil || c.state.SessParams.Redundancy != spb.SessionParameters_SINGLE_PRIMARY {
 			return nil, fmt.Errorf("cannot override election ID when the client is in ALL_PRIMARY mode")
 		}

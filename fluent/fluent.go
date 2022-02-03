@@ -369,7 +369,7 @@ func (g *gRIBIFlush) WithElectionID(low, high uint64) *gRIBIFlush {
 // status on the gRIBI server when calling the Flush operation.
 func (g *gRIBIFlush) WithElectionOverride() *gRIBIFlush {
 	g.pb.Election = &spb.FlushRequest_Override{
-		Override: true,
+		Override: &spb.Empty{},
 	}
 	return g
 }

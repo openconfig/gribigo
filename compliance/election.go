@@ -68,6 +68,8 @@ func TestUnsupportedElectionParams(c *fluent.GRIBIClient, t testing.TB, _ ...Tes
 	)
 }
 
+// clientAB is a helper function that returns the first and optional second client
+// from a slice of TestOpts supplied to the test.
 func clientAB(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) (*fluent.GRIBIClient, *fluent.GRIBIClient) {
 	t.Helper()
 	var clientA, clientB *fluent.GRIBIClient
@@ -572,8 +574,8 @@ func TestDecElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 }
 
 // TestSameElectionIDFromTwoClients is the test to start 2 clients with same election ID.
-// The client A should be master and client B should be non-master. The AFT operation
-// from the client B should be rejected.
+// The client A should be master initially, and be replaced with client B when it connects.
+// The AFT operation from client A should be rejected.
 func TestSameElectionIDFromTwoClients(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
 	defer electionID.Inc()
 
@@ -634,14 +636,14 @@ func TestSameElectionIDFromTwoClients(c *fluent.GRIBIClient, t testing.TB, opts 
 	chk.HasResult(t, clientA.Results(t),
 		fluent.OperationResult().
 			WithOperationID(1).
-			WithProgrammingResult(fluent.InstalledInRIB).
+			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult(),
 	)
 
 	chk.HasResult(t, clientB.Results(t),
 		fluent.OperationResult().
 			WithOperationID(1).
-			WithProgrammingResult(fluent.ProgrammingFailed).
+			WithProgrammingResult(fluent.InstalledInRIB).
 			AsResult(),
 	)
 }

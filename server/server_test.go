@@ -493,10 +493,11 @@ func TestIsNewMaster(t *testing.T) {
 		inExist:    &spb.Uint128{High: 4, Low: 2},
 		wantMaster: true,
 	}, {
-		desc:      "equal",
-		inCand:    &spb.Uint128{High: 42, Low: 42},
-		inExist:   &spb.Uint128{High: 42, Low: 42},
-		wantEqual: true,
+		desc:       "equal",
+		inCand:     &spb.Uint128{High: 42, Low: 42},
+		inExist:    &spb.Uint128{High: 42, Low: 42},
+		wantMaster: true,
+		wantEqual:  true,
 	}, {
 		desc:       "nil input",
 		inCand:     &spb.Uint128{High: 4242, Low: 4242},

@@ -630,8 +630,11 @@ func isNewMaster(cand, exist *spb.Uint128) (bool, bool, error) {
 	if cand.Low > exist.Low {
 		return true, false, nil
 	}
+
+	// Per comments in gribi.proto - if the two values are equal, then we accept the new
+	// candidate as the master, this allows for reconnections.
 	if cand.High == exist.High && cand.Low == exist.Low {
-		return false, true, nil
+		return true, true, nil
 	}
 	// TODO(robjs): currently this is not specified in the spec, since this is the
 	// election ID going backwards, but it seems like we could not return an error here

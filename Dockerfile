@@ -3,7 +3,6 @@ FROM golang:1
 WORKDIR /go/src/app
 COPY . .
 
-RUN go get -d -v ./...
-RUN go install -v ./...
+RUN go get -d -v ./... && go install -v ./...
 
-CMD ["rtr"]
+ENTRYPOINT ["/go/bin/rtr"]

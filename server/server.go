@@ -631,8 +631,8 @@ func isNewMaster(cand, exist *spb.Uint128) (bool, bool, error) {
 		return true, false, nil
 	}
 
-  // Per comments in gribi.proto - if the two values are equal, then we accept the new
-  // candidate as the master, this allows for reconnections.
+	// Per comments in gribi.proto - if the two values are equal, then we accept the new
+	// candidate as the master, this allows for reconnections.
 	if cand.High == exist.High && cand.Low == exist.Low {
 		return true, true, nil
 	}

@@ -612,13 +612,13 @@ func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.Programmin
 	defer flushServer(c, t)
 	ops := []func(){
 		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("2.2.2.2"))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(1).AddNextHop(1, 1))
 			c.Modify().AddEntry(t, fluent.IPv4Entry().
 				WithPrefix("1.1.1.1/32").
 				WithNetworkInstance(vrfName).
 				WithNextHopGroup(1).
 				WithNextHopGroupNetworkInstance(defaultNetworkInstanceName))
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).AddNextHop(1, 1))
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithIPAddress("2.2.2.2"))
 		},
 	}
 

@@ -617,8 +617,14 @@ func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.Programmin
 				WithNetworkInstance(vrfName).
 				WithNextHopGroup(1).
 				WithNextHopGroupNetworkInstance(defaultNetworkInstanceName))
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).AddNextHop(1, 1))
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithIPAddress("2.2.2.2"))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().
+				WithNetworkInstance(defaultNetworkInstanceName).
+				WithID(1).
+				AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().
+				WithNetworkInstance(defaultNetworkInstanceName).
+				WithIndex(1).
+				WithIPAddress("2.2.2.2"))
 		},
 	}
 

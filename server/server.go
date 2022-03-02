@@ -759,7 +759,15 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 	for _, o := range ops {
 		ni := o.GetNetworkInstance()
 		if ni == "" {
-			ni = DefaultNetworkInstanceName
+			resCh <- &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     o.Id,
+					Status: spb.AFTResult_FAILED,
+					ErrorDetails: &spb.AFTErrorDetails{
+						ErrorMessage: `invalid network instance name "" specified`,
+					},
+				}},
+			}
 		}
 		if _, ok := s.masterRIB.NetworkInstanceRIB(ni); !ok {
 			// this is an unknown network instance, we should not return
@@ -770,6 +778,9 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 				Result: []*spb.AFTResult{{
 					Id:     o.Id,
 					Status: spb.AFTResult_FAILED,
+					ErrorDetails: &spb.AFTErrorDetails{
+						ErrorMessage: fmt.Sprintf(`unknown network instance "%s" specified`, ni),
+					},
 				}},
 			}
 			return

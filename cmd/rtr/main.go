@@ -30,7 +30,7 @@ import (
 var (
 	certFile = flag.String("cert", "", "cert is the path to the server TLS certificate file")
 	keyFile  = flag.String("key", "", "key is the path to the server TLS key file")
-	gnmi     = flag.String("gnmi", ":9001", "gnmi listen address")
+	gnmi     = flag.String("gnmi", ":9339", "gnmi listen address")
 	gribi    = flag.String("gribi", ":9002", "gribi listen address")
 )
 

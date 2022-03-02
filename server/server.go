@@ -829,28 +829,21 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 		return nil, status.Newf(codes.Internal, "invalid nil operation received").Err()
 	}
 
-	if r == nil {
-		return nil, status.New(codes.Internal, "invalid RIB state").Err()
-	}
-
-	// Callers should have rewritten to the default network instance name, but
-	// we ensure that we are tolerant to this error by also rewriting. This helps
-	// with testing also.
-	if ni == "" {
-		ni = DefaultNetworkInstanceName
-	}
-
-	niR, ok := r.NetworkInstanceRIB(ni)
-	if !ok || !niR.IsValid() {
-		return nil, status.Newf(codes.Internal, "invalid RIB state for network instance name: '%s'", ni).Err()
-	}
-
 	res, ok, err := checkElectionForModify(op.Id, op.ElectionId, election)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return res, err
+	}
+
+	if r == nil {
+		return nil, status.New(codes.Internal, "invalid RIB state").Err()
+	}
+
+	niR, ok := r.NetworkInstanceRIB(ni)
+	if !ok || !niR.IsValid() {
+		return nil, status.Newf(codes.Internal, "invalid RIB state for network instance name: '%s'", ni).Err()
 	}
 
 	results := []*spb.AFTResult{}

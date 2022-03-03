@@ -805,7 +805,7 @@ func TestDoModify(t *testing.T) {
 		inCID: "testclient",
 		inOps: []*spb.AFTOperation{{
 			Id:              1,
-			NetworkInstance: "",
+			NetworkInstance: DefaultNetworkInstanceName,
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
 			Entry: &spb.AFTOperation_NextHop{
@@ -862,6 +862,9 @@ func TestDoModify(t *testing.T) {
 				Result: []*spb.AFTResult{{
 					Id:     42,
 					Status: spb.AFTResult_FAILED,
+					ErrorDetails: &spb.AFTErrorDetails{
+						ErrorMessage: `unknown network instance "FISH" specified`,
+					},
 				}},
 			},
 		}},
@@ -887,7 +890,7 @@ func TestDoModify(t *testing.T) {
 		inCID: "testclient",
 		inOps: []*spb.AFTOperation{{
 			Id:              84,
-			NetworkInstance: "",
+			NetworkInstance: DefaultNetworkInstanceName,
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
 			Entry: &spb.AFTOperation_Ipv4{
@@ -926,7 +929,7 @@ func TestDoModify(t *testing.T) {
 		inCID: "testclient",
 		inOps: []*spb.AFTOperation{{
 			Id:              1,
-			NetworkInstance: "",
+			NetworkInstance: DefaultNetworkInstanceName,
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
 			Entry: &spb.AFTOperation_NextHop{
@@ -937,7 +940,7 @@ func TestDoModify(t *testing.T) {
 			},
 		}, {
 			Id:              2,
-			NetworkInstance: "",
+			NetworkInstance: DefaultNetworkInstanceName,
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
 			Entry: &spb.AFTOperation_NextHop{
@@ -984,7 +987,7 @@ func TestDoModify(t *testing.T) {
 		inCID: "testclient",
 		inOps: []*spb.AFTOperation{{
 			Id:              1,
-			NetworkInstance: "",
+			NetworkInstance: DefaultNetworkInstanceName,
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
 			Entry: &spb.AFTOperation_NextHop{
@@ -995,7 +998,7 @@ func TestDoModify(t *testing.T) {
 			},
 		}, {
 			Id:              2,
-			NetworkInstance: "",
+			NetworkInstance: DefaultNetworkInstanceName,
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
 			Entry: &spb.AFTOperation_NextHop{
@@ -1006,7 +1009,7 @@ func TestDoModify(t *testing.T) {
 			},
 		}, {
 			Id:              3,
-			NetworkInstance: "",
+			NetworkInstance: DefaultNetworkInstanceName,
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
 			Entry: &spb.AFTOperation_NextHopGroup{
@@ -1025,7 +1028,7 @@ func TestDoModify(t *testing.T) {
 			},
 		}, {
 			Id:              4,
-			NetworkInstance: "",
+			NetworkInstance: DefaultNetworkInstanceName,
 			Op:              spb.AFTOperation_ADD,
 			ElectionId:      &spb.Uint128{High: 42, Low: 42},
 			Entry: &spb.AFTOperation_Ipv4{

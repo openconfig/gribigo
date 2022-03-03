@@ -17,6 +17,8 @@ package main
 import (
 	"context"
 	"flag"
+	"net"
+	"strconv"
 
 	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/device"
@@ -28,6 +30,8 @@ import (
 var (
 	certFile = flag.String("cert", "", "cert is the path to the server TLS certificate file")
 	keyFile  = flag.String("key", "", "key is the path to the server TLS key file")
+	gnmi     = flag.String("gnmi", ":9339", "gnmi listen address")
+	gribi    = flag.String("gribi", ":9002", "gribi listen address")
 )
 
 func main() {
@@ -43,7 +47,17 @@ func main() {
 	if err != nil {
 		log.Exitf("cannot initialise TLS, got: %v", err)
 	}
-	d, err := device.New(ctx, creds)
+
+	gribiHost, gribiPort, err := splitHostPort(*gribi)
+	if err != nil {
+		log.Exitf("cannot parse gribi listen address: %s", err)
+	}
+	gnmiHost, gnmiPort, err := splitHostPort(*gnmi)
+	if err != nil {
+		log.Exitf("cannot parse gnmi listen address: %s", err)
+	}
+
+	d, err := device.New(ctx, creds, device.GNMIAddr(gnmiHost, gnmiPort), device.GRIBIPort(gribiHost, gribiPort))
 	if err != nil {
 		log.Exitf("cannot start device, %v", err)
 	}
@@ -52,4 +66,18 @@ func main() {
 		log.Infof("%v", http.ListenAndServe("localhost:6060", nil))
 	}()
 	<-ctx.Done()
+}
+
+func splitHostPort(address string) (string, int, error) {
+	addr, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", 0, err
+	}
+
+	portnum, err := strconv.Atoi(port)
+	if err != nil {
+		return "", 0, err
+	}
+
+	return addr, portnum, nil
 }

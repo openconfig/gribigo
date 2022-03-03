@@ -44,10 +44,14 @@ func SecondClient(c *fluent.GRIBIClient) *secondClient {
 // currently ALL_PRIMARY and an election ID are reported as an error.
 func TestUnsupportedElectionParams(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer electionID.Inc()
-	c.Connection().WithInitialElectionID(electionID.Load(), 0).WithRedundancyMode(fluent.AllPrimaryClients)
+	c.Connection().WithRedundancyMode(fluent.AllPrimaryClients)
 	c.Start(context.Background(), t)
 	defer c.Stop(t)
 	c.StartSending(context.Background(), t)
+
+	// Send an updated election ID, since the ALL_PRIMARY call above will not send the
+	// election ID explicitly.
+	c.Modify().UpdateElectionID(t, electionID.Load(), 0)
 
 	err := awaitTimeout(context.Background(), c, t, time.Minute)
 	if err == nil {

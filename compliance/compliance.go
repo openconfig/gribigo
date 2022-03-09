@@ -1183,6 +1183,7 @@ func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, wantACK fluent.Pro
 // 2 NHs within multiple ModifyReqests, validating that they are installed in the specified RIB
 // or FIB according to wantACK.
 func AddIPv4ToMultipleNHsMultipleRequests(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
 	ops := []func(){
 		func() { baseTopologyEntries(c, t) },
 	}

@@ -394,5 +394,6 @@ func gnmiNoti(t constants.OpType, ts int64, ni string, e ygot.GoStruct) (*gpb.No
 	}
 	ns[0].Atomic = true
 	ns[0].Prefix.Target = targetName
+	ns[0].Prefix.Origin = "openconfig"
 	return ns[0], nil
 }

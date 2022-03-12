@@ -41,7 +41,7 @@ func SecondClient(c *fluent.GRIBIClient) *secondClient {
 }
 
 // TestUnsupportedElectionParams ensures that election parameters that are invalid -
-// currently ALL_PRIMARY and an election ID are reported as an error.
+// currently the test covers ALL_PRIMARY and an non-nil election ID.
 func TestUnsupportedElectionParams(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer electionID.Inc()
 	c.Connection().WithInitialElectionID(electionID.Load(), 0).WithRedundancyMode(fluent.AllPrimaryClients)
@@ -62,7 +62,7 @@ func TestUnsupportedElectionParams(c *fluent.GRIBIClient, t testing.TB, _ ...Tes
 		err,
 		fluent.ModifyError().
 			WithCode(codes.FailedPrecondition).
-			WithReason(fluent.ParamsDifferFromOtherClients).
+			WithReason(fluent.ElectionIDNotAllowed).
 			AsStatus(t),
 		chk.AllowUnimplemented(),
 	)

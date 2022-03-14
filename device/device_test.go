@@ -177,7 +177,4 @@ func TestDevice(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatalf("got zero updates, wanted non-zero. got: %v", got)
 	}
-
-	time.Sleep(300 * time.Second)
-
 }

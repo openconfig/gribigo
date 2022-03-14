@@ -21,7 +21,7 @@ import (
 	"github.com/openconfig/gribigo/client"
 	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/fluent"
-	"github.com/openconfig/gribigo/negtest"
+	"github.com/openconfig/testt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -103,7 +103,7 @@ func TestHasMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			if tt.expectFatalMsg != "" {
-				got := negtest.ExpectFatal(t, func(t testing.TB) {
+				got := testt.ExpectFatal(t, func(t testing.TB) {
 					HasResult(t, tt.inResults, tt.inMsg)
 				})
 				if !strings.Contains(got, tt.expectFatalMsg) {
@@ -270,7 +270,7 @@ func TestHasResultsCache(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			if tt.expectFatalMsg != "" {
-				got := negtest.ExpectFatal(t, func(t testing.TB) {
+				got := testt.ExpectFatal(t, func(t testing.TB) {
 					HasResultsCache(t, tt.inResults, tt.inWants, tt.inOpt...)
 				})
 				if !strings.Contains(got, tt.expectFatalMsg) {
@@ -432,7 +432,7 @@ func TestGetResponseHasEntries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			if tt.expectFatalMsg != "" {
-				got := negtest.ExpectFatal(t, func(t testing.TB) {
+				got := testt.ExpectFatal(t, func(t testing.TB) {
 					GetResponseHasEntries(t, tt.inGetRes, tt.inWants...)
 				})
 				if !strings.Contains(got, tt.expectFatalMsg) {
@@ -585,7 +585,7 @@ func TestHasRecvClientErrorWithStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			if tt.expectFatalMsg != "" {
-				got := negtest.ExpectFatal(t, func(t testing.TB) {
+				got := testt.ExpectFatal(t, func(t testing.TB) {
 					HasRecvClientErrorWithStatus(t, tt.inError, tt.inWant, tt.inOpts...)
 				})
 				if !strings.Contains(got, tt.expectFatalMsg) {

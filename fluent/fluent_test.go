@@ -23,9 +23,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openconfig/gribigo/device"
-	"github.com/openconfig/gribigo/negtest"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
+	"github.com/openconfig/testt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -125,7 +125,7 @@ func TestGRIBIClient(t *testing.T) {
 			}
 
 			if tt.wantFatalMsg != "" {
-				if got := negtest.ExpectFatal(t, func(t testing.TB) {
+				if got := testt.ExpectFatal(t, func(t testing.TB) {
 					tt.inFn(d.GRIBIAddr(), t)
 				}); !strings.Contains(got, tt.wantFatalMsg) {
 					t.Fatalf("did not get expected fatal error, got: %s, want: %s", got, tt.wantFatalMsg)
@@ -134,9 +134,9 @@ func TestGRIBIClient(t *testing.T) {
 			}
 
 			if tt.wantErrorMsg != "" {
-				if got := negtest.ExpectError(t, func(t testing.TB) {
+				if got := testt.ExpectError(t, func(t testing.TB) {
 					tt.inFn(d.GRIBIAddr(), t)
-				}); !strings.Contains(got, tt.wantErrorMsg) {
+				}); !strings.Contains(strings.Join(got, " "), tt.wantErrorMsg) {
 					t.Fatalf("did not get expected error, got: %s, want: %s", got, tt.wantErrorMsg)
 				}
 			}

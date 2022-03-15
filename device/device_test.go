@@ -16,10 +16,13 @@ package device
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"testing"
+	"time"
 
 	log "github.com/golang/glog"
 	"github.com/google/go-cmp/cmp"
@@ -29,6 +32,10 @@ import (
 	"github.com/openconfig/gribigo/sysrib"
 	"github.com/openconfig/gribigo/testcommon"
 	"github.com/openconfig/ygot/ygot"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+
+	gpb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
 type ribQuery struct {
@@ -50,6 +57,7 @@ func jsonDevice() []byte {
 
 func TestDevice(t *testing.T) {
 	devCh := make(chan string, 1)
+	gnmiCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 	ribCh := make(chan *ribQuery, 1)
 	ribErrCh := make(chan error)
@@ -68,6 +76,7 @@ func TestDevice(t *testing.T) {
 			errCh <- err
 		}
 		devCh <- d.GRIBIAddr()
+		gnmiCh <- d.GNMIAddr()
 
 		for {
 			select {
@@ -115,5 +124,57 @@ func TestDevice(t *testing.T) {
 				t.Fatalf("did not get expected egress interface, diff(-got,+want):\n%s", diff)
 			}
 		}
+	}
+
+	addr := <-gnmiCh
+	cctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(cctx, addr,
+		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true,
+		})),
+		grpc.WithBlock())
+	if err != nil {
+		t.Fatalf("cannot dial server with TLS credentials, err: %v", err)
+	}
+
+	client := gpb.NewGNMIClient(conn)
+	subc, err := client.Subscribe(ctx)
+	if err != nil {
+		t.Fatalf("cannot subscribe to device, err: %v", err)
+	}
+	sr := &gpb.SubscribeRequest{
+		Request: &gpb.SubscribeRequest_Subscribe{
+			Subscribe: &gpb.SubscriptionList{
+				Prefix: &gpb.Path{
+					Target: "DUT",
+					Origin: "openconfig",
+				},
+				Mode: gpb.SubscriptionList_ONCE,
+				Subscription: []*gpb.Subscription{{
+					Path: &gpb.Path{},
+				}},
+			},
+		},
+	}
+
+	if err := subc.Send(sr); err != nil {
+		t.Fatalf("cannot send subscribe request to device, err: %v", err)
+	}
+
+	got := []*gpb.SubscribeResponse{}
+	for {
+		in, err := subc.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("got unexpected subscribe error, %v", err)
+		}
+		got = append(got, in)
+	}
+
+	if len(got) == 0 {
+		t.Fatalf("got zero updates, wanted non-zero. got: %v", got)
 	}
 }

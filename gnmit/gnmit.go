@@ -127,7 +127,7 @@ func (c *Collector) handleUpdate(resp *gpb.SubscribeResponse) error {
 	t := c.cache.GetTarget(c.name)
 	switch v := resp.Response.(type) {
 	case *gpb.SubscribeResponse_Update:
-		t.GnmiUpdate(v.Update)
+		return t.GnmiUpdate(v.Update)
 	case *gpb.SubscribeResponse_SyncResponse:
 		t.Sync()
 	case *gpb.SubscribeResponse_Error:

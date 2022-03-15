@@ -17,6 +17,7 @@ package gnmit
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"sync"
@@ -24,12 +25,14 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/encoding/prototext"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/gnmi/value"
+	"github.com/openconfig/gribigo/testcommon"
 	"github.com/openconfig/ygot/ygot"
 )
 
@@ -430,5 +433,29 @@ func TestSTREAM(t *testing.T) {
 		return true
 	})); diff != "" {
 		t.Fatalf("did not get expected updates, diff(-got,+want)\n:%s", diff)
+	}
+}
+
+func TestWithCreds(t *testing.T) {
+	creds, err := credentials.NewServerTLSFromFile(testcommon.TLSCreds())
+	if err != nil {
+		t.Fatalf("cannot open test TLS credentials, %v", err)
+	}
+
+	ctx := context.Background()
+	c, addr, err := New(ctx, "localhost:0", "local", false, grpc.Creds(creds))
+	if err != nil {
+		t.Fatalf("cannot start server, got err: %v", err)
+	}
+	defer c.Stop()
+
+	cctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := grpc.DialContext(cctx, addr,
+		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true,
+		})),
+		grpc.WithBlock()); err != nil {
+		t.Fatalf("cannot dial server with TLS credentials, err: %v", err)
 	}
 }

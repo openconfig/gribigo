@@ -760,14 +760,15 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
 	}
 	
-	actType := c.state.SessParams.GetAckType()
-	operationStatus := op.GetStatus()
-
-	if actType == spb.SessionParameters_RIB_AND_FIB_ACK &&
-		(operationStatus == spb.AFTResult_FIB_PROGRAMMED || operationStatus == spb.AFTResult_FIB_FAILED) {
-		delete(c.qs.pendq.Ops, op.Id)
-	} else {
-		delete(c.qs.pendq.Ops, op.Id)
+	switch o := op.GetStatus() {
+	  case spb.AFTResult_FIB_PROGRAMMED, spb.AFT_FIB_FAILED:
+	     delete(q, op.id)
+	  case spb.AFTResult_RIB_PROGRAMMED:
+	     if c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK {
+		delete(q, op.id)
+	     }
+	  case spb.AFTResult_FAILED:
+	     delete(q, op.id)
 	}
 
 	det := &OpDetailsResults{

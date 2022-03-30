@@ -582,7 +582,7 @@ func TestHandleModifyResponse(t *testing.T) {
 			Details:           &OpDetailsResults{},
 		}},
 	}, {
-		desc: "AckType set to FIB_ACK, receive Ops#1. AFTResult_FAILED Ops#2. AFTResult_RIB_PROGRAMMED and AFTResult_FAILED ",
+		desc: "AckType set to FIB_ACK, receive Ops#1. AFTResult_FAILED Ops#2. AFTResult_RIB_PROGRAMMED and AFTResult_FIB_FAILED ",
 		inClient: &Client{
 			qs: &clientQs{
 				pendq: &pendingQueue{

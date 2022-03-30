@@ -876,7 +876,7 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 					Id:     op.GetId(),
 					Status: spb.AFTResult_FAILED,
 					ErrorDetails: &spb.AFTErrorDetails{
-						ErrorMessage: fmt.Sprintf("invalid operation type supplied, %s", op.Op),
+						ErrorMessage: fmt.Sprintf("unsupported operation type supplied, %s", op.Op),
 					},
 				},
 			},
@@ -886,7 +886,7 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 	if ribFatalErr != nil {
 		// RIB action returned fatal error for the connection.
 		return nil, addModifyErrDetailsOrReturn(
-			status.Newf(codes.Unimplemented, "error processing operation %s, unsupported", op.Op),
+			status.Newf(codes.Unimplemented, "fatal error processing operation %s, error: %v", op.Op, ribFatalErr),
 			&spb.ModifyRPCErrorDetails{
 				Reason: spb.ModifyRPCErrorDetails_UNKNOWN,
 			},

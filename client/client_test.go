@@ -541,7 +541,7 @@ func TestHandleModifyResponse(t *testing.T) {
 			ClientError: "received a session parameter result when there was none pending",
 		}},
 	}, {
-		desc: "AckType set to FIB_ACK, response should contains both FIB and RIB",
+		desc: "AckType set to FIB_ACK, receive AFTResult_RIB_PROGRAMMED and AFTResult_FIB_PROGRAMMED ",
 		inClient: &Client{
 			qs: &clientQs{
 				pendq: &pendingQueue{
@@ -579,6 +579,125 @@ func TestHandleModifyResponse(t *testing.T) {
 			Timestamp:         42,
 			OperationID:       1,
 			ProgrammingResult: spb.AFTResult_FIB_PROGRAMMED,
+			Details:           &OpDetailsResults{},
+		}},
+	}, {
+		desc: "AckType set to FIB_ACK, receive 1. AFTResult_FAILED 2. AFTResult_RIB_PROGRAMMED and AFTResult_FAILED ",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Ops: map[uint64]*PendingOp{
+						1: {
+							Timestamp: 42,
+							Op:        &spb.AFTOperation{Id: 1},
+						},
+						2: {
+							Timestamp: 42,
+							Op:        &spb.AFTOperation{Id: 2},
+						},
+					},
+				},
+				sending: &atomic.Bool{},
+			},
+			state: &clientState{
+				SessParams: &spb.SessionParameters{
+					AckType: spb.SessionParameters_RIB_AND_FIB_ACK,
+				},
+			},
+		},
+		inResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{
+				{
+					Id:     1,
+					Status: spb.AFTResult_FAILED,
+				}, {
+					Id:     2,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
+					Id:     2,
+					Status: spb.AFTResult_FAILED,
+				}},
+		},
+		wantResults: []*OpResult{{
+			Timestamp:         42,
+			OperationID:       1,
+			ProgrammingResult: spb.AFTResult_FAILED,
+			Details:           &OpDetailsResults{},
+		}, {
+			Timestamp:         42,
+			OperationID:       2,
+			ProgrammingResult: spb.AFTResult_RIB_PROGRAMMED,
+			Details:           &OpDetailsResults{},
+		}, {
+			Timestamp:         42,
+			OperationID:       2,
+			ProgrammingResult: spb.AFTResult_FAILED,
+			Details:           &OpDetailsResults{},
+		}},
+	}, {
+		desc: "AckType set to RIB_ACK, receive AFTResult_RIB_PROGRAMMED",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Ops: map[uint64]*PendingOp{
+						1: {
+							Timestamp: 42,
+							Op:        &spb.AFTOperation{Id: 1},
+						},
+					},
+				},
+				sending: &atomic.Bool{},
+			},
+			state: &clientState{
+				SessParams: &spb.SessionParameters{
+					AckType: spb.SessionParameters_RIB_ACK,
+				},
+			},
+		},
+		inResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{
+				{
+					Id:     1,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}},
+		},
+		wantResults: []*OpResult{{
+			Timestamp:         42,
+			OperationID:       1,
+			ProgrammingResult: spb.AFTResult_RIB_PROGRAMMED,
+			Details:           &OpDetailsResults{},
+		}},
+	}, {
+		desc: "AckType set to RIB_ACK, receive AFTResult_FAILED",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Ops: map[uint64]*PendingOp{
+						1: {
+							Timestamp: 42,
+							Op:        &spb.AFTOperation{Id: 1},
+						},
+					},
+				},
+				sending: &atomic.Bool{},
+			},
+			state: &clientState{
+				SessParams: &spb.SessionParameters{
+					AckType: spb.SessionParameters_RIB_ACK,
+				},
+			},
+		},
+		inResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{
+				{
+					Id:     1,
+					Status: spb.AFTResult_FAILED,
+				}},
+		},
+		wantResults: []*OpResult{{
+			Timestamp:         42,
+			OperationID:       1,
+			ProgrammingResult: spb.AFTResult_FAILED,
 			Details:           &OpDetailsResults{},
 		}},
 	}}

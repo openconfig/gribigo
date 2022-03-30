@@ -615,7 +615,7 @@ func TestHandleModifyResponse(t *testing.T) {
 					Status: spb.AFTResult_RIB_PROGRAMMED,
 				}, {
 					Id:     2,
-					Status: spb.AFTResult_FAILED,
+					Status: spb.AFTResult_FIB_FAILED,
 				}},
 		},
 		wantResults: []*OpResult{{
@@ -631,7 +631,7 @@ func TestHandleModifyResponse(t *testing.T) {
 		}, {
 			Timestamp:         42,
 			OperationID:       2,
-			ProgrammingResult: spb.AFTResult_FAILED,
+			ProgrammingResult: spb.AFTResult_FIB_FAILED,
 			Details:           &OpDetailsResults{},
 		}},
 	}, {

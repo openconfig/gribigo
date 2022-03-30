@@ -759,7 +759,6 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 	if v == nil {
 		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
 	}
-	
 	switch op.GetStatus() {
 	case spb.AFTResult_FIB_PROGRAMMED, spb.AFTResult_FIB_FAILED:
 		delete(c.qs.pendq.Ops, op.Id)

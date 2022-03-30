@@ -540,6 +540,47 @@ func TestHandleModifyResponse(t *testing.T) {
 			},
 			ClientError: "received a session parameter result when there was none pending",
 		}},
+	}, {
+		desc: "AckType set to FIB_ACK, response should contains both FIB and RIB",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Ops: map[uint64]*PendingOp{
+						1: {
+							Timestamp: 42,
+							Op:        &spb.AFTOperation{Id: 1},
+						},
+					},
+				},
+				sending: &atomic.Bool{},
+			},
+			state: &clientState{
+				SessParams: &spb.SessionParameters{
+					AckType: spb.SessionParameters_RIB_AND_FIB_ACK,
+				},
+			},
+		},
+		inResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{
+				{
+					Id:     1,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
+					Id:     1,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+		},
+		wantResults: []*OpResult{{
+			Timestamp:         42,
+			OperationID:       1,
+			ProgrammingResult: spb.AFTResult_RIB_PROGRAMMED,
+			Details:           &OpDetailsResults{},
+		}, {
+			Timestamp:         42,
+			OperationID:       1,
+			ProgrammingResult: spb.AFTResult_FIB_PROGRAMMED,
+			Details:           &OpDetailsResults{},
+		}},
 	}}
 
 	for _, tt := range tests {

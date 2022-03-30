@@ -857,7 +857,7 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 
 	var (
 		oks, faileds []*rib.OpResult
-		ribErr       error
+		ribFatalErr  error
 	)
 
 	switch op.Op {
@@ -866,24 +866,31 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 		// whether the entry was an explicit replace from the op, and if so errors if the
 		// entry does not already exist.
 		log.V(2).Infof("calling AddEntry for operation ID %d", op.GetId())
-		oks, faileds, ribErr = r.AddEntry(ni, op)
+		oks, faileds, ribFatalErr = r.AddEntry(ni, op)
 	case spb.AFTOperation_DELETE:
-		oks, faileds, ribErr = r.DeleteEntry(ni, op)
+		oks, faileds, ribFatalErr = r.DeleteEntry(ni, op)
 	default:
-		return nil, status.Newf(codes.InvalidArgument, "invalid operation type supplied, %s", op.Op).Err()
-	}
-	if ribErr != nil {
 		return &spb.ModifyResponse{
 			Result: []*spb.AFTResult{
 				{
 					Id:     op.GetId(),
 					Status: spb.AFTResult_FAILED,
 					ErrorDetails: &spb.AFTErrorDetails{
-						ErrorMessage: fmt.Sprintf("error processing operation %s, error %v", op.Op, ribErr),
+						ErrorMessage: fmt.Sprintf("invalid operation type supplied, %s", op.Op),
 					},
 				},
 			},
 		}, nil
+	}
+
+	if ribFatalErr != nil {
+		// RIB action returned fatal error for the connection.
+		return nil, addModifyErrDetailsOrReturn(
+			status.Newf(codes.Unimplemented, "error processing operation %s, unsupported", op.Op),
+			&spb.ModifyRPCErrorDetails{
+				Reason: spb.ModifyRPCErrorDetails_UNKNOWN,
+			},
+		)
 	}
 
 	for _, ok := range oks {

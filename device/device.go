@@ -62,6 +62,8 @@ const (
 	// TODO(robjs): support dynamic naming so tha twe can run N different
 	// fakes at the same time.
 	targetName string = "DUT"
+	// IANA reserves 9340 for gRIBI service.
+	gRIBIPort = 9340
 )
 
 // DevOpt is an interface that is implemented by options that can be handed to New()
@@ -287,6 +289,9 @@ func optTLSCreds(opts []DevOpt) *tlsCreds {
 // and the specified TLS credentials, with the specified options.
 // It returns a function to stop the server, and error if the server cannot be started.
 func (d *Device) startgRIBI(ctx context.Context, host string, port int, creds *tlsCreds, opt ...server.ServerOpt) (func(), error) {
+	if port == 0 {
+		port = gRIBIPort
+	}
 	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
 		return nil, fmt.Errorf("cannot create gRPC server for gRIBI, %v", err)

@@ -165,7 +165,7 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 	}
 	d.sysRIB = sr
 
-	ribHookfn := func(o constants.OpType, ts int64, ni string, data ygot.GoStruct) {
+	ribHookfn := func(o constants.OpType, ts int64, ni string, data ygot.ValidatedGoStruct) {
 		_, _, _ = o, ni, data
 		// write gNMI notifications
 		n, err := gnmiNoti(o, ts, ni, data)
@@ -330,7 +330,7 @@ func (d *Device) GNMIAddr() string {
 // TODO(robjs): It would be nice to see whether we can generate
 // this function automatically from somewhere - or at least make it
 // cleaner. It also needs unit test coverage adding.
-func gnmiNoti(t constants.OpType, ts int64, ni string, e ygot.GoStruct) (*gpb.Notification, error) {
+func gnmiNoti(t constants.OpType, ts int64, ni string, e ygot.ValidatedGoStruct) (*gpb.Notification, error) {
 	var ns []*gpb.Notification
 	var err error
 	switch t := e.(type) {

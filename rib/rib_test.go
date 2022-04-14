@@ -529,7 +529,7 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		inRIB       *RIBHolder
 		inEntry     proto.Message
 		wantOK      bool
-		wantOrig    ygot.GoStruct
+		wantOrig    ygot.ValidatedGoStruct
 		wantErr     bool
 		wantPostRIB *RIBHolder
 	}{{
@@ -671,7 +671,7 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 			var (
 				ok      bool
 				err     error
-				gotOrig ygot.GoStruct
+				gotOrig ygot.ValidatedGoStruct
 			)
 			switch v := tt.inEntry.(type) {
 			case *aftpb.Afts_Ipv4EntryKey:
@@ -868,7 +868,7 @@ func TestHooks(t *testing.T) {
 			tsFn := func() int64 {
 				return int64(len(got))
 			}
-			store := func(o constants.OpType, _ int64, _ string, gs ygot.GoStruct) {
+			store := func(o constants.OpType, _ int64, _ string, gs ygot.ValidatedGoStruct) {
 				switch t := gs.(type) {
 				case *aft.Afts_Ipv4Entry:
 					got = append(got, &op{Do: o, TS: tsFn(), IP4: t.GetPrefix()})
@@ -879,7 +879,7 @@ func TestHooks(t *testing.T) {
 				}
 			}
 
-			gnmiNoti := func(o constants.OpType, _ int64, ni string, gs ygot.GoStruct) {
+			gnmiNoti := func(o constants.OpType, _ int64, ni string, gs ygot.ValidatedGoStruct) {
 				if o == constants.Delete {
 					switch t := gs.(type) {
 					case *aft.Afts_Ipv4Entry:

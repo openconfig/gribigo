@@ -48,8 +48,8 @@ var unixTS = time.Now().UnixNano
 //  - an OpType deterining whether an add, remove, or modify operation was sent.
 //  - the timestamp in nanoseconds since the unix epoch that a function was performed.
 //  - a string indicating the name of the network instance
-//  - a ygot.GoStruct containing the entry that has been changed.
-type RIBHookFn func(constants.OpType, int64, string, ygot.GoStruct)
+//  - a ygot.ValidatedGoStruct containing the entry that has been changed.
+type RIBHookFn func(constants.OpType, int64, string, ygot.ValidatedGoStruct)
 
 // ResolvedEntryFn is a function that is called for all entries that can be fully
 // resolved within the RIB. Fully resolved in this case is defined as an input
@@ -153,7 +153,7 @@ type RIBHolder struct {
 	// within the RIB completes, it takes arguments of the
 	//   - name of the network instance
 	// 	 - operation type (as an constants.OpType enumerated value)
-	//	 - the changed entry as a ygot.GoStruct.
+	//	 - the changed entry as a ygot.ValidatedGoStruct.
 	postChangeHook RIBHookFn
 
 	// refCounts is used to store counters for the number of references to next-hop
@@ -1548,7 +1548,7 @@ func concreteNextHopGroupProto(e *aft.Afts_NextHopGroup) (*aftpb.Afts_NextHopGro
 // protoFromGoStruct takes the input GoStruct and marshals into the supplied pb
 // protobuf message, trimming the prefix specified from the annotated paths within
 // the protobuf.
-func protoFromGoStruct(s ygot.GoStruct, prefix *gpb.Path, pb proto.Message) error {
+func protoFromGoStruct(s ygot.ValidatedGoStruct, prefix *gpb.Path, pb proto.Message) error {
 	ns, err := ygot.TogNMINotifications(s, 0, ygot.GNMINotificationsConfig{
 		UsePathElem: true,
 	})

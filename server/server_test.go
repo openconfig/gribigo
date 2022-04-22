@@ -1248,6 +1248,30 @@ func TestModifyEntry(t *testing.T) {
 		inRIB:       rib.New(defName),
 		wantErrCode: codes.Internal,
 	}, {
+		desc:  "unsupported operation type",
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
+		inNI:  defName,
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 0, Low: 2},
+			Id:         2,
+			Op:         spb.AFTOperation_INVALID,
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 0, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 0, Low: 2},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_FAILED,
+				ErrorDetails: &spb.AFTErrorDetails{
+					ErrorMessage: "unsupported operation type supplied, INVALID",
+				},
+			}},
+		},
+	}, {
 		desc:        "nil RIB",
 		wantErrCode: codes.Internal,
 	}, {

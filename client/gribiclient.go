@@ -80,6 +80,9 @@ type Client struct {
 	// result in a change take a read-lock, functions that are dependent upon
 	// the client being in a consistent state take a write-lock on this mutex.
 	awaiting sync.RWMutex
+
+	// wg tells disconnect() when all the goroutines started by Connect() have exited.
+	wg sync.WaitGroup
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -201,8 +204,15 @@ func (c *Client) UseStub(stub spb.GRIBIClient) error {
 	return nil
 }
 
+// disconnect shuts down the goroutines started by Connect().
+func (c *Client) disconnect() {
+	c.q(nil) // signals reqHandler to close the stream.
+	c.wg.Wait()
+}
+
 // Close disconnects the underlying gRPC connection to the gRIBI server.
 func (c *Client) Close() error {
+	c.disconnect()
 	if c.conn == nil {
 		return nil
 	}
@@ -318,7 +328,9 @@ func (c *Client) Connect(ctx context.Context) error {
 		return false
 	}
 
+	c.wg.Add(1)
 	go func() {
+		defer c.wg.Done()
 		for {
 			if c.shut.Load() {
 				log.V(2).Infof("shutting down recv goroutine")
@@ -333,10 +345,18 @@ func (c *Client) Connect(ctx context.Context) error {
 	// reqHandler handles an input modify request and returns a bool when
 	// the loop within which it is called should exit.
 	reqHandler := func(m *spb.ModifyRequest) bool {
+		if m == nil {
+			// client close requested by disconnect().
+			if err := stream.CloseSend(); err != nil {
+				log.Errorf("got error closing session: %v", err)
+			}
+			return true
+		}
+
 		c.awaiting.RLock()
 		defer c.awaiting.RUnlock()
 		if err := stream.Send(m); err != nil {
-			log.Errorf("got error sending message, %v", err)
+			log.Errorf("got error sending message: %v", err)
 			c.addSendErr(err)
 			return true
 		}
@@ -344,7 +364,9 @@ func (c *Client) Connect(ctx context.Context) error {
 		return false
 	}
 
+	c.wg.Add(1)
 	go func() {
+		defer c.wg.Done()
 		for {
 			if c.shut.Load() {
 				log.V(2).Infof("shutting down send goroutine")

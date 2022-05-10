@@ -58,6 +58,9 @@ type Client struct {
 	// client.
 	qs *clientQs
 
+	// started indicates that the connection has started.
+	started *atomic.Bool
+
 	// shut indicates that RPCs should continue to run, when set
 	// to true, all goroutines that are serving RPCs shut down.
 	shut *atomic.Bool
@@ -109,6 +112,7 @@ type Opt interface {
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...Opt) (*Client, error) {
 	c := &Client{
+		started: atomic.NewBool(false),
 		shut: atomic.NewBool(false),
 	}
 
@@ -206,6 +210,11 @@ func (c *Client) UseStub(stub spb.GRIBIClient) error {
 
 // disconnect shuts down the goroutines started by Connect().
 func (c *Client) disconnect() {
+	if !c.started.Load() || c.shut.Load() {
+		// goroutines have not started or have already exited, so c.q()
+		// would deadlock.
+		return
+	}
 	c.q(nil) // signals reqHandler to close the stream.
 	c.wg.Wait()
 }
@@ -380,6 +389,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		}
 	}()
 
+	c.started.Store(true)
 	return nil
 }
 

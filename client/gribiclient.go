@@ -113,7 +113,7 @@ type Opt interface {
 func New(opts ...Opt) (*Client, error) {
 	c := &Client{
 		started: atomic.NewBool(false),
-		shut: atomic.NewBool(false),
+		shut:    atomic.NewBool(false),
 	}
 
 	s, err := handleParams(opts...)

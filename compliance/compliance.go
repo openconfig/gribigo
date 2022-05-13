@@ -97,6 +97,9 @@ type Test struct {
 	// immediately NACK forward references, which causes some tests to fail. The reference
 	// implementation handles reodering.
 	RequiresServerReordering bool
+	// RequiresImplicitReplace marks a test that requires the implementation of AFTOperation
+	// ADD for entries that already exist.
+	RequiresImplicitReplace bool
 }
 
 // TestSpec is a description of a test.
@@ -244,18 +247,21 @@ var (
 		},
 	}, {
 		In: Test{
-			Fn:        makeTestWithACK(ImplicitReplaceNH, fluent.InstalledInRIB),
-			ShortName: "Implicit replace NH entry - RIB ACK",
+			Fn:                      makeTestWithACK(ImplicitReplaceNH, fluent.InstalledInRIB),
+			ShortName:               "Implicit replace NH entry - RIB ACK",
+			RequiresImplicitReplace: true,
 		},
 	}, {
 		In: Test{
-			Fn:        makeTestWithACK(ImplicitReplaceNHG, fluent.InstalledInRIB),
-			ShortName: "Implicit replace NHG entry - RIB ACK",
+			Fn:                      makeTestWithACK(ImplicitReplaceNHG, fluent.InstalledInRIB),
+			ShortName:               "Implicit replace NHG entry - RIB ACK",
+			RequiresImplicitReplace: true,
 		},
 	}, {
 		In: Test{
-			Fn:        makeTestWithACK(ImplicitReplaceIPv4Entry, fluent.InstalledInRIB),
-			ShortName: "Implicit replace IPv4 entry - RIB ACK",
+			Fn:                      makeTestWithACK(ImplicitReplaceIPv4Entry, fluent.InstalledInRIB),
+			ShortName:               "Implicit replace IPv4 entry - RIB ACK",
+			RequiresImplicitReplace: true,
 		},
 	}, {
 		In: Test{

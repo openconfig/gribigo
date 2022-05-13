@@ -35,15 +35,16 @@ import (
 )
 
 var (
-	addr              = flag.String("addr", "", "address of the gRIBI server in the format hostname:port")
-	insecure          = flag.Bool("insecure", false, "dial insecure gRPC (no TLS)")
-	skipVerify        = flag.Bool("skip_verify", true, "allow self-signed TLS certificate; not needed for -insecure")
-	username          = flag.String("username", os.Getenv("USER"), "username to be sent as gRPC metadata")
-	password          = flag.String("password", "", "password to be sent as gRPC metadata")
-	initialElectionID = flag.Uint("initial_electionid", 0, "initial election ID to be used")
-	skipFIBACK        = flag.Bool("skip_fiback", false, "skip tests that rely on FIB ACK")
-	skipSrvReorder    = flag.Bool("skip_reordering", false, "skip tests that rely on server side transaction reordering")
-	defaultNIName     = flag.String("default_ni_name", server.DefaultNetworkInstanceName, "default network instance name to be used for the server")
+	addr                = flag.String("addr", "", "address of the gRIBI server in the format hostname:port")
+	insecure            = flag.Bool("insecure", false, "dial insecure gRPC (no TLS)")
+	skipVerify          = flag.Bool("skip_verify", true, "allow self-signed TLS certificate; not needed for -insecure")
+	username            = flag.String("username", os.Getenv("USER"), "username to be sent as gRPC metadata")
+	password            = flag.String("password", "", "password to be sent as gRPC metadata")
+	initialElectionID   = flag.Uint("initial_electionid", 0, "initial election ID to be used")
+	skipFIBACK          = flag.Bool("skip_fiback", false, "skip tests that rely on FIB ACK")
+	skipSrvReorder      = flag.Bool("skip_reordering", false, "skip tests that rely on server side transaction reordering")
+	skipImplicitReplace = flag.Bool("skip_implicit_replace", false, "skip tests for ADD operations that perform implicit replacement of existing entries")
+	defaultNIName       = flag.String("default_ni_name", server.DefaultNetworkInstanceName, "default network instance name to be used for the server")
 )
 
 // flagCred implements credentials.PerRPCCredentials by populating the
@@ -98,8 +99,11 @@ func TestCompliance(t *testing.T) {
 			continue
 		}
 
-		t.Run(tt.In.ShortName, func(t *testing.T) {
+		if skip := *skipImplicitReplace; skip && tt.In.RequiresImplicitReplace {
+			continue
+		}
 
+		t.Run(tt.In.ShortName, func(t *testing.T) {
 			ctx := context.Background()
 			conn, err := grpc.DialContext(ctx, *addr, dialOpts...)
 			if err != nil {

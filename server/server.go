@@ -288,10 +288,12 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		for {
 			in, err := ms.Recv()
 			if err == io.EOF {
+				errCh <- nil
 				return
 			}
 			if err != nil {
 				errCh <- status.Errorf(codes.Unknown, "error reading message from client, %v", err)
+				return
 			}
 			log.V(2).Infof("received message %s on Modify channel", in)
 

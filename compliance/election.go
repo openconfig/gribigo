@@ -291,6 +291,7 @@ func TestLowerElectionID(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
 // when clientB connects and provides a higher election ID. The presence of an entry is
 // verified through the Get RPC.
 func TestActiveAfterMasterChange(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
+	defer flushServer(c, t)
 	defer electionID.Add(2)
 
 	clientA, clientB := clientAB(c, t, opts...)
@@ -388,6 +389,7 @@ func TestActiveAfterMasterChange(c *fluent.GRIBIClient, t testing.TB, opts ...Te
 // TestNewElectionIDNoUpdateRejected checks that a client that specifies a higher election
 // ID without explicitly updating the ID is rejected.
 func TestNewElectionIDNoUpdateRejected(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
 	defer electionID.Add(2)
 
 	c.Connection().WithInitialElectionID(electionID.Load(), 0).
@@ -450,6 +452,7 @@ func TestNewElectionIDNoUpdateRejected(c *fluent.GRIBIClient, t testing.TB, _ ..
 // TestIncElectionID ensures that when the election ID is updated explicitly by the
 // client to a higher value that the new value is accepted, and the lower values are rejected.
 func TestIncElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
 	defer electionID.Inc()
 
 	c.Connection().WithInitialElectionID(electionID.Load(), 0).
@@ -581,6 +584,7 @@ func TestDecElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 // The client A should be master initially, and be replaced with client B when it connects.
 // The AFT operation from client A should be rejected.
 func TestSameElectionIDFromTwoClients(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
+	defer flushServer(c, t)
 	defer electionID.Inc()
 
 	clientA, clientB := clientAB(c, t, opts...)

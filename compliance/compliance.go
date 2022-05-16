@@ -100,6 +100,9 @@ type Test struct {
 	// RequiresImplicitReplace marks a test that requires the implementation of AFTOperation
 	// ADD for entries that already exist.
 	RequiresImplicitReplace bool
+	// RequiresNonDefaultNI marks a test that requires the implementation to configure
+	// entries for non-default network-instance.
+	RequiresNonDefaultNI bool
 }
 
 // TestSpec is a description of a test.
@@ -399,8 +402,21 @@ var (
 		},
 	}, {
 		In: Test{
-			Fn:        makeTestWithACK(FlushOfSpecificNI, fluent.InstalledInRIB),
-			ShortName: "Flush to specific network instance is honoured",
+			Fn:                   makeTestWithACK(FlushOfSpecificNI, fluent.InstalledInRIB),
+			ShortName:            "Flush to specific network instance is honoured",
+			RequiresNonDefaultNI: true,
+		},
+	}, {
+		In: Test{
+			Fn:                   makeTestWithACK(FlushOfAllNIs, fluent.InstalledInRIB),
+			ShortName:            "Flush all network instances",
+			RequiresNonDefaultNI: true,
+		},
+	}, {
+		In: Test{
+			Fn:                   makeTestWithACK(FlushPreservesDefaultNI, fluent.InstalledInRIB),
+			ShortName:            "Flush non-default network instances preserves the default",
+			RequiresNonDefaultNI: false, // No entries in the non-default VRF.
 		},
 	}}
 )

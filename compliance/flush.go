@@ -183,6 +183,36 @@ func FlushOfAllNIs(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 	checkNIHasNEntries(ctx, c, vrfName, 0, t)
 }
 
+// FlushPreservesDefaultNI programs entries in the default network-instance and flushes
+// the non-default VRF, then ensures that entries in the default is still preserved.  This
+// is a weaker version of FlushOfSpecificNI.
+func FlushPreservesDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
+	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
+
+	// addFlushEntriesToNI increments the election ID so to check with the current value,
+	// we need to subtract one from the current election ID.
+	curID := electionID.Load() - 1
+
+	ctx := context.Background()
+	c.Start(ctx, t)
+	defer c.Stop(t)
+
+	fr, err := c.Flush().
+		WithElectionID(curID, 0).
+		WithNetworkInstance(vrfName).
+		Send()
+	switch {
+	case err != nil:
+		t.Fatalf("got unexpected error from flush, got: %v", err)
+	case fr == nil:
+		t.Fatalf("got nil response from flush, got: %v", fr)
+	}
+
+	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 3, t)
+}
+
 // FlushServer flushes all the state on the server, but does not validate it
 // specifically. It can be called from tests that need to clean up
 // a server between test cases.

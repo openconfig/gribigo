@@ -1061,41 +1061,46 @@ func addFlushErrDetailsOrReturn(s *status.Status, d *spb.FlushResponseError) err
 // validating that the election parameters are consistent, and correct, and that the Flush should be
 // completed.
 func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
-	e := req.GetElection()
+	if req.GetOverride() != nil {
+		// The election ID should not be compared, regardless of whether
+		// there are SINGLE_PRIMARY clients on the server.
+		return nil
+	}
+
+	id := req.GetId()
 	switch {
-	case e == nil && s.curElecID != nil:
+	case id == nil && s.curElecID == nil:
+		// We are in ALL_PRIMARY mode and not given an election ID, which is fine.
+		return nil
+	case id == nil && s.curElecID != nil:
 		// We are in SINGLE_PRIMARY mode but we were not given an election behaviour.
 		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "unsupported election behaviour, client in SINGLE_PRIMARY mode"), &spb.FlushResponseError{
 			Status: spb.FlushResponseError_UNSPECIFIED_ELECTION_BEHAVIOR,
 		})
-	case e != nil && s.curElecID == nil:
+	case id != nil && s.curElecID == nil:
 		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "received election ID in ALL_PRIMARY mode"), &spb.FlushResponseError{
 			Status: spb.FlushResponseError_ELECTION_ID_IN_ALL_PRIMARY,
 		})
 	}
 
-	if t, ok := e.(*spb.FlushRequest_Id); ok {
-		// If the Flush specified an ID, then we need to check that it is valid according
-		// to the logic that is defined in the specification - it must be either equal to
-		// or higher than the value that is the current master,
-		candidate := uint128.New(t.Id.Low, t.Id.High)
+	// If the Flush specified an ID, then we need to check that it is valid according
+	// to the logic that is defined in the specification - it must be either equal to
+	// or higher than the value that is the current master,
+	candidate := uint128.New(id.Low, id.High)
 
-		if uint128.New(0, 0).Equals(candidate) {
-			return addFlushErrDetailsOrReturn(status.Newf(codes.InvalidArgument, "zero is an invalid election ID"), &spb.FlushResponseError{
-				Status: spb.FlushResponseError_INVALID_ELECTION_ID,
-			})
-		}
-
-		existing := uint128.New(s.curElecID.Low, s.curElecID.High)
-		if candidate.Cmp(existing) < 0 {
-			return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "election ID specified (%v) is not primary", candidate), &spb.FlushResponseError{
-				Status: spb.FlushResponseError_NOT_PRIMARY,
-			})
-		}
+	if uint128.New(0, 0).Equals(candidate) {
+		return addFlushErrDetailsOrReturn(status.Newf(codes.InvalidArgument, "zero is an invalid election ID"), &spb.FlushResponseError{
+			Status: spb.FlushResponseError_INVALID_ELECTION_ID,
+		})
 	}
 
-	// By default, override must have been specified as Election was non-nil.
-	// return successfully.
+	existing := uint128.New(s.curElecID.Low, s.curElecID.High)
+	if candidate.Cmp(existing) < 0 {
+		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "election ID specified (%v) is not primary", candidate), &spb.FlushResponseError{
+			Status: spb.FlushResponseError_NOT_PRIMARY,
+		})
+	}
+
 	return nil
 }
 

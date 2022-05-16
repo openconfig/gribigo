@@ -1069,6 +1069,9 @@ func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
 
 	id := req.GetId()
 	switch {
+	case id == nil && s.curElecID == nil:
+		// We are in ALL_PRIMARY mode and not given an election ID, which is fine.
+		return nil
 	case id == nil && s.curElecID != nil:
 		// We are in SINGLE_PRIMARY mode but we were not given an election behaviour.
 		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "unsupported election behaviour, client in SINGLE_PRIMARY mode"), &spb.FlushResponseError{
@@ -1078,10 +1081,6 @@ func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
 		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "received election ID in ALL_PRIMARY mode"), &spb.FlushResponseError{
 			Status: spb.FlushResponseError_ELECTION_ID_IN_ALL_PRIMARY,
 		})
-	}
-
-	if id == nil {
-		return nil
 	}
 
 	// If the Flush specified an ID, then we need to check that it is valid according

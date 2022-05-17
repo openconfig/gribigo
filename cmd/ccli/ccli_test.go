@@ -45,7 +45,7 @@ var (
 	skipFIBACK          = flag.Bool("skip_fiback", false, "skip tests that rely on FIB ACK")
 	skipSrvReorder      = flag.Bool("skip_reordering", false, "skip tests that rely on server side transaction reordering")
 	skipImplicitReplace = flag.Bool("skip_implicit_replace", false, "skip tests for ADD operations that perform implicit replacement of existing entries")
-	skipNonDefaultNI    = flag.Bool("skip_non_default_ni", false, "skip tests that configure entries in a non-default network-instance")
+	skipNonDefaultNINHG = flag.Bool("skip_non_default_ni_nhg", false, "skip tests that configure NH/NHG entries in a non-default network-instance")
 
 	defaultNIName = flag.String("default_ni_name", server.DefaultNetworkInstanceName, "default network instance name to be used for the server")
 )
@@ -75,8 +75,8 @@ func shouldSkip(tt *compliance.TestSpec) string {
 		return "This RequiresServerReordering test is skipped by --skip_reordering"
 	case *skipImplicitReplace && tt.In.RequiresImplicitReplace:
 		return "This RequiresImplicitReplace test is skipped by --skip_implicit_replace"
-	case *skipNonDefaultNI && tt.In.RequiresNonDefaultNI:
-		return "This RequiresNonDefaultNI test is skipped by --skip_non_default_ni"
+	case *skipNonDefaultNINHG && tt.In.RequiresNonDefaultNINHG:
+		return "This RequiresNonDefaultNINHG test is skipped by --skip_non_default_ni_nhg"
 	}
 	return ""
 }

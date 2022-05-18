@@ -100,6 +100,9 @@ type Test struct {
 	// RequiresImplicitReplace marks a test that requires the implementation of AFTOperation
 	// ADD for entries that already exist.
 	RequiresImplicitReplace bool
+	// RequiresNonDefaultNINHG marks a test that configures NH and NHG entries (not
+	// including IPv4) in non-default network-instance.
+	RequiresNonDefaultNINHG bool
 }
 
 // TestSpec is a description of a test.
@@ -399,8 +402,21 @@ var (
 		},
 	}, {
 		In: Test{
-			Fn:        makeTestWithACK(FlushOfSpecificNI, fluent.InstalledInRIB),
-			ShortName: "Flush to specific network instance is honoured",
+			Fn:                      makeTestWithACK(FlushOfSpecificNI, fluent.InstalledInRIB),
+			ShortName:               "Flush to specific network instance is honoured",
+			RequiresNonDefaultNINHG: true,
+		},
+	}, {
+		In: Test{
+			Fn:                      makeTestWithACK(FlushOfAllNIs, fluent.InstalledInRIB),
+			ShortName:               "Flush all network instances",
+			RequiresNonDefaultNINHG: true,
+		},
+	}, {
+		In: Test{
+			Fn:                      makeTestWithACK(FlushPreservesDefaultNI, fluent.InstalledInRIB),
+			ShortName:               "Flush non-default network instances preserves the default",
+			RequiresNonDefaultNINHG: false, // No entries in the non-default VRF.
 		},
 	}}
 )

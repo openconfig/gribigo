@@ -117,6 +117,38 @@ func FlushFromNonMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.Programmi
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 3, t)
 }
 
+// FlushNIUnspecified sends a Flush to the server without specifying the network instsance,
+// and then validates that the programmed chain of entries are not removed.
+func FlushNIUnspecified(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+	addFlushEntriesToNI(c, defaultNetworkInstanceName, wantACK, t)
+
+	// addFlushEntriesToNI increments the election ID so to check with the current value,
+	// we need to subtract one from the current election ID.
+	curID := electionID.Load() - 1
+
+	ctx := context.Background()
+	c.Start(ctx, t)
+	defer c.Stop(t)
+
+	_, flushErr := c.Flush().
+		WithElectionID(curID, 0).
+		Send()
+	if flushErr == nil {
+		t.Fatalf("did not get expected error from flush, got: %v", flushErr)
+	}
+
+	s, ok := status.FromError(flushErr)
+	if !ok {
+		t.Fatalf("received invalid error from server, got: %v", flushErr)
+	}
+	if got, want := s.Code(), codes.FailedPrecondition; got != want {
+		t.Fatalf("did not get expected error from server, got code: %s (error: %v), want: %s", got, flushErr, want)
+	}
+
+	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 3, t)
+}
+
 // FlushOfSpecificNI programs entries into two network-instances, the default and a named
 // L3VRF. It subsequently issues a Flush RPC and ensures that entries that are within the
 // flushed network instance (the default) are removed, but the others are preserved.

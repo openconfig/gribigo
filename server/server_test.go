@@ -2097,6 +2097,7 @@ func TestFlush(t *testing.T) {
 				All: &spb.Empty{},
 			},
 		},
+		wantResult: spb.FlushResponse_OK,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 0,
 		},
@@ -2108,6 +2109,7 @@ func TestFlush(t *testing.T) {
 				Name: DefaultNetworkInstanceName,
 			},
 		},
+		wantResult: spb.FlushResponse_OK,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 0,
 		},
@@ -2119,14 +2121,16 @@ func TestFlush(t *testing.T) {
 				Name: "one",
 			},
 		},
+		wantResult: spb.FlushResponse_OK,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 3,
 			"one":                      0,
 		},
 	}, {
-		desc:     "don't remove any entries",
-		inServer: multiNI([]string{"two"}),
-		inReq:    &spb.FlushRequest{},
+		desc:       "don't remove any entries",
+		inServer:   multiNI([]string{"two"}),
+		inReq:      &spb.FlushRequest{},
+		wantResult: spb.FlushResponse_OK, // TODO(xw-g): The Flush() func is not checking nil request propertly. Fix it in next branch.
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 3,
 			"two":                      3,
@@ -2232,7 +2236,7 @@ func TestFlush(t *testing.T) {
 				return
 			}
 			if tt.wantResult != resp.GetResult() {
-				t.Fatalf("got unexpected result, got: %v, want: %v", tt.wantResult.String(), resp.Result.String())
+				t.Fatalf("got unexpected result, got: %v, want: %v", resp.Result.String(), tt.wantResult.String())
 				return
 			}
 

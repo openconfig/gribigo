@@ -2123,6 +2123,7 @@ func TestFlush(t *testing.T) {
 		inServer        *Server
 		inReq           *spb.FlushRequest
 		wantErrCode     codes.Code
+		wantResult      spb.FlushResponse_Result
 		wantEntriesInNI map[string]int
 	}{{
 		desc:     "remove all entries in single NI as ALL",
@@ -2132,6 +2133,7 @@ func TestFlush(t *testing.T) {
 				All: &spb.Empty{},
 			},
 		},
+		wantResult: spb.FlushResponse_OK,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 0,
 		},
@@ -2178,6 +2180,7 @@ func TestFlush(t *testing.T) {
 				All: &spb.Empty{},
 			},
 		},
+		wantResult: spb.FlushResponse_OK,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 0,
 			"three":                    0,
@@ -2193,6 +2196,7 @@ func TestFlush(t *testing.T) {
 				Id: &spb.Uint128{High: 0, Low: 1},
 			},
 		},
+		wantResult: spb.FlushResponse_OK,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 0,
 		},
@@ -2222,6 +2226,7 @@ func TestFlush(t *testing.T) {
 				Override: &spb.Empty{},
 			},
 		},
+		wantResult: spb.FlushResponse_OK,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 0,
 		},
@@ -2256,7 +2261,8 @@ func TestFlush(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			if _, err := tt.inServer.Flush(context.Background(), tt.inReq); err != nil {
+			resp, err := tt.inServer.Flush(context.Background(), tt.inReq)
+			if err != nil {
 				s, ok := status.FromError(err)
 				if !ok {
 					t.Fatalf("did not get status.Status as error, got: %T %v", err, err)
@@ -2264,6 +2270,11 @@ func TestFlush(t *testing.T) {
 				if got, want := s.Code(), tt.wantErrCode; got != want {
 					t.Fatalf("did not get expected error code, got: %s, want: %s", got, want)
 				}
+				return
+			}
+			if tt.wantResult != resp.GetResult() {
+				t.Fatalf("got unexpected result, got: %v, want: %v", resp.Result.String(), tt.wantResult.String())
+				return
 			}
 
 			for ni, wantEntries := range tt.wantEntriesInNI {

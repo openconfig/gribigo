@@ -23,6 +23,8 @@ import (
 	"github.com/openconfig/gribigo/fluent"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 // FlushFromMasterDefaultNI programs a chain of entries into the default NI with the
@@ -48,8 +50,8 @@ func FlushFromMasterDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 	switch {
 	case err != nil:
 		t.Fatalf("got unexpected error from flush, got: %v", err)
-	case fr == nil:
-		t.Fatalf("got nil response from flush, got: %v", fr)
+	case fr.GetResult() != spb.FlushResponse_OK:
+		t.Fatalf("unexpected response from flush, got: %v, want: %v", fr.GetResult().String(), spb.FlushResponse_OK.String())
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
@@ -74,8 +76,8 @@ func FlushFromOverrideDefaultNI(c *fluent.GRIBIClient, wantACK fluent.Programmin
 	switch {
 	case err != nil:
 		t.Fatalf("got unexpected error from flush, got: %v", err)
-	case fr == nil:
-		t.Fatalf("got nil response from flush, got: %v", fr)
+	case fr.GetResult() != spb.FlushResponse_OK:
+		t.Fatalf("unexpected response from flush, got: %v, want: %v", fr.GetResult().String(), spb.FlushResponse_OK.String())
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
@@ -139,8 +141,8 @@ func FlushOfSpecificNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, 
 	switch {
 	case err != nil:
 		t.Fatalf("got unexpected error from flush, got: %v", err)
-	case fr == nil:
-		t.Fatalf("got nil response from flush, got: %v", fr)
+	case fr.GetResult() != spb.FlushResponse_OK:
+		t.Fatalf("unexpected response from flush, got: %v, want: %v", fr.GetResult().String(), spb.FlushResponse_OK.String())
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
@@ -175,8 +177,8 @@ func FlushOfAllNIs(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 	switch {
 	case err != nil:
 		t.Fatalf("got unexpected error from flush, got: %v", err)
-	case fr == nil:
-		t.Fatalf("got nil response from flush, got: %v", fr)
+	case fr.GetResult() != spb.FlushResponse_OK:
+		t.Fatalf("unexpected response from flush, got: %v, want: %v", fr.GetResult().String(), spb.FlushResponse_OK.String())
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 0, t)
@@ -206,8 +208,8 @@ func FlushPreservesDefaultNI(c *fluent.GRIBIClient, wantACK fluent.ProgrammingRe
 	switch {
 	case err != nil:
 		t.Fatalf("got unexpected error from flush, got: %v", err)
-	case fr == nil:
-		t.Fatalf("got nil response from flush, got: %v", fr)
+	case fr.GetResult() != spb.FlushResponse_OK:
+		t.Fatalf("unexpected response from flush, got: %v, want: %v", fr.GetResult().String(), spb.FlushResponse_OK.String())
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 3, t)

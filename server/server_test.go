@@ -1886,11 +1886,29 @@ func TestCheckFlushRequest(t *testing.T) {
 		wantErrCode    codes.Code
 		wantErrDetails *spb.FlushResponseError
 	}{{
+		desc: "network instance is not specified",
+		inServer: &Server{
+			curElecID: &spb.Uint128{High: 0, Low: 3},
+		},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 0, Low: 3},
+			},
+		},
+		wantErrCode: codes.FailedPrecondition,
+		wantErrDetails: &spb.FlushResponseError{
+			Status: spb.FlushResponseError_UNSPECIFIED_NETWORK_INSTANCE,
+		},
+	}, {
 		desc: "election unspecified, but server is in SINGLE_PRIMARY",
 		inServer: &Server{
 			curElecID: &spb.Uint128{High: 1, Low: 1},
 		},
-		inRequest:   &spb.FlushRequest{},
+		inRequest: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+		},
 		wantErrCode: codes.FailedPrecondition,
 		wantErrDetails: &spb.FlushResponseError{
 			Status: spb.FlushResponseError_UNSPECIFIED_ELECTION_BEHAVIOR,
@@ -1901,6 +1919,9 @@ func TestCheckFlushRequest(t *testing.T) {
 		inRequest: &spb.FlushRequest{
 			Election: &spb.FlushRequest_Id{
 				Id: &spb.Uint128{High: 42, Low: 42},
+			},
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
 			},
 		},
 		wantErrCode: codes.FailedPrecondition,
@@ -1916,6 +1937,9 @@ func TestCheckFlushRequest(t *testing.T) {
 			Election: &spb.FlushRequest_Id{
 				Id: &spb.Uint128{High: 0, Low: 0},
 			},
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
 		},
 		wantErrCode: codes.InvalidArgument,
 		wantErrDetails: &spb.FlushResponseError{
@@ -1929,6 +1953,9 @@ func TestCheckFlushRequest(t *testing.T) {
 		inRequest: &spb.FlushRequest{
 			Election: &spb.FlushRequest_Id{
 				Id: &spb.Uint128{High: 0, Low: 1},
+			},
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
 			},
 		},
 		wantErrCode: codes.FailedPrecondition,
@@ -1944,6 +1971,9 @@ func TestCheckFlushRequest(t *testing.T) {
 			Election: &spb.FlushRequest_Id{
 				Id: &spb.Uint128{High: 0, Low: 3},
 			},
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
 		},
 	}, {
 		desc: "specified ID is OK - greater than",
@@ -1954,6 +1984,9 @@ func TestCheckFlushRequest(t *testing.T) {
 			Election: &spb.FlushRequest_Id{
 				Id: &spb.Uint128{High: 0, Low: 4},
 			},
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
 		},
 	}, {
 		desc: "override specified",
@@ -1963,6 +1996,9 @@ func TestCheckFlushRequest(t *testing.T) {
 		inRequest: &spb.FlushRequest{
 			Election: &spb.FlushRequest_Override{
 				Override: &spb.Empty{},
+			},
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
 			},
 		},
 	}}
@@ -2099,33 +2135,37 @@ func TestFlush(t *testing.T) {
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 0,
 		},
+		wantResult: spb.FlushResponse_OK,
 	}, {
-		desc:     "remove all entries in single NI with explicit name",
+		desc:     "remove all entries in the default NI",
 		inServer: singleNI(),
 		inReq: &spb.FlushRequest{
 			NetworkInstance: &spb.FlushRequest_Name{
 				Name: DefaultNetworkInstanceName,
 			},
 		},
+		wantResult: spb.FlushResponse_OK,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 0,
 		},
 	}, {
-		desc:     "remove entries in only one NI - explicit name",
+		desc:     "remove entries in a non default NI",
 		inServer: multiNI([]string{"one"}),
 		inReq: &spb.FlushRequest{
 			NetworkInstance: &spb.FlushRequest_Name{
 				Name: "one",
 			},
 		},
+		wantResult: spb.FlushResponse_OK,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 3,
 			"one":                      0,
 		},
 	}, {
-		desc:     "don't remove any entries",
-		inServer: multiNI([]string{"two"}),
-		inReq:    &spb.FlushRequest{},
+		desc:        "network instance is not specified",
+		inServer:    multiNI([]string{"two"}),
+		inReq:       &spb.FlushRequest{},
+		wantErrCode: codes.FailedPrecondition,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 3,
 			"two":                      3,

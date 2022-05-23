@@ -2137,7 +2137,6 @@ func TestFlush(t *testing.T) {
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 0,
 		},
-		wantResult: spb.FlushResponse_OK,
 	}, {
 		desc:     "remove all entries in the default NI",
 		inServer: singleNI(),

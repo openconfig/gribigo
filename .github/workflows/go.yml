@@ -58,10 +58,13 @@ jobs:
 
       - name: Install required static analysis tools
         run: |
-          go get -u honnef.co/go/tools/cmd/staticcheck
+          go install honnef.co/go/tools/cmd/staticcheck@latest
 
       - name: Check out code
         uses: actions/checkout@v2
+
+      - name: Get dependencies
+        run: go get -v -t -d ./...
 
       - name: Go vet
         run: go vet ./...

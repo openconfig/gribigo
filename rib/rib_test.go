@@ -3360,7 +3360,7 @@ func TestFlush(t *testing.T) {
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
 				NextHop: &aftpb.Afts_NextHop{
-					ProgrammedIndex: &wpb.UintValue{Value: 42},
+					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
 				},
 			}, false)
 			if err != nil {
@@ -3377,7 +3377,7 @@ func TestFlush(t *testing.T) {
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
 				NextHop: &aftpb.Afts_NextHop{
-					ProgrammedIndex: &wpb.UintValue{Value: 42},
+					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
 				},
 			}, false)
 			if err != nil {
@@ -3387,7 +3387,6 @@ func TestFlush(t *testing.T) {
 			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 				Id: 1,
 				NextHopGroup: &aftpb.Afts_NextHopGroup{
-					ProgrammedId: &wpb.UintValue{Value: 1},
 					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
 						Index: 1,
 						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
@@ -3410,7 +3409,7 @@ func TestFlush(t *testing.T) {
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
 				NextHop: &aftpb.Afts_NextHop{
-					ProgrammedIndex: &wpb.UintValue{Value: 42},
+					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
 				},
 			}, false)
 			if err != nil {
@@ -3420,7 +3419,6 @@ func TestFlush(t *testing.T) {
 			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 				Id: 1,
 				NextHopGroup: &aftpb.Afts_NextHopGroup{
-					ProgrammedId: &wpb.UintValue{Value: 1},
 					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
 						Index: 1,
 						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
@@ -3436,7 +3434,6 @@ func TestFlush(t *testing.T) {
 			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 				Id: 2,
 				NextHopGroup: &aftpb.Afts_NextHopGroup{
-					ProgrammedId: &wpb.UintValue{Value: 1},
 					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
 						Index: 1,
 						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
@@ -3460,7 +3457,7 @@ func TestFlush(t *testing.T) {
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
 				NextHop: &aftpb.Afts_NextHop{
-					ProgrammedIndex: &wpb.UintValue{Value: 42},
+					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
 				},
 			}, false)
 			if err != nil {
@@ -3470,7 +3467,6 @@ func TestFlush(t *testing.T) {
 			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 				Id: 1,
 				NextHopGroup: &aftpb.Afts_NextHopGroup{
-					ProgrammedId: &wpb.UintValue{Value: 1},
 					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
 						Index: 1,
 						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
@@ -3487,7 +3483,6 @@ func TestFlush(t *testing.T) {
 			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 				Id: 2,
 				NextHopGroup: &aftpb.Afts_NextHopGroup{
-					ProgrammedId: &wpb.UintValue{Value: 1},
 					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
 						Index: 1,
 						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
@@ -3511,7 +3506,7 @@ func TestFlush(t *testing.T) {
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
 				NextHop: &aftpb.Afts_NextHop{
-					ProgrammedIndex: &wpb.UintValue{Value: 42},
+					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
 				},
 			}, false)
 			if err != nil {
@@ -3521,7 +3516,6 @@ func TestFlush(t *testing.T) {
 			_, _, err = r.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
 				Id: 1,
 				NextHopGroup: &aftpb.Afts_NextHopGroup{
-					ProgrammedId: &wpb.UintValue{Value: 1},
 					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
 						Index: 1,
 						NextHop: &aftpb.Afts_NextHopGroup_NextHop{

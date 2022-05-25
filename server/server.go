@@ -445,6 +445,7 @@ func (s *Server) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 
 	return &spb.FlushResponse{
 		Timestamp: unixTS(),
+		Result:    spb.FlushResponse_OK,
 	}, nil
 }
 

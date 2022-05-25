@@ -3358,8 +3358,10 @@ func TestFlush(t *testing.T) {
 			r := NewRIBHolder("DEFAULT")
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
-				Index:   1,
-				NextHop: &aftpb.Afts_NextHop{},
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
+				},
 			}, false)
 			if err != nil {
 				t.Fatalf("cannot add next-hop, %v", err)
@@ -3373,8 +3375,10 @@ func TestFlush(t *testing.T) {
 			r := NewRIBHolder("DEFAULT")
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
-				Index:   1,
-				NextHop: &aftpb.Afts_NextHop{},
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
+				},
 			}, false)
 			if err != nil {
 				t.Fatalf("cannot add next-hop, %v", err)
@@ -3403,8 +3407,10 @@ func TestFlush(t *testing.T) {
 			r := NewRIBHolder("DEFAULT")
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
-				Index:   1,
-				NextHop: &aftpb.Afts_NextHop{},
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
+				},
 			}, false)
 			if err != nil {
 				t.Fatalf("cannot add next-hop, %v", err)
@@ -3449,8 +3455,10 @@ func TestFlush(t *testing.T) {
 			r := NewRIBHolder("DEFAULT")
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
-				Index:   1,
-				NextHop: &aftpb.Afts_NextHop{},
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
+				},
 			}, false)
 			if err != nil {
 				t.Fatalf("cannot add next-hop, %v", err)
@@ -3496,8 +3504,10 @@ func TestFlush(t *testing.T) {
 			r := NewRIBHolder("DEFAULT")
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
-				Index:   1,
-				NextHop: &aftpb.Afts_NextHop{},
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
+				},
 			}, false)
 			if err != nil {
 				t.Fatalf("cannot add next-hop, %v", err)

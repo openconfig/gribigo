@@ -4,6 +4,8 @@ on:
   push:
     branches: [ main ]
   pull_request:
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
   build:
@@ -11,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ['1.15', '1.16', '1.x']
+        go: ['1.13', '1.14', '1.15', '1.16', '1.x']
     steps:
 
     - name: Set up Go ${{ matrix.go }}
@@ -60,6 +62,9 @@ jobs:
 
       - name: Check out code
         uses: actions/checkout@v2
+
+      - name: Get dependencies
+        run: go get -v -t -d ./...
 
       - name: Go vet
         run: go vet ./...

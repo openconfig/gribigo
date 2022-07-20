@@ -583,6 +583,48 @@ func (i *ipv4Entry) EntryProto() (*spb.AFTEntry, error) {
 	}, nil
 }
 
+// labelEntry is the internal representation of a MPLS label entry in gRIBI.
+type labelEntry struct {
+	// ni is the network instance that the MPLS label entry is within.
+	ni string
+	// pb is the AFT protobuf representing the label entry.
+	pb *aftpb.Afts_LabelEntryKey
+
+	// electionID is the explicit electionID to be used when the MPLS
+	// entry is programmed.
+	electionID *spb.Uint128
+}
+
+// LabelEntry returns a builder that can be used to define a MPLS label entry in
+// the gRIBI AFT schema.
+func LabelEntry() *labelEntry {
+	return &labelEntry{
+		pb: &aftpb.Afts_LabelEntryKey{
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+	}
+}
+
+// WithLabel modifies the supplied label entry to include the label that it matches.
+func (l *labelEntry) WithLabel(v uint32) *labelEntry {
+	l.pb.Label = &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: uint64(v)}
+	return l
+}
+
+// WithPoppedMPLSLabelStack specifies the labels that should be popped from the
+// label entry. The labels are specified from the outer-most (top) label to the
+// inner-most (bottom-of-stack).
+func (l *labelEntry) WithPoppedMPLSLabelStack(labels ...uint32) *labelEntry {
+	l.pb.LabelEntry.PoppedMplsLabelStack = []*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{}
+	for _, v := range labels {
+		lbl := &aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
+			PoppedMplsLabelStackUint64: uint64(v),
+		}
+		l.pb.LabelEntry.PoppedMplsLabelStack = append(l.pb.LabelEntry.PoppedMplsLabelStack, lbl)
+	}
+	return l
+}
+
 // nextHopEntry is the internal representation of a next-hop Entry in gRIBI.
 type nextHopEntry struct {
 	// ni is the network instance that the next-hop entry is within.
@@ -590,7 +632,7 @@ type nextHopEntry struct {
 	// pb is the AFT protobuf representing the next-hop entry.
 	pb *aftpb.Afts_NextHopKey
 
-	// electionID is an explicit electionID to be used hen the next-hop entry
+	// electionID is an explicit electionID to be used when the next-hop entry
 	// is programmed.
 	electionID *spb.Uint128
 }
@@ -668,6 +710,30 @@ func (n *nextHopEntry) WithIPinIP(srcIP, dstIP string) *nextHopEntry {
 func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
 	n.pb.NextHop.NetworkInstance = &wpb.StringValue{Value: ni}
 	return n
+}
+
+// WithPopTopLabel specifies that the top-most MPLS label should be popped from the
+// packet. In this case, the exact value of the label to be popped need not be
+// specified.
+func (n *nextHopEntry) WithPopTopLabel() *nextHopEntry {
+	n.pb.NextHop.PopTopLabel = &wpb.BoolValue{Value: true}
+	return n
+}
+
+// WithPushedLabelStack specifies the label stack that should be pushed onto the
+// packet as it is routed to this next-hop. The order of the labels is specified from
+// in the inner-most to the outer-most such that the first label is the closest to the
+// bottom of the stack.
+func (n *nextHopEntry) WithPushedLabelStack(labels ...uint32) *nextHopEntry {
+	n.pb.NextHop.PushedMplsLabelStack = []*aftpb.Afts_NextHop_PushedMplsLabelStackUnion{}
+	for _, v := range labels {
+		lbl := &aftpb.Afts_NextHop_PushedMplsLabelStackUnion{
+			PushedMplsLabelStackUint64: uint64(v),
+		}
+		n.pb.NextHop.PushedMplsLabelStack = append(n.pb.NextHop.PushedMplsLabelStack, lbl)
+	}
+	return n
+
 }
 
 // Header represents the enumerated set of headers that a packet can be encapsulated or

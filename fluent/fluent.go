@@ -561,7 +561,7 @@ func (i *ipv4Entry) WithElectionID(low, high uint64) *ipv4Entry {
 }
 
 // OpProto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
-// and ElectionID are explicitly not populated such that they can be populated by
+// is explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
 func (i *ipv4Entry) OpProto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
@@ -603,6 +603,29 @@ func LabelEntry() *labelEntry {
 			LabelEntry: &aftpb.Afts_LabelEntry{},
 		},
 	}
+}
+
+// EntryProto implements the GRIBIEntry interface, to represent the label entry
+// as an AFTEntry.
+func (l *labelEntry) EntryProto() (*spb.AFTEntry, error) {
+	return &spb.AFTEntry{
+		NetworkInstance: l.ni,
+		Entry: &spb.AftEntry_Mpls{
+			Mpls: proto.Clone(l.pb).(*aftpb.Afts_LabelEntryKey),
+		},
+	}, nil
+}
+
+// OpProto implements the GRIBIEntry interface, returning a gRIBI AFTOperation. The
+// ID is explicitly not populated so it can be set by the caller.
+func (l *labelEntry) OpProto() (*spb.AFTOperation, error) {
+	return &spb.AFTOperation{
+		NetworkInstance: i.ni,
+		Entry: &spb.AFTOperation_Mpls{
+			Mpls: proto.Clone(l.pb).(*aftpb.Afts_LabelEntryKey),
+		},
+		ElectionID: i.electionID,
+	}, nil
 }
 
 // WithLabel modifies the supplied label entry to include the label that it matches.

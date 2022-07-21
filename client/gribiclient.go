@@ -595,6 +595,8 @@ type OpDetailsResults struct {
 	NextHopGroupID uint64
 	// IPv4Prefix is the IPv4 prefix modified by the operation.
 	IPv4Prefix string
+	// MPLSLabel is the MPLS label that was modified by the operation.
+	MPLSLabel uint64
 }
 
 // String returns a human-readable form of the OpDetailsResults
@@ -611,6 +613,8 @@ func (o *OpDetailsResults) String() string {
 		buf.WriteString(fmt.Sprintf("NHG ID: %d", o.NextHopGroupID))
 	case o.IPv4Prefix != "":
 		buf.WriteString(fmt.Sprintf("IPv4: %s", o.IPv4Prefix))
+	case o.MPLSLabel != 0:
+		buf.WriteString(fmt.Sprintf("MPLS: %d", o.MPLSLabel))
 	}
 	buf.WriteString(">")
 
@@ -808,6 +812,8 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 	switch opEntry := v.Op.Entry.(type) {
 	case *spb.AFTOperation_Ipv4:
 		det.IPv4Prefix = opEntry.Ipv4.GetPrefix()
+	case *spb.AFTOperation_Mpls:
+		det.MPLSLabel = opEntry.Mpls.GetLabelUint64()
 	case *spb.AFTOperation_NextHopGroup:
 		det.NextHopGroupID = opEntry.NextHopGroup.GetId()
 	case *spb.AFTOperation_NextHop:

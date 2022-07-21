@@ -610,7 +610,7 @@ func LabelEntry() *labelEntry {
 func (l *labelEntry) EntryProto() (*spb.AFTEntry, error) {
 	return &spb.AFTEntry{
 		NetworkInstance: l.ni,
-		Entry: &spb.AftEntry_Mpls{
+		Entry: &spb.AFTEntry_Mpls{
 			Mpls: proto.Clone(l.pb).(*aftpb.Afts_LabelEntryKey),
 		},
 	}, nil
@@ -620,17 +620,38 @@ func (l *labelEntry) EntryProto() (*spb.AFTEntry, error) {
 // ID is explicitly not populated so it can be set by the caller.
 func (l *labelEntry) OpProto() (*spb.AFTOperation, error) {
 	return &spb.AFTOperation{
-		NetworkInstance: i.ni,
+		NetworkInstance: l.ni,
 		Entry: &spb.AFTOperation_Mpls{
 			Mpls: proto.Clone(l.pb).(*aftpb.Afts_LabelEntryKey),
 		},
-		ElectionID: i.electionID,
+		ElectionId: l.electionID,
 	}, nil
 }
 
 // WithLabel modifies the supplied label entry to include the label that it matches.
 func (l *labelEntry) WithLabel(v uint32) *labelEntry {
 	l.pb.Label = &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: uint64(v)}
+	return l
+}
+
+// WithNetworkInstance specifies the network instance within which the label entry
+// is to be installed.
+func (l *labelEntry) WithNetworkInstance(ni string) *labelEntry {
+	l.ni = ni
+	return l
+}
+
+// WithNextHopGroup specifies the next-hop group that should be used by the label
+// entry.
+func (l *labelEntry) WithNextHopGroup(id uint64) *labelEntry {
+	l.pb.LabelEntry.NextHopGroup = &wpb.UintValue{Value: id}
+	return l
+}
+
+// WithNextHopGroupNetworkInstance specifies the network instance within which the
+// label entry's NHG should be resolved.
+func (l *labelEntry) WithNextHopGroupNetworkInstance(ni string) *labelEntry {
+	l.pb.LabelEntry.NextHopGroupNetworkInstance = &wpb.StringValue{Value: ni}
 	return l
 }
 
@@ -1043,6 +1064,16 @@ func (o *opResult) WithNextHopOperation(i uint64) *opResult {
 		o.r.Details = &client.OpDetailsResults{}
 	}
 	o.r.Details.NextHopIndex = i
+	return o
+}
+
+// WithMPLSOperation indicates that the result corresponds to an
+// operation impacting the MPLS LabelEntry with label i.
+func (o *opResult) WithMPLSOperation(i uint64) *opResult {
+	if o.r.Details == nil {
+		o.r.Details = &client.OpDetailsResults{}
+	}
+	o.r.Details.MPLSLabel = i
 	return o
 }
 

@@ -1566,7 +1566,6 @@ func TestServerModifyIntegration(t *testing.T) {
 			if err := c.Connect(ctx); err != nil {
 				return fmt.Errorf("Connect(): cannot connect to server, %v", err)
 			}
-			return nil
 
 			c.Q(&spb.ModifyRequest{})
 			c.StartSending()

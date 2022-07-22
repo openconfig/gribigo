@@ -17,6 +17,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -1525,6 +1526,96 @@ func TestFlush(t *testing.T) {
 			// ensure that the timestamp is numerically before the current time.
 			if got, now := res.Timestamp, time.Now().UnixNano(); got > now {
 				t.Fatalf("received impossible timestamp, got: %v, want: timestamp < %d", res, now)
+			}
+		})
+	}
+}
+
+// TestServerIntegration performs a basic integration test between the server and client to ensure that
+// methods are covered by a test local to the client package.
+func TestServerModifyIntegration(t *testing.T) {
+	tests := []struct {
+		desc   string
+		testFn func(context.Context, *Client) error
+	}{{
+		desc: "connection",
+		testFn: func(ctx context.Context, c *Client) error {
+			defer c.Close()
+			if err := c.Connect(ctx); err != nil {
+				return fmt.Errorf("Connect(): cannot connect to server, %v", err)
+			}
+			return nil
+		},
+	}, {
+		desc: "connect and await converged - no messages",
+		testFn: func(ctx context.Context, c *Client) error {
+			defer c.Close()
+			if err := c.Connect(ctx); err != nil {
+				return fmt.Errorf("Connect(): cannot connect to server, %v", err)
+			}
+
+			if err := c.AwaitConverged(ctx); err != nil {
+				return fmt.Errorf("AwaitConverged(): returned error, %v", err)
+			}
+			return nil
+		},
+	}, {
+		desc: "connect and start sending",
+		testFn: func(ctx context.Context, c *Client) error {
+			defer c.Close()
+			if err := c.Connect(ctx); err != nil {
+				return fmt.Errorf("Connect(): cannot connect to server, %v", err)
+			}
+			return nil
+
+			c.Q(&spb.ModifyRequest{})
+			c.StartSending()
+
+			if err := c.AwaitConverged(ctx); err != nil {
+				return fmt.Errorf("AwaitConverged(): returned error, %v", err)
+			}
+			return nil
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			nr := rib.New(server.DefaultNetworkInstanceName, rib.DisableRIBCheckFn())
+			creds, err := credentials.NewServerTLSFromFile(testcommon.TLSCreds())
+			if err != nil {
+				t.Fatalf("cannot load TLS credentials, got err: %v", err)
+			}
+			srv := grpc.NewServer(grpc.Creds(creds))
+			s, err := server.NewFake(server.DisableRIBCheckFn())
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
+
+			s.InjectRIB(nr)
+			l, err := net.Listen("tcp", "localhost:0")
+			if err != nil {
+				t.Fatalf("cannot create gRIBI server, %v", err)
+			}
+
+			spb.RegisterGRIBIServer(srv, s)
+
+			go srv.Serve(l)
+			defer srv.Stop()
+
+			c, err := New()
+			if err != nil {
+				t.Fatalf("cannot create client, %v", err)
+			}
+			dctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := c.Dial(dctx, l.Addr().String()); err != nil {
+				t.Fatalf("cannot connect to fake server, %v", err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if err := tt.testFn(ctx, c); err != nil {
+				t.Fatalf("failed test function, %v", err)
 			}
 		})
 	}

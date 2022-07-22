@@ -103,7 +103,7 @@ func TestHasMessage(t *testing.T) {
 		inResults: []*client.OpResult{{
 			OperationID: 42,
 			Details: &client.OpDetailsResults{
-				Type: constants.Add,
+				Type:      constants.Add,
 				MPLSLabel: 42,
 			},
 		}},

@@ -620,9 +620,9 @@ func (s *Server) setClientParams(id string, p *clientParams) error {
 
 // isNewMaster takes two election IDs and determines whether the candidate (cand) is a new
 // master given the existing master (exist). It returns:
-//  - a bool which indicates whether the candidate is the new master
-//  - a bool which indicates whether this is an election ID with the same election ID
-//  - an error indicating whether this was an invalid update
+//   - a bool which indicates whether the candidate is the new master
+//   - a bool which indicates whether this is an election ID with the same election ID
+//   - an error indicating whether this was an invalid update
 func isNewMaster(cand, exist *spb.Uint128) (bool, bool, error) {
 	if exist == nil {
 		return true, false, nil
@@ -921,9 +921,10 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 
 // checkElectionForModify checks whether the operation with ID opID, and election ID opElecID
 // with the server that has the election context described by election should proceed. It returns
-//  - a ModifyResponse which is to be sent to the client
-//  - a bool determining whether the modify should proceed
-//  - an error that is returned to the client.
+//   - a ModifyResponse which is to be sent to the client
+//   - a bool determining whether the modify should proceed
+//   - an error that is returned to the client.
+//
 // The bool is set to true in the case that a non-fatal error (e.g., an error whereby the
 // operation is just ignored) is encountered.
 // Any returned error is considered fatal to the Modify RPC and can be sent directly back
@@ -1062,12 +1063,14 @@ func addFlushErrDetailsOrReturn(s *status.Status, d *spb.FlushResponseError) err
 // validating that the election parameters are consistent, and correct, and that the Flush should be
 // completed.
 func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
-	if req.GetNetworkInstance() == nil {
+	switch {
+	case req == nil:
+		return status.Newf(codes.Internal, "FlushRequest can not be nil").Err()
+	case req.GetNetworkInstance() == nil:
 		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "unspecified network instance"), &spb.FlushResponseError{
 			Status: spb.FlushResponseError_UNSPECIFIED_NETWORK_INSTANCE,
 		})
-	}
-	if req.GetOverride() != nil {
+	case req.GetOverride() != nil:
 		// The election ID should not be compared, regardless of whether
 		// there are SINGLE_PRIMARY clients on the server.
 		return nil

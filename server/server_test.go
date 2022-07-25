@@ -2135,6 +2135,14 @@ func TestFlush(t *testing.T) {
 		wantResult      spb.FlushResponse_Result
 		wantEntriesInNI map[string]int
 	}{{
+		desc:        "error, nil request received",
+		inServer:    multiNI([]string{"two"}),
+		wantErrCode: codes.Internal,
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 3,
+			"two":                      3,
+		},
+	}, {
 		desc:        "error, empty request received",
 		inServer:    multiNI([]string{"two"}),
 		inReq:       &spb.FlushRequest{},

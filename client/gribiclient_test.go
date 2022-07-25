@@ -1531,7 +1531,8 @@ func TestFlush(t *testing.T) {
 	}
 }
 
-// TestServerIntegration performs a basic integration test between the server and client to ensure that
+// TestServerModifyIntegration performs a basic integration test for the Modify
+// RPC between the server and client to ensure that
 // methods are covered by a test local to the client package.
 func TestServerModifyIntegration(t *testing.T) {
 	tests := []struct {
@@ -1608,7 +1609,7 @@ func TestServerModifyIntegration(t *testing.T) {
 			dctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			if err := c.Dial(dctx, l.Addr().String()); err != nil {
-				t.Fatalf("cannot connect to fake server, %v", err)
+				t.Fatalf("Dial(_, %s): cannot dial fake server, err: %v", l.Addr().String(), err)
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()

@@ -388,8 +388,8 @@ func TestEntry(t *testing.T) {
 					LabelEntry: &aftpb.Afts_LabelEntry{
 						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
 						PoppedMplsLabelStack: []*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
-							&aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{PoppedMplsLabelStackUint64: 10},
-							&aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{PoppedMplsLabelStackUint64: 20},
+							{PoppedMplsLabelStackUint64: 10},
+							{PoppedMplsLabelStackUint64: 20},
 						},
 					},
 				},
@@ -403,8 +403,8 @@ func TestEntry(t *testing.T) {
 					LabelEntry: &aftpb.Afts_LabelEntry{
 						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
 						PoppedMplsLabelStack: []*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
-							&aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{PoppedMplsLabelStackUint64: 10},
-							&aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{PoppedMplsLabelStackUint64: 20},
+							{PoppedMplsLabelStackUint64: 10},
+							{PoppedMplsLabelStackUint64: 20},
 						},
 					},
 				},

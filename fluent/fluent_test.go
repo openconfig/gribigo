@@ -377,6 +377,39 @@ func TestEntry(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc: "mpls entry",
+		in:   LabelEntry().WithNetworkInstance("DEFAULT").WithLabel(42).WithNextHopGroupNetworkInstance("DEFAULT").WithPoppedMPLSLabelStack(10, 20),
+		wantOpProto: &spb.AFTOperation{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
+					LabelEntry: &aftpb.Afts_LabelEntry{
+						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
+						PoppedMplsLabelStack: []*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
+							&aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{PoppedMplsLabelStackUint64: 10},
+							&aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{PoppedMplsLabelStackUint64: 20},
+						},
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
+					LabelEntry: &aftpb.Afts_LabelEntry{
+						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
+						PoppedMplsLabelStack: []*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
+							&aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{PoppedMplsLabelStackUint64: 10},
+							&aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{PoppedMplsLabelStackUint64: 20},
+						},
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {

@@ -2118,6 +2118,15 @@ func TestFlush(t *testing.T) {
 		return s.Server
 	}
 
+	// multiNI creates a server with a default network instance along with the
+	// other network instances specified. It also set the election ID.
+	// Each network instance contains one entry.
+	multiNIWithElection := func(names []string, id *spb.Uint128) *Server {
+		s := multiNI(names)
+		s.curElecID = id
+		return s
+	}
+
 	tests := []struct {
 		desc            string
 		inServer        *Server
@@ -2126,44 +2135,7 @@ func TestFlush(t *testing.T) {
 		wantResult      spb.FlushResponse_Result
 		wantEntriesInNI map[string]int
 	}{{
-		desc:     "remove all entries in single NI as ALL",
-		inServer: singleNI(),
-		inReq: &spb.FlushRequest{
-			NetworkInstance: &spb.FlushRequest_All{
-				All: &spb.Empty{},
-			},
-		},
-		wantResult: spb.FlushResponse_OK,
-		wantEntriesInNI: map[string]int{
-			DefaultNetworkInstanceName: 0,
-		},
-	}, {
-		desc:     "remove all entries in the default NI",
-		inServer: singleNI(),
-		inReq: &spb.FlushRequest{
-			NetworkInstance: &spb.FlushRequest_Name{
-				Name: DefaultNetworkInstanceName,
-			},
-		},
-		wantResult: spb.FlushResponse_OK,
-		wantEntriesInNI: map[string]int{
-			DefaultNetworkInstanceName: 0,
-		},
-	}, {
-		desc:     "remove entries in a non default NI",
-		inServer: multiNI([]string{"one"}),
-		inReq: &spb.FlushRequest{
-			NetworkInstance: &spb.FlushRequest_Name{
-				Name: "one",
-			},
-		},
-		wantResult: spb.FlushResponse_OK,
-		wantEntriesInNI: map[string]int{
-			DefaultNetworkInstanceName: 3,
-			"one":                      0,
-		},
-	}, {
-		desc:        "network instance is not specified",
+		desc:        "error, empty request received",
 		inServer:    multiNI([]string{"two"}),
 		inReq:       &spb.FlushRequest{},
 		wantErrCode: codes.FailedPrecondition,
@@ -2172,35 +2144,31 @@ func TestFlush(t *testing.T) {
 			"two":                      3,
 		},
 	}, {
-		desc:     "remove entries in all NIs",
-		inServer: multiNI([]string{"three"}),
-		inReq: &spb.FlushRequest{
-			NetworkInstance: &spb.FlushRequest_All{
-				All: &spb.Empty{},
-			},
-		},
-		wantResult: spb.FlushResponse_OK,
-		wantEntriesInNI: map[string]int{
-			DefaultNetworkInstanceName: 0,
-			"three":                    0,
-		},
-	}, {
-		desc:     "election ID specified explicitly - valid",
+		desc:     "error, network instance is not specified",
 		inServer: singleNIWithElection(&spb.Uint128{High: 0, Low: 1}),
 		inReq: &spb.FlushRequest{
-			NetworkInstance: &spb.FlushRequest_All{
-				All: &spb.Empty{},
-			},
 			Election: &spb.FlushRequest_Id{
 				Id: &spb.Uint128{High: 0, Low: 1},
 			},
 		},
-		wantResult: spb.FlushResponse_OK,
+		wantErrCode: codes.FailedPrecondition,
 		wantEntriesInNI: map[string]int{
-			DefaultNetworkInstanceName: 0,
+			DefaultNetworkInstanceName: 3,
 		},
 	}, {
-		desc:     "election ID specified explicitly - not master",
+		desc:     "error, network instance does not exist",
+		inServer: singleNI(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: "does-not-exist",
+			},
+		},
+		wantErrCode: codes.InvalidArgument,
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 3,
+		},
+	}, {
+		desc:     "error, election ID specified but not master",
 		inServer: singleNIWithElection(&spb.Uint128{High: 0, Low: 2}),
 		inReq: &spb.FlushRequest{
 			NetworkInstance: &spb.FlushRequest_All{
@@ -2215,34 +2183,7 @@ func TestFlush(t *testing.T) {
 		},
 		wantErrCode: codes.FailedPrecondition,
 	}, {
-		desc:     "election ID specified explicitly - override",
-		inServer: singleNIWithElection(&spb.Uint128{High: 0, Low: 42}),
-		inReq: &spb.FlushRequest{
-			NetworkInstance: &spb.FlushRequest_All{
-				All: &spb.Empty{},
-			},
-			Election: &spb.FlushRequest_Override{
-				Override: &spb.Empty{},
-			},
-		},
-		wantResult: spb.FlushResponse_OK,
-		wantEntriesInNI: map[string]int{
-			DefaultNetworkInstanceName: 0,
-		},
-	}, {
-		desc:     "network instance does not exist",
-		inServer: singleNI(),
-		inReq: &spb.FlushRequest{
-			NetworkInstance: &spb.FlushRequest_Name{
-				Name: "does-not-exist",
-			},
-		},
-		wantErrCode: codes.InvalidArgument,
-		wantEntriesInNI: map[string]int{
-			DefaultNetworkInstanceName: 3,
-		},
-	}, {
-		desc:     "election ID when server is not in an election",
+		desc:     "error, election ID is specified in ALL_PRIMARY mode",
 		inServer: singleNI(),
 		inReq: &spb.FlushRequest{
 			Election: &spb.FlushRequest_Id{
@@ -2255,6 +2196,75 @@ func TestFlush(t *testing.T) {
 		wantErrCode: codes.FailedPrecondition,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 3,
+		},
+	}, {
+		desc:     "success, flush the default NI",
+		inServer: singleNI(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+		},
+		wantResult: spb.FlushResponse_OK,
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 0,
+		},
+	}, {
+		desc:     "success, flush a non default NI",
+		inServer: multiNI([]string{"two"}),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: "two",
+			},
+		},
+		wantResult: spb.FlushResponse_OK,
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 3,
+			"two":                      0,
+		},
+	}, {
+		desc:     "success, flush all NIs",
+		inServer: multiNI([]string{"two"}),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+		},
+		wantResult: spb.FlushResponse_OK,
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 0,
+			"two":                      0,
+		},
+	}, {
+		desc:     "success, flush all NIs with a valid election ID",
+		inServer: multiNIWithElection([]string{"two"}, &spb.Uint128{High: 0, Low: 1}),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+			Election: &spb.FlushRequest_Id{
+				Id: &spb.Uint128{High: 0, Low: 1},
+			},
+		},
+		wantResult: spb.FlushResponse_OK,
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 0,
+			"two":                      0,
+		},
+	}, {
+		desc:     "success, election ID specified with override",
+		inServer: singleNIWithElection(&spb.Uint128{High: 0, Low: 42}),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+			Election: &spb.FlushRequest_Override{
+				Override: &spb.Empty{},
+			},
+		},
+		wantResult: spb.FlushResponse_OK,
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 0,
 		},
 	}}
 

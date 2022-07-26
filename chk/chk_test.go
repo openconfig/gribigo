@@ -98,6 +98,20 @@ func TestHasMessage(t *testing.T) {
 			WithIPv4Operation("1.1.1.1/32").
 			WithOperationType(constants.Add).
 			AsResult(),
+	}, {
+		desc: "check for mpls label",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				Type:      constants.Add,
+				MPLSLabel: 42,
+			},
+		}},
+		inMsg: fluent.OperationResult().
+			WithOperationID(42).
+			WithMPLSOperation(42).
+			WithOperationType(constants.Add).
+			AsResult(),
 	}}
 
 	for _, tt := range tests {

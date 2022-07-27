@@ -145,6 +145,7 @@ func TestDifferingElectionParameters(c *fluent.GRIBIClient, t testing.TB, opts .
 // Add tests once the support for ALL_PRIMARY comes in.
 func TestParamsDifferFromOtherClients(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
 	defer electionID.Inc()
+	
 	clientA, clientB := clientAB(c, t, opts...)
 
 	clientA.Connection().WithInitialElectionID(electionID.Load(), 0).

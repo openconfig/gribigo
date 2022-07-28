@@ -379,7 +379,7 @@ func TestEntry(t *testing.T) {
 		},
 	}, {
 		desc: "mpls entry",
-		in:   LabelEntry().WithNetworkInstance("DEFAULT").WithLabel(42).WithNextHopGroupNetworkInstance("DEFAULT").WithPoppedMPLSLabelStack(10, 20),
+		in:   LabelEntry().WithNetworkInstance("DEFAULT").WithLabel(42).WithNextHopGroupNetworkInstance("DEFAULT").WithPoppedLabelStack(10, 20),
 		wantOpProto: &spb.AFTOperation{
 			NetworkInstance: "DEFAULT",
 			Entry: &spb.AFTOperation_Mpls{

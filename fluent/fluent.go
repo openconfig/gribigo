@@ -655,10 +655,10 @@ func (l *labelEntry) WithNextHopGroupNetworkInstance(ni string) *labelEntry {
 	return l
 }
 
-// WithPoppedMPLSLabelStack specifies the labels that should be popped from the
+// WithPoppedLabelStack specifies the labels that should be popped from the
 // label entry. The labels are specified from the outer-most (top) label to the
 // inner-most (bottom-of-stack).
-func (l *labelEntry) WithPoppedMPLSLabelStack(labels ...uint32) *labelEntry {
+func (l *labelEntry) WithPoppedLabelStack(labels ...uint32) *labelEntry {
 	l.pb.LabelEntry.PoppedMplsLabelStack = []*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{}
 	for _, v := range labels {
 		lbl := &aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{

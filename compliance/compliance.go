@@ -393,7 +393,12 @@ var (
 	}, {
 		In: Test{
 			Fn:        makeTestWithACK(FlushFromNonMasterDefaultNI, fluent.InstalledInRIB),
-			ShortName: "Flush from non-elected master is ignored",
+			ShortName: "Flush from non-elected master returns error",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(FlushNIUnspecified, fluent.InstalledInRIB),
+			ShortName: "Flush without specifying network instance returns error",
 		},
 	}, {
 		In: Test{

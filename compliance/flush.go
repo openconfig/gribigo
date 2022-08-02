@@ -260,7 +260,7 @@ func addFlushEntriesToNI(c *fluent.GRIBIClient, niName string, wantACK fluent.Pr
 		},
 	}
 
-	res := doModifyOps(c, t, ops, wantACK, false)
+	res := DoModifyOps(c, t, ops, wantACK, false)
 
 	// validate that our entries were installed correctly.
 	chk.HasResult(t, res,

@@ -42,7 +42,7 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 		},
 	}
 
-	res := doModifyOps(c, t, ops, wantACK, false)
+	res := DoModifyOps(c, t, ops, wantACK, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -93,7 +93,7 @@ func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.T
 		},
 	}
 
-	res := doModifyOps(c, t, ops, wantACK, false)
+	res := DoModifyOps(c, t, ops, wantACK, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -161,7 +161,7 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 		},
 	}
 
-	res := doModifyOps(c, t, ops, wantACK, false)
+	res := DoModifyOps(c, t, ops, wantACK, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -239,7 +239,7 @@ func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 		},
 	}
 
-	res := doModifyOps(c, t, ops, wantACK, false)
+	res := DoModifyOps(c, t, ops, wantACK, false)
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -321,7 +321,7 @@ func populateNNHs(c *fluent.GRIBIClient, n int, wantACK fluent.ProgrammingResult
 	}
 
 	log.V(2).Infof("doing programming")
-	res := doModifyOps(c, t, ops, wantACK, false)
+	res := DoModifyOps(c, t, ops, wantACK, false)
 	log.V(2).Infof("finished programming")
 
 	log.V(2).Infof("doing check for %d nexthops", n)

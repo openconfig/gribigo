@@ -162,7 +162,8 @@ func (r *SysRIB) entryForCIDR(ni string, ip *net.IPNet) (bool, []string, error) 
 //
 // TODO(robjs): support determining the NI based solely on the input interface.
 // TODO(robjs): support a better description of a packet using the formats that ONDATRA
-// 				uses.
+// uses.
+//
 // TODO(robjs): support WCMP
 //
 // This is really a POC that we can emulate our FIB for basic IPv4 routes.

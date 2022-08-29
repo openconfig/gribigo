@@ -1063,7 +1063,14 @@ func addFlushErrDetailsOrReturn(s *status.Status, d *spb.FlushResponseError) err
 // validating that the election parameters are consistent, and correct, and that the Flush should be
 // completed.
 func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
-	if req.GetOverride() != nil {
+	switch {
+	case req == nil:
+		return status.Newf(codes.Internal, "FlushRequest can not be nil").Err()
+	case req.GetNetworkInstance() == nil:
+		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "unspecified network instance"), &spb.FlushResponseError{
+			Status: spb.FlushResponseError_UNSPECIFIED_NETWORK_INSTANCE,
+		})
+	case req.GetOverride() != nil:
 		// The election ID should not be compared, regardless of whether
 		// there are SINGLE_PRIMARY clients on the server.
 		return nil

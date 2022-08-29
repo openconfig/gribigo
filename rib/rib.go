@@ -45,10 +45,10 @@ import (
 var unixTS = time.Now().UnixNano
 
 // RIBHookFn is a function that is used as a hook following a change. It takes:
-//  - an OpType deterining whether an add, remove, or modify operation was sent.
-//  - the timestamp in nanoseconds since the unix epoch that a function was performed.
-//  - a string indicating the name of the network instance
-//  - a ygot.ValidatedGoStruct containing the entry that has been changed.
+//   - an OpType deterining whether an add, remove, or modify operation was sent.
+//   - the timestamp in nanoseconds since the unix epoch that a function was performed.
+//   - a string indicating the name of the network instance
+//   - a ygot.ValidatedGoStruct containing the entry that has been changed.
 type RIBHookFn func(constants.OpType, int64, string, ygot.ValidatedGoStruct)
 
 // ResolvedEntryFn is a function that is called for all entries that can be fully
@@ -56,24 +56,27 @@ type RIBHookFn func(constants.OpType, int64, string, ygot.ValidatedGoStruct)
 // packet match criteria set of next-hops.
 //
 // It takes arguments of:
-//  - the set of RIBs that were stored in the RIB as a map keyed by the name of
-//    a network instance, with a RIB represented as a ygot-generated AFT struct.
-//  - the prefix that was impacted.
-//  - the OpType that the entry was subject to (add/replace/delete).
-//  - a string indicating the network instance that the operation was within
-//  - a string indicating the prefix that was impacted
+//   - the set of RIBs that were stored in the RIB as a map keyed by the name of
+//     a network instance, with a RIB represented as a ygot-generated AFT struct.
+//   - the prefix that was impacted.
+//   - the OpType that the entry was subject to (add/replace/delete).
+//   - a string indicating the network instance that the operation was within
+//   - a string indicating the prefix that was impacted
 type ResolvedEntryFn func(ribs map[string]*aft.RIB, optype constants.OpType, netinst, prefix string)
 
 // RIBHolderCheckFunc is a function that is used as a check to determine whether
 // a RIB entry is eligible for a particular operation. It takes arguments of:
+//
 //   - the operation type that is being performed.
+//
 //   - the network instance within which the operation should be considered.
+//
 //   - the RIB that describes the candidate changes. In the case that the operation
 //     is an ADD or REPLACE the candidate must contain the entry that would be added
 //     or replaced. In the case that it is a DELETE, the candidate contains the entry
 //     that is to be deleted.
 //
-//  The candidate contains a single entry.
+//     The candidate contains a single entry.
 //
 // The check function must return:
 //   - a bool indicating whether the RIB operation should go ahead (true = proceed).
@@ -335,10 +338,10 @@ type OpResult struct {
 
 // AddEntry adds the entry described in op to the network instance with name ni. It returns
 // two slices of OpResults:
-//  - the first ("oks") describes the set of entries that were installed successfully based on
-//    this operation.
-//  - the second ("fails") describes the set of entries that were NOT installed, and encountered
-//    fatal errors during the process of installing the entry.
+//   - the first ("oks") describes the set of entries that were installed successfully based on
+//     this operation.
+//   - the second ("fails") describes the set of entries that were NOT installed, and encountered
+//     fatal errors during the process of installing the entry.
 //
 // It returns an error if there is a fatal error encountered for the function during operation.
 //
@@ -364,11 +367,11 @@ func (r *RIB) AddEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpResul
 }
 
 // addEntryInternal is the internal implementation of AddEntry. It takes arguments of:
-//  - the name of the network instance being operated on (ni) by the operation op.
-//  - a slice of installed results, which is appended to.
-//  - a slice of failed results, which is appended to.
-//  - a map, keyed by operation ID, describing the stack of calls that we have currently
-//    done during this recursion so that we do not repeat an install operation.
+//   - the name of the network instance being operated on (ni) by the operation op.
+//   - a slice of installed results, which is appended to.
+//   - a slice of failed results, which is appended to.
+//   - a map, keyed by operation ID, describing the stack of calls that we have currently
+//     done during this recursion so that we do not repeat an install operation.
 func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*OpResult, installStack map[uint64]bool) error {
 	if installStack[op.GetId()] {
 		return nil
@@ -628,13 +631,13 @@ func (r *RIB) rmPending(id uint64) {
 // An entry is defined to be resolved if all its external references within the gRIBI
 // RIB can be resolved - particularly (starting from the most specific):
 //
-//   * for a next-hop
-//       - always consider this valid, since all elements can be resolved outside of
-//         gRIBI.
-//   * for a next-hop-group
-//       - all the next-hops within the NHG can be resolved
-//   * for an ipv4-entry
-//       - the next-hop-group can be resolved
+//  1. for a next-hop
+//     - always consider this valid, since all elements can be resolved outside of
+//     gRIBI.
+//  2. for a next-hop-group
+//     - all the next-hops within the NHG can be resolved
+//  3. for an ipv4-entry
+//     - the next-hop-group can be resolved
 //
 // An error is returned if the candidate RIB contains more than one new type.
 func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
@@ -1694,13 +1697,13 @@ func (f *FlushErr) Error() string {
 // time.
 //
 // The order of operations for deletes considers the dependency tree:
-//  - we remove IPv4 entries first, since these are never referenced counted,
-//    and the order of removing them never matters.
-//  - we check for any backup NHGs, and remove these first - since otherwise we
-//    may end up with referenced NHGs. note, we need to consider circular references
-//	  of backup NHGs, which we may allow today. we remove the backup NHGs.
-//  - we remove the remaining NHGs.
-//  - we remove the NHs.
+//   - we remove IPv4 entries first, since these are never referenced counted,
+//     and the order of removing them never matters.
+//   - we check for any backup NHGs, and remove these first - since otherwise we
+//     may end up with referenced NHGs. note, we need to consider circular references
+//     of backup NHGs, which we may allow today. we remove the backup NHGs.
+//   - we remove the remaining NHGs.
+//   - we remove the NHs.
 func (r *RIBHolder) Flush() error {
 	errs := []error{}
 

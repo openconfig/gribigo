@@ -23,6 +23,8 @@ import (
 	"github.com/openconfig/gribigo/fluent"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
@@ -142,8 +144,21 @@ func FlushNIUnspecified(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 	if !ok {
 		t.Fatalf("received invalid error from server, got: %v", flushErr)
 	}
-	if got, want := s.Code(), codes.FailedPrecondition; got != want {
-		t.Fatalf("did not get expected error from server, got code: %s (error: %v), want: %s", got, flushErr, want)
+	if got, want := s.Code(), codes.InvalidArgument; got != want {
+		t.Fatalf("did not get the expected canonical error code from server, got code: %s (error: %v), want: %s", got, flushErr, want)
+	}
+	if len(s.Details()) != 1 {
+		t.Fatalf("got more than 1 error details, got: %v", flushErr)
+	}
+	gotD, ok := s.Details()[0].(*spb.FlushResponseError)
+	if !ok {
+		t.Fatalf("did not get the expected error details type, got: %T, want: *spb.FlushResponseError", s.Details()[0])
+	}
+	wantD := &spb.FlushResponseError{
+		Status: spb.FlushResponseError_UNSPECIFIED_NETWORK_INSTANCE,
+	}
+	if !proto.Equal(gotD, wantD) {
+		t.Fatalf("did not get the exact error details, got: %s, want: %s", prototext.Format(gotD), prototext.Format(wantD))
 	}
 
 	checkNIHasNEntries(ctx, c, defaultNetworkInstanceName, 3, t)

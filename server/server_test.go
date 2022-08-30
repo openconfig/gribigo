@@ -1895,7 +1895,7 @@ func TestCheckFlushRequest(t *testing.T) {
 				Id: &spb.Uint128{High: 0, Low: 3},
 			},
 		},
-		wantErrCode: codes.FailedPrecondition,
+		wantErrCode: codes.InvalidArgument,
 		wantErrDetails: &spb.FlushResponseError{
 			Status: spb.FlushResponseError_UNSPECIFIED_NETWORK_INSTANCE,
 		},
@@ -2146,7 +2146,7 @@ func TestFlush(t *testing.T) {
 		desc:        "error, empty request received",
 		inServer:    multiNI([]string{"two"}),
 		inReq:       &spb.FlushRequest{},
-		wantErrCode: codes.FailedPrecondition,
+		wantErrCode: codes.InvalidArgument,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 3,
 			"two":                      3,
@@ -2159,7 +2159,7 @@ func TestFlush(t *testing.T) {
 				Id: &spb.Uint128{High: 0, Low: 1},
 			},
 		},
-		wantErrCode: codes.FailedPrecondition,
+		wantErrCode: codes.InvalidArgument,
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 3,
 		},

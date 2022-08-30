@@ -1067,7 +1067,7 @@ func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
 	case req == nil:
 		return status.Newf(codes.Internal, "FlushRequest can not be nil").Err()
 	case req.GetNetworkInstance() == nil:
-		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "unspecified network instance"), &spb.FlushResponseError{
+		return addFlushErrDetailsOrReturn(status.Newf(codes.InvalidArgument, "unspecified network instance"), &spb.FlushResponseError{
 			Status: spb.FlushResponseError_UNSPECIFIED_NETWORK_INSTANCE,
 		})
 	case req.GetOverride() != nil:

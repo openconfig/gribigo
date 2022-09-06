@@ -907,10 +907,9 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 	for _, fail := range faileds {
 		log.Errorf("returning failed to client because the RIB declared it failed, %v", fail)
 		results = append(results, &spb.AFTResult{
-			Id:     fail.ID,
-			Status: spb.AFTResult_FAILED,
-			// TODO(robjs): add somewhere for the error that we provide to be
-			// returned.
+			Id:           fail.ID,
+			Status:       spb.AFTResult_FAILED,
+			ErrorDetails: &spb.AFTErrorDetails{ErrorMessage: fail.Error},
 		})
 	}
 

@@ -756,8 +756,11 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 		if id == 0 {
 			return false, fmt.Errorf("bad NextHopGroup ID 0")
 		}
-		// if the NHG is not referenced, then we can te it.
-		return !niRIB.nhgReferenced(id), nil
+		// if the NHG is not referenced, then we can delete it.
+		if niRIB.nhgReferenced(id) {
+			return false, fmt.Errorf("the NextHopGroup %v is still referenced", id)
+		}
+		return true, nil
 	}
 
 	for idx := range caft.NextHop {
@@ -765,7 +768,10 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 			return false, fmt.Errorf("bad NextHop ID 0")
 		}
 		// again if the NHG is not referenced, then we can delete it.
-		return !niRIB.nhReferenced(idx), nil
+		if niRIB.nhReferenced(idx) {
+			return false, fmt.Errorf("the NextHop %v is still referenced", idx)
+		}
+		return true, nil
 	}
 
 	// We checked that there was 1 entry in the RIB, so we should never reach here,
@@ -1098,6 +1104,7 @@ func (r *RIBHolder) locklessDeleteIPv4(prefix string) error {
 	}
 
 	delete(r.r.Afts.Ipv4Entry, prefix)
+	r.decNHGRefCount(de.GetNextHopGroup())
 	if r.postChangeHook != nil {
 		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
 	}
@@ -1120,13 +1127,11 @@ func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, *af
 	if e.GetId() == 0 {
 		return false, nil, errors.New("invalid NHG ID 0")
 	}
-
 	de := r.retrieveNHG(e.GetId())
 	if de == nil {
 		// Return failed for this case, sicne there was no such NHG.
 		return false, nil, fmt.Errorf("cannot delete NHG ID %d since it does not exist", e.GetId())
 	}
-
 	rr := &aft.RIB{}
 	rr.GetOrCreateAfts().GetOrCreateNextHopGroup(e.GetId())
 	if r.checkFn != nil {
@@ -1140,7 +1145,6 @@ func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, *af
 			return false, nil, nil
 		}
 	}
-
 	r.doDeleteNHG(e.GetId())
 
 	if r.postChangeHook != nil {
@@ -1168,6 +1172,9 @@ func (r *RIBHolder) locklessDeleteNHG(id uint64) error {
 	}
 
 	delete(r.r.Afts.NextHopGroup, id)
+	for _, nh := range de.NextHop {
+		r.decNHRefCount(nh.GetIndex())
+	}
 	if r.postChangeHook != nil {
 		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
 	}
@@ -1725,6 +1732,7 @@ func (r *RIBHolder) Flush() error {
 			backupNHGs = append(backupNHGs, *nhg.BackupNextHopGroup)
 		}
 	}
+	// todo: xw-g check how backup NHG reference is counted.
 
 	delNHG := func(id uint64) {
 		if err := r.locklessDeleteNHG(id); err != nil {

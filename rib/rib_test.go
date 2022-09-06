@@ -3544,7 +3544,9 @@ func TestFlush(t *testing.T) {
 
 			return r
 		}(),
-	}}
+	},
+	// TODO: xw-g add a test case to test non-zero reference.
+	}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {

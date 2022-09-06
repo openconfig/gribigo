@@ -1122,7 +1122,7 @@ func TestDoModify(t *testing.T) {
 					checkStatusErr(t, err, wantMsg.errCode, wantMsg.errReason)
 				}
 				if wantMsg.result != nil {
-					if diff := cmp.Diff(gotMsg.result, wantMsg.result, protocmp.Transform()); diff != "" {
+					if diff := cmp.Diff(gotMsg.result, wantMsg.result, protocmp.Transform(), protocmp.IgnoreFields(&spb.AFTResult{}, "error_details")); diff != "" {
 						t.Fatalf("did not get expected response, diff(-got,+want):\n%s", diff)
 					}
 				}
@@ -1603,7 +1603,7 @@ func TestModifyEntry(t *testing.T) {
 			if err != nil {
 				checkStatusErr(t, err, tt.wantErrCode, tt.wantErrDetails)
 			}
-			if diff := cmp.Diff(got, tt.wantResponse, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(got, tt.wantResponse, protocmp.Transform(), protocmp.IgnoreFields(&spb.AFTResult{}, "error_details")); diff != "" {
 				t.Fatalf("did not get expected response, diff(-got,+want):\n%s", diff)
 			}
 		})

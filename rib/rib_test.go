@@ -2226,6 +2226,7 @@ func TestDeleteEntry(t *testing.T) {
 					},
 				},
 			},
+			Error: "the NextHop 1 is still referenced",
 		}},
 	}, {
 		desc:              "cannot remove NHG that is referenced",
@@ -2249,6 +2250,7 @@ func TestDeleteEntry(t *testing.T) {
 					},
 				},
 			},
+			Error: "the NextHopGroup 1 is still referenced",
 		}},
 	}, {
 		desc:              "badly formed NHG",
@@ -3051,7 +3053,8 @@ func TestCanDelete(t *testing.T) {
 			r.GetOrCreateAfts().GetOrCreateNextHopGroup(1)
 			return r
 		}(),
-		want: false,
+		want:    false,
+		wantErr: true,
 	}, {
 		desc:      "cannot delete referenced NH",
 		inRIB:     mustChainRIB(),
@@ -3061,7 +3064,8 @@ func TestCanDelete(t *testing.T) {
 			r.GetOrCreateAfts().GetOrCreateNextHop(1)
 			return r
 		}(),
-		want: false,
+		want:    false,
+		wantErr: true,
 	}, {
 		desc:      "nil candidate",
 		inRIB:     New(defName),
@@ -3555,11 +3559,21 @@ func TestFlush(t *testing.T) {
 		}
 
 		if l := len(tt.inRIB.r.Afts.NextHopGroup); l != 0 {
-			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+			t.Fatalf("did not remove all NextHopGroup entries, got: %d, want: 0", l)
+		}
+		for _, n := range tt.inRIB.r.Afts.NextHopGroup {
+			if c := tt.inRIB.refCounts.NextHopGroup[n.GetId()]; c != 0 {
+				t.Fatalf("did not clear all NextHopGroup reference count, got: %d, want: 0", c)
+			}
 		}
 
 		if l := len(tt.inRIB.r.Afts.NextHop); l != 0 {
-			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+			t.Fatalf("did not remove all NextHop entries, got: %d, want: 0", l)
+		}
+		for _, n := range tt.inRIB.r.Afts.NextHop {
+			if c := tt.inRIB.refCounts.NextHop[n.GetIndex()]; c != 0 {
+				t.Fatalf("did not clear all NextHop reference count, got: %d, want: 0", c)
+			}
 		}
 	}
 }

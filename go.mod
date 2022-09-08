@@ -6,7 +6,7 @@ require (
 	github.com/golang/glog v0.0.0-20210429001901-424d2337a529
 	github.com/google/go-cmp v0.5.7
 	github.com/google/uuid v1.1.2
-	github.com/kentik/patricia v0.0.0-20201202224819-f9447a6e25f1
+	github.com/kentik/patricia v1.2.0
 	github.com/openconfig/gnmi v0.0.0-20210527163611-d3a3e30199da
 	github.com/openconfig/goyang v1.0.0
 	github.com/openconfig/gribi v0.1.1-0.20220622162620-08d53dffce45
@@ -17,6 +17,5 @@ require (
 	google.golang.org/genproto v0.0.0-20201214200347-8c77b98c765d
 	google.golang.org/grpc v1.37.0
 	google.golang.org/protobuf v1.26.0
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	lukechampine.com/uint128 v1.1.1
 )

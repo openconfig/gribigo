@@ -1,6 +1,7 @@
-![gribigo-logo](doc/gribigo.png)
-
 ![gribigo-status](https://github.com/openconfig/gribigo/actions/workflows/go.yml/badge.svg)
+[![Go Reference](https://pkg.go.dev/badge/github.com/openconfig/gribigo.svg)](https://pkg.go.dev/github.com/openconfig/gribigo)
+
+![gribigo-logo](doc/gribigo.png)
 
 This repository contains a [gRIBI](https://github.com/openconfig/gribi)
 client and in-memory server, written in Go, which serves as a reference

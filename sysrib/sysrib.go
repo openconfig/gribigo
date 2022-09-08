@@ -110,8 +110,8 @@ func (sr *SysRIB) AddRoute(ni string, r *Route) error {
 	if err != nil {
 		return fmt.Errorf("cannot create tag for %s, %v", r.Prefix, err)
 	}
-	if _, _, err := sr.NI[ni].IPv4.Add(*addr, tag, nil); err != nil {
-		return fmt.Errorf("cannot insert route in network instance %s %s, %v", ni, r.Prefix, err)
+	if added, _ := sr.NI[ni].IPv4.Add(*addr, tag, nil); !added {
+		return fmt.Errorf("cannot insert route in network instance %s %s", ni, r.Prefix)
 	}
 	return nil
 }
@@ -153,7 +153,8 @@ func (r *SysRIB) entryForCIDR(ni string, ip *net.IPNet) (bool, []string, error) 
 	if err != nil {
 		return false, nil, fmt.Errorf("cannot parse IP to lookup, %s: %v", ip, err)
 	}
-	return rib.IPv4.FindDeepestTags(*addr)
+	found, tags := rib.IPv4.FindDeepestTags(*addr)
+	return found, tags, nil
 }
 
 // EgressInterface looks up the IP destination address ip in the routes for network instance

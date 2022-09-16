@@ -15,6 +15,9 @@
 package chk
 
 import (
+	"encoding/binary"
+	"fmt"
+	"net"
 	"strings"
 	"testing"
 
@@ -279,6 +282,51 @@ func TestHasResultsCache(t *testing.T) {
 		}},
 		inOpt:          []resultOpt{IgnoreOperationID()},
 		expectFatalMsg: "results did not contain a result",
+	}, {
+		desc: "large result set - IPv4 prefix",
+		inResults: func() []*client.OpResult {
+			r := []*client.OpResult{}
+			// Start at 2^24 so our first address is 1.0.0.0/32.
+			for i := uint32(1 << 24); i < (1<<24)+4000000; i++ {
+				b := make([]byte, 4)
+				binary.BigEndian.PutUint32(b, i)
+				r = append(r, &client.OpResult{
+					Details: &client.OpDetailsResults{
+						IPv4Prefix: fmt.Sprintf("%s/32", net.IP(b).String()),
+					},
+				})
+			}
+			return r
+		}(),
+		inOpt: []resultOpt{IgnoreOperationID()},
+		inWants: []*client.OpResult{{
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "1.0.0.1/32",
+			},
+		}},
+	}, {
+		desc: "empty wants set",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "1.1.1.1/32",
+			},
+		}},
+		inOpt:   []resultOpt{IgnoreOperationID()},
+		inWants: []*client.OpResult{},
+	}, {
+		desc: "nil details in wants",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			Details: &client.OpDetailsResults{
+				IPv4Prefix: "1.1.1.1/32",
+			},
+		}},
+		inOpt:   []resultOpt{IgnoreOperationID()},
+		inWants: []*client.OpResult{{
+			// explicitly empty
+		}},
+		expectFatalMsg: "test error",
 	}}
 
 	for _, tt := range tests {

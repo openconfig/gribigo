@@ -141,6 +141,11 @@ func HasResultsCache(t testing.TB, res, wants []*client.OpResult, opt ...resultO
 	}
 
 	for _, want := range wants {
+		// If we get a want that has no 'details' field, but we've been asked to check the
+		// details, then this is an error on the test author's part.
+		if want.Details == nil {
+			t.Fatalf("test error: cannot check for wanted message %v with nil details when IgnoreOperationID is specified", want)
+		}
 		switch {
 		case want.Details.NextHopGroupID != 0:
 			HasResult(t, []*client.OpResult{byNHGID[want.Details.NextHopGroupID]}, want, opt...)

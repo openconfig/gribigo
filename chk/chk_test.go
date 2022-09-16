@@ -134,6 +134,22 @@ func TestHasMessage(t *testing.T) {
 }
 
 func TestHasResultsCache(t *testing.T) {
+
+	generatePrefixes := func(numPrefixes uint32) []*client.OpResult {
+		r := []*client.OpResult{}
+		// Start at 2^24 so our first address is 1.0.0.0/32.
+		for i := uint32(1 << 24); i < (1<<24)+numPrefixes; i++ {
+			b := make([]byte, 4)
+			binary.BigEndian.PutUint32(b, i)
+			r = append(r, &client.OpResult{
+				Details: &client.OpDetailsResults{
+					IPv4Prefix: fmt.Sprintf("%s/32", net.IP(b).String()),
+				},
+			})
+		}
+		return r
+	}
+
 	tests := []struct {
 		desc           string
 		inResults      []*client.OpResult
@@ -283,27 +299,24 @@ func TestHasResultsCache(t *testing.T) {
 		inOpt:          []resultOpt{IgnoreOperationID()},
 		expectFatalMsg: "results did not contain a result",
 	}, {
-		desc: "large result set - IPv4 prefix",
-		inResults: func() []*client.OpResult {
-			r := []*client.OpResult{}
-			// Start at 2^24 so our first address is 1.0.0.0/32.
-			for i := uint32(1 << 24); i < (1<<24)+4000000; i++ {
-				b := make([]byte, 4)
-				binary.BigEndian.PutUint32(b, i)
-				r = append(r, &client.OpResult{
-					Details: &client.OpDetailsResults{
-						IPv4Prefix: fmt.Sprintf("%s/32", net.IP(b).String()),
-					},
-				})
-			}
-			return r
-		}(),
-		inOpt: []resultOpt{IgnoreOperationID()},
+		desc:      "large result set - IPv4 prefix",
+		inResults: generatePrefixes(4000000),
+		inOpt:     []resultOpt{IgnoreOperationID()},
 		inWants: []*client.OpResult{{
 			Details: &client.OpDetailsResults{
 				IPv4Prefix: "1.0.0.1/32",
 			},
 		}},
+	}, {
+		desc:      "large results and wants set - same number",
+		inResults: generatePrefixes(40000),
+		inOpt:     []resultOpt{IgnoreOperationID()},
+		inWants:   generatePrefixes(40000),
+	}, {
+		desc:      "large results and wants set - fewer wants",
+		inResults: generatePrefixes(40000),
+		inOpt:     []resultOpt{IgnoreOperationID()},
+		inWants:   generatePrefixes(1000),
 	}, {
 		desc: "empty wants set",
 		inResults: []*client.OpResult{{

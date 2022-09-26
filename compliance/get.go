@@ -38,7 +38,7 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 				fluent.NextHopEntry().
 					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
-					WithIPAddress("1.1.1.1"))
+					WithIPAddress("192.0.2.3"))
 		},
 	}
 
@@ -69,7 +69,7 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 		fluent.NextHopEntry().
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithIndex(1).
-			WithIPAddress("1.1.1.1"))
+			WithIPAddress("192.0.2.3"))
 
 }
 
@@ -82,7 +82,7 @@ func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.T
 				fluent.NextHopEntry().
 					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
-					WithIPAddress("1.1.1.1"))
+					WithIPAddress("192.0.2.3"))
 		},
 		func() {
 			c.Modify().AddEntry(t,
@@ -143,7 +143,7 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 				fluent.NextHopEntry().
 					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
-					WithIPAddress("1.1.1.1"))
+					WithIPAddress("192.0.2.3"))
 		},
 		func() {
 			c.Modify().AddEntry(t,
@@ -221,7 +221,7 @@ func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 				fluent.NextHopEntry().
 					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(1).
-					WithIPAddress("1.1.1.1"))
+					WithIPAddress("192.0.2.3"))
 		},
 		func() {
 			c.Modify().AddEntry(t,
@@ -292,7 +292,7 @@ func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 		fluent.NextHopEntry().
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithIndex(1).
-			WithIPAddress("1.1.1.1"),
+			WithIPAddress("192.0.2.3"),
 	)
 }
 

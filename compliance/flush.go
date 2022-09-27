@@ -289,7 +289,7 @@ func addFlushEntriesToNI(c *fluent.GRIBIClient, niName string, wantACK fluent.Pr
 				fluent.NextHopEntry().
 					WithNetworkInstance(niName).
 					WithIndex(1).
-					WithIPAddress("1.1.1.1"))
+					WithIPAddress("192.0.2.3"))
 		},
 		func() {
 			c.Modify().AddEntry(t,

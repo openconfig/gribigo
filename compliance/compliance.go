@@ -595,7 +595,7 @@ func AddIPv4Metadata(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
 	ops := []func(){
 		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(defaultNetworkInstanceName).WithIPAddress("2.2.2.2"))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(defaultNetworkInstanceName).WithIPAddress("192.0.2.3"))
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName).AddNextHop(1, 1))
 			c.Modify().AddEntry(t, fluent.IPv4Entry().
 				WithPrefix("1.1.1.1/32").
@@ -642,7 +642,7 @@ func AddIPv4EntryDifferentNINHG(c *fluent.GRIBIClient, wantACK fluent.Programmin
 			c.Modify().AddEntry(t, fluent.NextHopEntry().
 				WithNetworkInstance(defaultNetworkInstanceName).
 				WithIndex(1).
-				WithIPAddress("2.2.2.2"))
+				WithIPAddress("192.0.2.3"))
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().
 				WithNetworkInstance(defaultNetworkInstanceName).
 				WithID(1).
@@ -813,7 +813,7 @@ func ImplicitReplaceNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 				fluent.NextHopEntry().
 					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(2).
-					WithIPAddress("192.0.2.2"))
+					WithIPAddress("192.0.2.3"))
 
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().
@@ -999,7 +999,7 @@ func ReplaceMissingNHG(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 				fluent.NextHopEntry().
 					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(42).
-					WithIPAddress("1.1.1.1"))
+					WithIPAddress("192.0.2.3"))
 
 			c.Modify().ReplaceEntry(t,
 				fluent.NextHopGroupEntry().
@@ -1054,7 +1054,7 @@ func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) 
 				fluent.NextHopEntry().
 					WithNetworkInstance(defaultNetworkInstanceName).
 					WithIndex(42).
-					WithIPAddress("2.2.2.2"))
+					WithIPAddress("192.0.2.3"))
 
 			c.Modify().AddEntry(t,
 				fluent.NextHopGroupEntry().

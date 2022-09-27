@@ -465,7 +465,7 @@ func TestIncElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 		NextHopEntry().
 		WithNetworkInstance(defaultNetworkInstanceName).
 		WithIndex(1).
-		WithIPAddress("1.1.1.1"))
+		WithIPAddress("192.0.2.1"))
 
 	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {
 		t.Fatalf("could not program entries via client, got err: %v", err)
@@ -500,7 +500,7 @@ func TestIncElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 		NextHopEntry().
 		WithNetworkInstance(defaultNetworkInstanceName).
 		WithIndex(1).
-		WithIPAddress("2.2.2.2").
+		WithIPAddress("192.0.2.3").
 		WithElectionID(electionID.Load()-1, 0))
 
 	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {
@@ -521,7 +521,7 @@ func TestIncElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 		NextHopEntry().
 		WithNetworkInstance(defaultNetworkInstanceName).
 		WithIndex(1).
-		WithIPAddress("3.3.3.3").
+		WithIPAddress("192.0.2.5").
 		WithElectionID(electionID.Load(), 0))
 
 	if err := awaitTimeout(context.Background(), c, t, time.Minute); err != nil {

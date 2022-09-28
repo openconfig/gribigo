@@ -271,6 +271,27 @@ var (
 		},
 	}, {
 		In: Test{
+			Fn:                      makeTestWithACK(ImplicitReplaceNH, fluent.InstalledInFIB),
+			ShortName:               "Implicit replace NH entry - FIB ACK",
+			RequiresImplicitReplace: true,
+			RequiresFIBACK:          true,
+		},
+	}, {
+		In: Test{
+			Fn:                      makeTestWithACK(ImplicitReplaceNHG, fluent.InstalledInFIB),
+			ShortName:               "Implicit replace NHG entry - FIB ACK",
+			RequiresImplicitReplace: true,
+			RequiresFIBACK:          true,
+		},
+	}, {
+		In: Test{
+			Fn:                      makeTestWithACK(ImplicitReplaceIPv4Entry, fluent.InstalledInFIB),
+			ShortName:               "Implicit replace IPv4 entry - FIB ACK",
+			RequiresImplicitReplace: true,
+			RequiresFIBACK:          true,
+		},
+	}, {
+		In: Test{
 			Fn:                       makeTestWithACK(IdempotentDeleteNH, fluent.InstalledInRIB),
 			ShortName:                "Idempotent Delete NH entry - RIB ACK",
 			RequiresIdempotentDelete: true,

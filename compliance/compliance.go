@@ -100,6 +100,9 @@ type Test struct {
 	// RequiresImplicitReplace marks a test that requires the implementation of AFTOperation
 	// ADD for entries that already exist.
 	RequiresImplicitReplace bool
+	// RequiresIdempotentDelete marks a test that requires the implementation of AFTOperation
+	// DELETE for entries that do not exist.
+	RequiresIdempotentDelete bool
 	// RequiresNonDefaultNINHG marks a test that configures NH and NHG entries (not
 	// including IPv4) in non-default network-instance.
 	RequiresNonDefaultNINHG bool
@@ -265,6 +268,45 @@ var (
 			Fn:                      makeTestWithACK(ImplicitReplaceIPv4Entry, fluent.InstalledInRIB),
 			ShortName:               "Implicit replace IPv4 entry - RIB ACK",
 			RequiresImplicitReplace: true,
+		},
+	}, {
+		In: Test{
+			Fn:                       makeTestWithACK(IdempotentDeleteNH, fluent.InstalledInRIB),
+			ShortName:                "Idempotent Delete NH entry - RIB ACK",
+			RequiresIdempotentDelete: true,
+		},
+	}, {
+		In: Test{
+			Fn:                       makeTestWithACK(IdempotentDeleteNHG, fluent.InstalledInRIB),
+			ShortName:                "Idempotent Delete NHG entry - RIB ACK",
+			RequiresIdempotentDelete: true,
+		},
+	}, {
+		In: Test{
+			Fn:                       makeTestWithACK(IdempotentDeleteIPv4Entry, fluent.InstalledInRIB),
+			ShortName:                "Idempotent Delete IPv4 entry - RIB ACK",
+			RequiresIdempotentDelete: true,
+		},
+	}, {
+		In: Test{
+			Fn:                       makeTestWithACK(IdempotentDeleteNH, fluent.InstalledInFIB),
+			ShortName:                "Idempotent Delete NH entry - FIB ACK",
+			RequiresIdempotentDelete: true,
+			RequiresFIBACK:           true,
+		},
+	}, {
+		In: Test{
+			Fn:                       makeTestWithACK(IdempotentDeleteNHG, fluent.InstalledInFIB),
+			ShortName:                "Idempotent Delete NHG entry - FIB ACK",
+			RequiresIdempotentDelete: true,
+			RequiresFIBACK:           true,
+		},
+	}, {
+		In: Test{
+			Fn:                       makeTestWithACK(IdempotentDeleteIPv4Entry, fluent.InstalledInFIB),
+			ShortName:                "Idempotent Delete IPv4 entry - FIB ACK",
+			RequiresIdempotentDelete: true,
+			RequiresFIBACK:           true,
 		},
 	}, {
 		In: Test{
@@ -958,6 +1000,212 @@ func ImplicitReplaceIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 			WithOperationID(6).
 			WithIPv4Operation("1.0.0.0/8").
 			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult())
+}
+
+// IdempotentDeleteNH performs two delete operations for the same NextHop entry,
+// validating that the server handles duplicate operations successfully.
+func IdempotentDeleteNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithIndex(1).
+					WithIPAddress("192.0.2.1"))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithIndex(1).
+					WithIPAddress("192.0.2.1"))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithIndex(1).
+					WithIPAddress("192.0.2.1"))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, wantACK, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(1).
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(2).
+			WithNextHopOperation(1).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(3).
+			WithNextHopOperation(1).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult())
+}
+
+// IdempotentDeleteNHG performs two delete operations for the same NextHopGroup
+// entry, validating that the server handles duplicate operations successfully.
+func IdempotentDeleteNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithIndex(1).
+					WithIPAddress("192.0.2.1"))
+
+			c.Modify().AddEntry(t,
+				fluent.NextHopGroupEntry().
+					WithID(1).
+					WithNetworkInstance(defaultNetworkInstanceName).
+					AddNextHop(1, 1))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.NextHopGroupEntry().
+					WithID(1).
+					WithNetworkInstance(defaultNetworkInstanceName))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.NextHopGroupEntry().
+					WithID(1).
+					WithNetworkInstance(defaultNetworkInstanceName))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, wantACK, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(1).
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(2).
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(3).
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(4).
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult())
+}
+
+// IdempotentDeleteIPv4Entry performs two delete operations for the same
+// IPv4Prefix entry, validating that the server handles duplicate operations
+// successfully.
+func IdempotentDeleteIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithIndex(1).
+					WithIPAddress("192.0.2.1"))
+
+			c.Modify().AddEntry(t,
+				fluent.NextHopGroupEntry().
+					WithID(1).
+					WithNetworkInstance(defaultNetworkInstanceName).
+					AddNextHop(1, 1))
+
+			c.Modify().AddEntry(t,
+				fluent.IPv4Entry().
+					WithPrefix("1.0.0.0/8").
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithNextHopGroup(1))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.IPv4Entry().
+					WithPrefix("1.0.0.0/8").
+					WithNetworkInstance(defaultNetworkInstanceName))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.IPv4Entry().
+					WithPrefix("1.0.0.0/8").
+					WithNetworkInstance(defaultNetworkInstanceName))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, wantACK, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(1).
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(2).
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(3).
+			WithIPv4Operation("1.0.0.0/8").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(4).
+			WithIPv4Operation("1.0.0.0/8").
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(5).
+			WithIPv4Operation("1.0.0.0/8").
+			WithOperationType(constants.Delete).
 			WithProgrammingResult(wantACK).
 			AsResult())
 }

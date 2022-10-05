@@ -1052,10 +1052,6 @@ func (r *RIBHolder) DeleteIPv4(e *aftpb.Afts_Ipv4EntryKey) (bool, *aft.Afts_Ipv4
 	}
 
 	de := r.retrieveIPv4(e.GetPrefix())
-	if de == nil {
-		// Return a failure for this operation, but there was no error.
-		return false, nil, nil
-	}
 
 	rr := &aft.RIB{}
 	rr.GetOrCreateAfts().GetOrCreateIpv4Entry(e.GetPrefix())
@@ -1122,10 +1118,6 @@ func (r *RIBHolder) DeleteNextHopGroup(e *aftpb.Afts_NextHopGroupKey) (bool, *af
 	}
 
 	de := r.retrieveNHG(e.GetId())
-	if de == nil {
-		// Return failed for this case, sicne there was no such NHG.
-		return false, nil, fmt.Errorf("cannot delete NHG ID %d since it does not exist", e.GetId())
-	}
 
 	rr := &aft.RIB{}
 	rr.GetOrCreateAfts().GetOrCreateNextHopGroup(e.GetId())
@@ -1192,10 +1184,6 @@ func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, *aft.Afts_Nex
 	}
 
 	de := r.retrieveNH(e.GetIndex())
-	if de == nil {
-		// we mark that this operation failed, because there was no such entry.
-		return false, nil, fmt.Errorf("cannot delete NH Index %d since it does not exist", e.GetIndex())
-	}
 
 	rr := &aft.RIB{}
 	rr.GetOrCreateAfts().GetOrCreateNextHop(e.GetIndex())

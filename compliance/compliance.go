@@ -100,6 +100,9 @@ type Test struct {
 	// RequiresImplicitReplace marks a test that requires the implementation of AFTOperation
 	// ADD for entries that already exist.
 	RequiresImplicitReplace bool
+	// RequiresIdempotentDelete marks a test that requires the implementation of AFTOperation
+	// DELETE for entries that do not exist.
+	RequiresIdempotentDelete bool
 	// RequiresNonDefaultNINHG marks a test that configures NH and NHG entries (not
 	// including IPv4) in non-default network-instance.
 	RequiresNonDefaultNINHG bool
@@ -265,6 +268,40 @@ var (
 			Fn:                      makeTestWithACK(ImplicitReplaceIPv4Entry, fluent.InstalledInRIB),
 			ShortName:               "Implicit replace IPv4 entry - RIB ACK",
 			RequiresImplicitReplace: true,
+		},
+	}, {
+		In: Test{
+			Fn:                      makeTestWithACK(ImplicitReplaceNH, fluent.InstalledInFIB),
+			ShortName:               "Implicit replace NH entry - FIB ACK",
+			RequiresImplicitReplace: true,
+			RequiresFIBACK:          true,
+		},
+	}, {
+		In: Test{
+			Fn:                      makeTestWithACK(ImplicitReplaceNHG, fluent.InstalledInFIB),
+			ShortName:               "Implicit replace NHG entry - FIB ACK",
+			RequiresImplicitReplace: true,
+			RequiresFIBACK:          true,
+		},
+	}, {
+		In: Test{
+			Fn:                      makeTestWithACK(ImplicitReplaceIPv4Entry, fluent.InstalledInFIB),
+			ShortName:               "Implicit replace IPv4 entry - FIB ACK",
+			RequiresImplicitReplace: true,
+			RequiresFIBACK:          true,
+		},
+	}, {
+		In: Test{
+			Fn:                       makeTestWithACK(IdempotentDelete, fluent.InstalledInRIB),
+			ShortName:                "Idempotent Delete entry - RIB ACK",
+			RequiresIdempotentDelete: true,
+		},
+	}, {
+		In: Test{
+			Fn:                       makeTestWithACK(IdempotentDelete, fluent.InstalledInFIB),
+			ShortName:                "Idempotent Delete entry - FIB ACK",
+			RequiresIdempotentDelete: true,
+			RequiresFIBACK:           true,
 		},
 	}, {
 		In: Test{
@@ -958,6 +995,103 @@ func ImplicitReplaceIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingR
 			WithOperationID(6).
 			WithIPv4Operation("1.0.0.0/8").
 			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult())
+}
+
+// IdempotentDelete performs two delete operations for the same NextHop,
+// NextHopGroup, and IPv4Entry, validating that the server handles duplicate
+// operations successfully.
+func IdempotentDelete(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+	ops := []func(){
+		func() { baseTopologyEntries(c, t) },
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.IPv4Entry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithPrefix("1.0.0.0/8"))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.IPv4Entry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithPrefix("1.0.0.0/8"))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.NextHopGroupEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithID(1))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.NextHopGroupEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithID(1))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithIndex(1))
+		},
+		func() {
+			c.Modify().DeleteEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithIndex(1))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, wantACK, false)
+	validateBaseTopologyEntries(res, wantACK, t)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(5).
+			WithIPv4Operation("1.0.0.0/8").
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(6).
+			WithIPv4Operation("1.0.0.0/8").
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(7).
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(8).
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(9).
+			WithNextHopOperation(1).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(10).
+			WithNextHopOperation(1).
+			WithOperationType(constants.Delete).
 			WithProgrammingResult(wantACK).
 			AsResult())
 }

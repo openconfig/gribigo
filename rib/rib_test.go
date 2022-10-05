@@ -598,7 +598,8 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		inEntry: &aftpb.Afts_Ipv4EntryKey{
 			Prefix: "1.1.1.1/32",
 		},
-		wantOK: false,
+		wantOrig: (*aft.Afts_Ipv4Entry)(nil),
+		wantOK:   true,
 	}, {
 		desc: "delete nhg",
 		inRIB: &RIBHolder{
@@ -654,16 +655,16 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		inEntry: &aftpb.Afts_NextHopGroupKey{
 			Id: 1,
 		},
-		wantOK:  false,
-		wantErr: true,
+		wantOrig: (*aft.Afts_NextHopGroup)(nil),
+		wantOK:   true,
 	}, {
 		desc:  "delete nh entry, no such entry",
 		inRIB: NewRIBHolder("foo"),
 		inEntry: &aftpb.Afts_NextHopKey{
 			Index: 42,
 		},
-		wantOK:  false,
-		wantErr: true,
+		wantOrig: (*aft.Afts_NextHop)(nil),
+		wantOK:   true,
 	}}
 
 	for _, tt := range tests {
@@ -2094,7 +2095,7 @@ func TestDeleteEntry(t *testing.T) {
 				},
 			},
 		},
-		wantFails: []*OpResult{{
+		wantOKs: []*OpResult{{
 			ID: 42,
 			Op: &spb.AFTOperation{
 				Id: 42,
@@ -2105,7 +2106,6 @@ func TestDeleteEntry(t *testing.T) {
 					},
 				},
 			},
-			Error: "cannot delete NH Index 42 since it does not exist",
 		}},
 	}, {
 		desc: "delete IPv4",
@@ -2282,7 +2282,7 @@ func TestDeleteEntry(t *testing.T) {
 				},
 			},
 		},
-		wantFails: []*OpResult{{
+		wantOKs: []*OpResult{{
 			ID: 42,
 			Op: &spb.AFTOperation{
 				Id: 42,
@@ -2292,7 +2292,6 @@ func TestDeleteEntry(t *testing.T) {
 					},
 				},
 			},
-			Error: "cannot delete NHG ID 512 since it does not exist",
 		}},
 	}, {
 		desc:              "reference check after one referring entry removed - default NI",

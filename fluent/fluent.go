@@ -438,6 +438,15 @@ func (g *gRIBIModify) ReplaceEntry(t testing.TB, entries ...GRIBIEntry) *gRIBIMo
 	return g
 }
 
+// Enqueue adds the pre-formed set of ModifyRequests to the queue that are to be
+// sent by the client. The entries are not validated or modified.
+func (g *gRIBIModify) Enqueue(t testing.TB, entries ...*spb.ModifyRequest) *gRIBIModify {
+	for _, m := range entries {
+		g.parent.c.Q(m)
+	}
+	return g
+}
+
 // UpdateElectionID updates the election ID on the gRIBI Modify channel using value provided.
 // The election ID is a uint128 made up of concatenating the low and high uint64 values provided.
 func (g *gRIBIModify) UpdateElectionID(t testing.TB, low, high uint64) *gRIBIModify {

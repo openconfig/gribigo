@@ -1,10 +1,12 @@
-package main
+package replay
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"sort"
+	"testing"
 	"time"
 
 	log "github.com/golang/glog"
@@ -12,15 +14,16 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	"github.com/openconfig/gribigo/fluent"
 	lpb "google.golang.org/grpc/binarylog/grpc_binarylog_v1"
 )
 
 type timeseries map[time.Time][]*spb.ModifyRequest
 
-func fromFile(fn string) ([]*lpb.GrpcLogEntry, error) {
+func FromFile(fn string) ([]*lpb.GrpcLogEntry, error) {
 	f, err := os.Open(fn)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read file %s, error: %v", err)
+		return nil, fmt.Errorf("cannot read file %s, error: %v", fn, err)
 	}
 
 	msgs := []*lpb.GrpcLogEntry{}
@@ -35,7 +38,7 @@ func fromFile(fn string) ([]*lpb.GrpcLogEntry, error) {
 	return msgs, nil
 }
 
-func clientTimeseries(pb []*lpb.GrpcLogEntry, timeQuantum time.Duration) (timeseries, error) {
+func Timeseries(pb []*lpb.GrpcLogEntry, timeQuantum time.Duration) (timeseries, error) {
 	ts := timeseries{}
 	timeBucket := time.Unix(0, 0)
 	for _, p := range pb {
@@ -44,10 +47,8 @@ func clientTimeseries(pb []*lpb.GrpcLogEntry, timeQuantum time.Duration) (timese
 		}
 
 		eventTime := time.Unix(p.Timestamp.Seconds, int64(p.Timestamp.Nanos))
-		fmt.Printf("timedelta is %s\n", eventTime.Sub(timeBucket))
 		if eventTime.Sub(timeBucket) > timeQuantum {
 			timeBucket = eventTime
-			fmt.Printf("** rewrite timeBucket to %s\n", timeBucket)
 		}
 
 		m := &spb.ModifyRequest{}
@@ -55,7 +56,6 @@ func clientTimeseries(pb []*lpb.GrpcLogEntry, timeQuantum time.Duration) (timese
 			return nil, fmt.Errorf("cannot unmarshal ModifyRequest %s, %v", p, err)
 		}
 		ts[timeBucket] = append(ts[timeBucket], m)
-		fmt.Printf("%d.%d: %s\n", p.Timestamp.Seconds, p.Timestamp.Nanos, m)
 	}
 	return ts, nil
 }
@@ -65,7 +65,7 @@ type event struct {
 	events []*spb.ModifyRequest
 }
 
-func replaySchedule(ts timeseries) ([]*event, error) {
+func Schedule(ts timeseries) ([]*event, error) {
 	k := []time.Time{}
 	for t := range ts {
 		k = append(k, t)
@@ -83,29 +83,29 @@ func replaySchedule(ts timeseries) ([]*event, error) {
 	return sched, nil
 }
 
-func main() {
-	msgs, err := fromFile("testdata/5ms-2ops.txtpb")
-	if err != nil {
-		log.Exitf("cannot read messages, %v", err)
-	}
-	_ = msgs
-	fmt.Printf("%d\n", len(msgs))
-	ts, err := clientTimeseries(msgs, 5*time.Millisecond)
-	if err != nil {
-		log.Exitf("cannot build timeseries, %v", err)
-	}
-	for t, ms := range ts {
-		fmt.Printf("%s --> %v\n", t, ms)
+func awaitTimeout(ctx context.Context, c *fluent.GRIBIClient, t testing.TB, timeout time.Duration) error {
+	subctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return c.Await(subctx, t)
+}
+
+func Do(ctx context.Context, t testing.TB, c *fluent.GRIBIClient, sched []*event, timeMultiplier int) {
+	c.Start(ctx, t)
+	defer c.Stop(t)
+	c.StartSending(ctx, t)
+	if err := awaitTimeout(ctx, c, t, time.Minute); err != nil {
+		t.Fatalf("got unexpected error from server - session negotiation, got: %v, want: nil", err)
 	}
 
-	sched, err := replaySchedule(ts)
-	if err != nil {
-		log.Exitf("cannot form schedule, %v", err)
+	for _, s := range sched {
+		extendedTime := s.sleep * time.Duration(timeMultiplier)
+		log.Infof("sleeping %s (exaggerated)\n", extendedTime)
+		time.Sleep(extendedTime)
+		log.Infof("	sending %v\n", s.events)
+		c.Modify().Enqueue(t, s.events...)
 	}
-
-	for _, e := range sched {
-		time.Sleep(e.sleep)
-		fmt.Printf("sleep %s.......\n", e.sleep)
-		fmt.Printf("	send %v\n", e.events)
+	if err := awaitTimeout(ctx, c, t, time.Minute); err != nil {
+		t.Fatalf("got unexpected error from server - session negotiation, got: %v, want: nil", err)
 	}
+	t.Logf("Server results, %s", c.Results(t))
 }

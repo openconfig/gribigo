@@ -138,17 +138,6 @@ func main() {
 	if err := awaitTimeout(ctx, c, t, time.Minute); err != nil {
 		t.Fatalf("got unexpected error from server - entries, got: %v, want: nil", err)
 	}
-	/*log.Infof("%v\n", c.Results(t))
-	log.Infof("%v\n", testSink.logEntries(true))
-	log.Infof("%v\n", testSink.logEntries(false))
-
-	for n, e := range testSink.logEntries(true) {
-		fmt.Printf("client msg %d: %s\n", n, e)
-	}
-
-	for n, e := range testSink.logEntries(false) {
-		fmt.Printf("server msg %d: %s\n", n, e)
-	}*/
 
 	f, err := os.Create("log")
 	if err != nil {

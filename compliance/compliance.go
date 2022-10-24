@@ -320,6 +320,11 @@ var (
 		},
 	}, {
 		In: Test{
+			Fn:        TestOperationIsolation,
+			ShortName: "AFTOperation responses must not be sent to other clients",
+		},
+	}, {
+		In: Test{
 			Fn:        makeTestWithACK(GetNH, fluent.InstalledInRIB),
 			ShortName: "Get for installed NH - RIB ACK",
 		},
@@ -1258,6 +1263,48 @@ func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) 
 			WithOperationType(constants.Delete).
 			WithProgrammingResult(fluent.InstalledInRIB).
 			AsResult())
+}
+
+// TestOperationIsolation verifies no AFTOperation responses are received on a
+// second client after the primary client has disconnected.
+func TestOperationIsolation(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
+	defer electionID.Add(2)
+	clientA, clientB := clientAB(c, t, opts...)
+
+	clientA.Connection().WithInitialElectionID(electionID.Load()+1, 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence()
+	clientA.Start(context.Background(), t)
+	clientA.StartSending(context.Background(), t)
+
+	clientB.Connection().WithInitialElectionID(electionID.Load(), 0).
+		WithRedundancyMode(fluent.ElectedPrimaryClient).
+		WithPersistence()
+	clientB.Start(context.Background(), t)
+	defer clientB.Stop(t)
+	clientB.StartSending(context.Background(), t)
+
+	entries := []fluent.GRIBIEntry{
+		fluent.NextHopEntry().
+			WithNetworkInstance(defaultNetworkInstanceName).
+			WithIndex(1).
+			WithIPAddress("192.0.2.1"),
+		fluent.NextHopGroupEntry().
+			WithNetworkInstance(defaultNetworkInstanceName).
+			WithID(42).
+			AddNextHop(1, 1),
+		fluent.IPv4Entry().
+			WithPrefix("1.1.1.1/32").
+			WithNetworkInstance(defaultNetworkInstanceName).
+			WithNextHopGroup(42),
+	}
+
+	clientA.Modify().AddEntry(t, entries...)
+	clientA.Stop(t)
+
+	clientBErr := awaitTimeout(context.Background(), clientB, t, time.Minute)
+	chk.HasNRecvErrors(t, clientBErr, 0)
+	chk.HasNSendErrors(t, clientBErr, 0)
 }
 
 // For the following tests, the base topology shown below is assumed.

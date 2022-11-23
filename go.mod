@@ -9,7 +9,7 @@ require (
 	github.com/kentik/patricia v1.2.0
 	github.com/openconfig/gnmi v0.0.0-20210527163611-d3a3e30199da
 	github.com/openconfig/goyang v1.0.0
-	github.com/openconfig/gribi v0.1.1-0.20220622162620-08d53dffce45
+	github.com/openconfig/gribi v0.1.1-0.20221123184705-eba8d2fe3e12
 	github.com/openconfig/grpctunnel v0.0.0-20210610163803-fde4a9dc048d // indirect
 	github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07
 	github.com/openconfig/ygot v0.20.0

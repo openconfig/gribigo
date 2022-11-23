@@ -392,6 +392,7 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 		// Used to store information about the transaction that was
 		// completed in case it completes successfully.
 		nhgNetworkInstance, v4Prefix string
+		mplsLabel                    uint64
 		refdNextHops                 []uint64
 		nhgID, refdNHGID             uint64
 	)
@@ -417,6 +418,13 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 
 		log.V(2).Infof("[op %d] attempting to add NHG ID %d", op.GetId(), t.NextHopGroup.GetId())
 		installed, replaced, err = niR.AddNextHopGroup(t.NextHopGroup, explicitReplace)
+	case *spb.AFTOperation_Mpls:
+		nhgNetworkInstance = t.Mpls.GetLabelEntry().GetNextHopGroupNetworkInstance().GetValue()
+		refdNHGID = t.Mpls.GetLabelEntry().GetNextHopGroup().GetValue()
+		mplsLabel = t.Mpls.GetLabelUint64()
+
+		log.V(2).Infof("[op %d] attempting to add MPLS label entry %d", op.GetId(), mplsLabel)
+		installed, replaced, err = niR.AddMPLS(t.Mpls, explicitReplace)
 	default:
 		return status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
 	}
@@ -433,7 +441,7 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 		// replace. If it was, then we don't update the references since the
 		// reference was already counted.
 		switch {
-		case v4Prefix != "" && !replaced:
+		case (v4Prefix != "" || mplsLabel != 0) && !replaced:
 			referencingRIB := niR
 			if nhgNetworkInstance != "" {
 				rr, ok := r.NetworkInstanceRIB(nhgNetworkInstance)
@@ -687,23 +695,34 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 		return true, nil
 	}
 
+	nhgResolvable := func(resolveRIB *RIBHolder, otherNI string, nhg uint64) (bool, error) {
+		if otherNI != "" {
+			resolveRIB, ok = r.NetworkInstanceRIB(otherNI)
+			if !ok {
+				return false, fmt.Errorf("invalid unknown network-instance for entry, %s", otherNI)
+			}
+		}
+		if _, ok := resolveRIB.GetNextHopGroup(nhg); !ok {
+			// again, not an error - we just can't resolve this IPv4 entry due to missing NHG right now.
+			return false, nil
+		}
+		return true, nil
+	}
+
 	for _, i := range caft.Ipv4Entry {
 		if i.GetNextHopGroup() == 0 {
 			// handle zero index again.
 			return false, fmt.Errorf("invalid zero-index NHG in IPv4Entry %s, NI %s", i.GetPrefix(), netInst)
 		}
-		resolveRIB := niRIB
-		if otherNI := i.GetNextHopGroupNetworkInstance(); otherNI != "" {
-			resolveRIB, ok = r.NetworkInstanceRIB(otherNI)
-			if !ok {
-				return false, fmt.Errorf("invalid unknown network-instance for IPv4Entry, %s", otherNI)
-			}
+		return nhgResolvable(niRIB, i.GetNextHopGroupNetworkInstance(), i.GetNextHopGroup())
+
+	}
+
+	for _, i := range caft.LabelEntry {
+		if i.GetNextHopGroup() == 0 {
+			return false, fmt.Errorf("invalid zero index NHG in LabelEntry %v, NI %s", i.GetLabel(), netInst)
 		}
-		if _, ok := resolveRIB.GetNextHopGroup(i.GetNextHopGroup()); !ok {
-			// again, not an error - we just can't resolve this IPv4 entry due to missing NHG right now.
-			return false, nil
-		}
-		return true, nil
+		return nhgResolvable(niRIB, i.GetNextHopGroupNetworkInstance(), i.GetNextHopGroup())
 	}
 
 	// We should never reach here since we checked that at least one of the things that we are looping over has
@@ -780,16 +799,14 @@ func checkCandidate(caft *aft.Afts) error {
 	switch {
 	case len(caft.Ipv6Entry) != 0:
 		return fmt.Errorf("IPv6 entries are unsupported, got: %v", caft.Ipv6Entry)
-	case len(caft.LabelEntry) != 0:
-		return fmt.Errorf("MPLS label entries are unsupported, got: %v", caft.LabelEntry)
 	case len(caft.MacEntry) != 0:
 		return fmt.Errorf("ethernet MAC entries are unsupported, got: %v", caft.MacEntry)
 	case len(caft.PolicyForwardingEntry) != 0:
 		return fmt.Errorf("PBR entries are unsupported, got: %v", caft.PolicyForwardingEntry)
-	case (len(caft.Ipv4Entry) + len(caft.NextHopGroup) + len(caft.NextHop)) == 0:
+	case (len(caft.LabelEntry) + len(caft.Ipv4Entry) + len(caft.NextHopGroup) + len(caft.NextHop)) == 0:
 		return errors.New("no entries in specified candidate")
-	case (len(caft.Ipv4Entry) + len(caft.NextHopGroup) + len(caft.NextHop)) > 1:
-		return fmt.Errorf("multiple entries are unsupported, got ipv4: %v, next-hop-group: %v, next-hop: %v", caft.Ipv4Entry, caft.NextHopGroup, caft.NextHop)
+	case (len(caft.LabelEntry) + len(caft.Ipv4Entry) + len(caft.NextHopGroup) + len(caft.NextHop)) > 1:
+		return fmt.Errorf("multiple entries are unsupported, got mpls: %v, ipv4: %v, next-hop-group: %v, next-hop: %v", caft.LabelEntry, caft.Ipv4Entry, caft.NextHopGroup, caft.NextHop)
 	}
 	return nil
 }
@@ -1098,6 +1115,96 @@ func (r *RIBHolder) locklessDeleteIPv4(prefix string) error {
 		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
 	}
 	return nil
+}
+
+func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (bool, bool, error) {
+	if r.r == nil {
+		return false, false, errors.New("invalid RIB structure, nil")
+	}
+
+	if e == nil {
+		return false, false, errors.New("nil IPv4 Entry provided")
+	}
+
+	// This is a hack, since ygot does not know that the field that we
+	// have provided is a list entry, then it doesn't do the right thing. So
+	// we just give it the root so that it knows.
+	nr, err := candidateRIB(&aftpb.Afts{
+		LabelEntry: []*aftpb.Afts_LabelEntryKey{e},
+	})
+	if err != nil {
+		return false, false, fmt.Errorf("invalid LabelEntry, %v", err)
+	}
+
+	if explicitReplace && !r.mplsExists(uint32(e.GetLabelUint64())) {
+		return false, false, fmt.Errorf("cannot replace MPLS Entry %d, does not exist", e.GetLabelUint64())
+	}
+
+	if r.checkFn != nil {
+		ok, err := r.checkFn(constants.Add, nr)
+		if err != nil {
+			// This entry can never be installed, so return the error
+			// to the caller directly -- signalling to them not to retry.
+			return false, false, err
+		}
+		if !ok {
+			// The checkFn validated the entry and found it to be OK, but
+			// indicated that we should not merge it into the RIB because
+			// some prerequisite was not satisifed. Based on this, we
+			// return false (we didn't install it), but indicate with err == nil
+			// that the caller can retry this entry at some later point, and we'll
+			// run the checkFn again to see whether it can now be installed.
+			return false, false, nil
+		}
+	}
+
+	replaced, err := r.doAddMPLS(uint32(e.GetLabelUint64()), nr)
+	if err != nil {
+		return false, false, err
+	}
+
+	// We expect that there is just a single entry here since we are
+	// being called based on a single entry, but we loop since we don't
+	// know the key.
+	if r.postChangeHook != nil {
+		for _, ip4 := range nr.Afts.Ipv4Entry {
+			r.postChangeHook(constants.Add, unixTS(), r.name, ip4)
+		}
+	}
+
+	return true, replaced, nil
+}
+
+func (r *RIBHolder) mplsExists(label uint32) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.r.GetAfts().LabelEntry[aft.UnionUint32(label)]
+	return ok
+}
+
+func (r *RIBHolder) doAddMPLS(label uint32, newRIB *aft.RIB) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Sanity check.
+	if nhg, nh := len(newRIB.Afts.NextHopGroup), len(newRIB.Afts.NextHop); nhg != 0 || nh != 0 {
+		return false, fmt.Errorf("candidate RIB specifies entries other than NextHopGroups, got: %d nhg, %d nh", nhg, nh)
+	}
+
+	// Check whether this is an implicit replace.
+	_, implicit := r.r.GetAfts().LabelEntry[aft.UnionUint32(label)]
+
+	// MergeStructInto doesn't completely replace a list entry if it finds a missing key,
+	// so will append the two entries together.
+	// We don't use Delete itself because it will deadlock (we already hold the lock).
+	delete(r.r.GetAfts().LabelEntry, aft.UnionUint32(label))
+
+	// TODO(robjs): consider what happens if this fails -- we may leave the RIB in
+	// an inconsistent state.
+	if err := ygot.MergeStructInto(r.r, newRIB); err != nil {
+		return false, fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	}
+	return implicit, nil
 }
 
 // DeleteNextHopGroup removes the NextHopGroup entry e from the RIB. It returns a boolean

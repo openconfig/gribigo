@@ -106,8 +106,8 @@ type Test struct {
 	// RequiresNonDefaultNINHG marks a test that configures NH and NHG entries (not
 	// including IPv4) in non-default network-instance.
 	RequiresNonDefaultNINHG bool
-  // RequiresMPLS marks a test that requires MPLS support in the gRIBI server.
-  RequiresMPLS bool
+	// RequiresMPLS marks a test that requires MPLS support in the gRIBI server.
+	RequiresMPLS bool
 }
 
 // TestSpec is a description of a test.
@@ -467,12 +467,12 @@ var (
 			ShortName:               "Flush non-default network instances preserves the default",
 			RequiresNonDefaultNINHG: false, // No entries in the non-default VRF.
 		},
-  }, {
-    In: Test{
-      Fn: makeTestWithACK(AddMPLSEntry, fluent.InstalledInRIB),
-      ShortName: "MPLS simple programming entry",
-      RequiresMPLS: true,
-    },
+	}, {
+		In: Test{
+			Fn:           makeTestWithACK(AddMPLSEntry, fluent.InstalledInRIB),
+			ShortName:    "MPLS simple programming entry",
+			RequiresMPLS: true,
+		},
 	}}
 )
 

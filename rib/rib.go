@@ -1123,7 +1123,7 @@ func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (
 	}
 
 	if e == nil {
-		return false, false, errors.New("nil IPv4 Entry provided")
+		return false, false, errors.New("nil MPLS Entry provided")
 	}
 
 	// This is a hack, since ygot does not know that the field that we

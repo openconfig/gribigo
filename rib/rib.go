@@ -1117,6 +1117,13 @@ func (r *RIBHolder) locklessDeleteIPv4(prefix string) error {
 	return nil
 }
 
+// AddMPLS adds the specified label entry described by e to the RIB. If the
+// explicitReplace argument is set to true, it checks whether the entry exists
+// before it is replaced, otherwise replaces are implicit. It returns a bool
+// which indicates whether the entry was added, a second bool that indicates
+// whether the programming was an implicit replace and an error that should be
+// considered fatal by the caller (i.e., there is no possibility that this
+// entry can become valid and be installed in the future).
 func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (bool, bool, error) {
 	if r.r == nil {
 		return false, false, errors.New("invalid RIB structure, nil")
@@ -1126,9 +1133,6 @@ func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (
 		return false, false, errors.New("nil MPLS Entry provided")
 	}
 
-	// This is a hack, since ygot does not know that the field that we
-	// have provided is a list entry, then it doesn't do the right thing. So
-	// we just give it the root so that it knows.
 	nr, err := candidateRIB(&aftpb.Afts{
 		LabelEntry: []*aftpb.Afts_LabelEntryKey{e},
 	})
@@ -1175,6 +1179,8 @@ func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (
 	return true, replaced, nil
 }
 
+// mplsExists validates whether an entry exists in r for the specified MPLS
+// label entry. It returns true if such an entry exists.
 func (r *RIBHolder) mplsExists(label uint32) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -1182,6 +1188,10 @@ func (r *RIBHolder) mplsExists(label uint32) bool {
 	return ok
 }
 
+// doAddMPLS implements the addition of the label entry speciifed by label
+// with the contents of the newRIB specified. It holds the shortest possible
+// lock on the RIB. doMPLS returns a bool indicating whether the update was
+// an implicit replace.
 func (r *RIBHolder) doAddMPLS(label uint32, newRIB *aft.RIB) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

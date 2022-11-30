@@ -1264,6 +1264,10 @@ func (r *RIBHolder) DeleteLabelEntry(e *aftpb.Afts_LabelEntryKey) (bool, *aft.Af
 		return false, nil, errors.New("invalid RIB structure, nil")
 	}
 
+	if _, ok := e.GetLabel().(*aftpb.Afts_LabelEntryKey_LabelUint64); !ok {
+		return false, nil, fmt.Errorf("unsupported label type %T, only uint64 labels are supported, %v", e, e)
+	}
+
 	lbl := uint32(e.GetLabelUint64())
 
 	de := r.retrieveMPLS(lbl)

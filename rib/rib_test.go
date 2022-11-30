@@ -36,7 +36,7 @@ import (
 
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
-	"github.com/openconfig/gribi/v1/proto/gribi_aft/enums"
+	enumpb "github.com/openconfig/gribi/v1/proto/gribi_aft/enums"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
@@ -2312,7 +2312,7 @@ func TestDeleteEntry(t *testing.T) {
 			Entry: &spb.AFTOperation_Mpls{
 				Mpls: &aftpb.Afts_LabelEntryKey{
 					Label: &aftpb.Afts_LabelEntryKey_LabelOpenconfigmplstypesmplslabelenum{
-						LabelOpenconfigmplstypesmplslabelenum: enums.OpenconfigMplsTypesMplsLabelEnum_OPENCONFIGMPLSTYPESMPLSLABELENUM_IMPLICIT_NULL,
+						LabelOpenconfigmplstypesmplslabelenum: enumpb.OpenconfigMplsTypesMplsLabelEnum_OPENCONFIGMPLSTYPESMPLSLABELENUM_IMPLICIT_NULL,
 					},
 				},
 			},
@@ -2324,7 +2324,7 @@ func TestDeleteEntry(t *testing.T) {
 				Entry: &spb.AFTOperation_Mpls{
 					Mpls: &aftpb.Afts_LabelEntryKey{
 						Label: &aftpb.Afts_LabelEntryKey_LabelOpenconfigmplstypesmplslabelenum{
-							LabelOpenconfigmplstypesmplslabelenum: enums.OpenconfigMplsTypesMplsLabelEnum_OPENCONFIGMPLSTYPESMPLSLABELENUM_IMPLICIT_NULL,
+							LabelOpenconfigmplstypesmplslabelenum: enumpb.OpenconfigMplsTypesMplsLabelEnum_OPENCONFIGMPLSTYPESMPLSLABELENUM_IMPLICIT_NULL,
 						},
 					},
 				},

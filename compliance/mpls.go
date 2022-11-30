@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package compliance encapsulates a set of compliance tests for gRIBI. It is a test only
-// library. All tests are of the form func(c *fluent.GRIBIClient, t testing.TB) where the
-// client is the one that should be used for the test. The testing.TB object is used to report
-// errors.
 package compliance
 
 import (
@@ -26,6 +22,9 @@ import (
 	"github.com/openconfig/gribigo/fluent"
 )
 
+// AddMPLSEntry validates that the gRIBI server supports adding MPLS entries to
+// the set of AFT entries supported. It expects the wantACK acknowledgement
+// type.
 func AddMPLSEntry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
 

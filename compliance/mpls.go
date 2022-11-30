@@ -70,6 +70,9 @@ func AddMPLSEntry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 	)
 }
 
+// DeleteMPLSEntry validates that a gRIBI server supports deleting MPLS entries
+// that are installed in the set of LabelEntries on the server. It expects the
+// wantACK acknowledgement type.
 func DeleteMPLSEntry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
 

@@ -536,25 +536,44 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 	}
 
 	var (
-		oks, fails  []*OpResult
-		removed     bool
-		err         error
-		originalv4  *aft.Afts_Ipv4Entry
-		originalNHG *aft.Afts_NextHopGroup
+		oks, fails   []*OpResult
+		removed      bool
+		err          error
+		originalv4   *aft.Afts_Ipv4Entry
+		originalNHG  *aft.Afts_NextHopGroup
+		originalMPLS *aft.Afts_LabelEntry
 	)
 
+	if op == nil || op.Entry == nil {
+		return nil, nil, status.Newf(codes.InvalidArgument, "invalid nil AFT operation, %v", op).Err()
+	}
 	switch t := op.Entry.(type) {
 	case *spb.AFTOperation_Ipv4:
-		log.V(2).Infof("adding IPv4 prefix %s", t.Ipv4.GetPrefix())
+		log.V(2).Infof("deleting IPv4 prefix %s", t.Ipv4.GetPrefix())
 		removed, originalv4, err = niR.DeleteIPv4(t.Ipv4)
 	case *spb.AFTOperation_NextHop:
-		log.V(2).Infof("adding NH Index %d", t.NextHop.GetIndex())
+		log.V(2).Infof("deleting NH Index %d", t.NextHop.GetIndex())
 		removed, _, err = niR.DeleteNextHop(t.NextHop)
 	case *spb.AFTOperation_NextHopGroup:
-		log.V(2).Infof("adding NHG ID %d", t.NextHopGroup.GetId())
+		log.V(2).Infof("deleting NHG ID %d", t.NextHopGroup.GetId())
 		removed, originalNHG, err = niR.DeleteNextHopGroup(t.NextHopGroup)
+	case *spb.AFTOperation_Mpls:
+		log.V(2).Infof("deleting MPLS entry %s", t.Mpls.GetLabel())
+		removed, originalMPLS, err = niR.DeleteLabelEntry(t.Mpls)
 	default:
 		return nil, nil, status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
+	}
+
+	getNHGRIB := func(ni *RIBHolder, nhgNI string) (*RIBHolder, error) {
+		referencingRIB := ni
+		if nhgNI != "" {
+			rr, ok := r.NetworkInstanceRIB(nhgNI)
+			if !ok {
+				return nil, status.Newf(codes.InvalidArgument, "invalid network-instance %s specified in entry", nhgNI).Err()
+			}
+			referencingRIB = rr
+		}
+		return referencingRIB, nil
 	}
 
 	// TODO(robjs): currently, the post-change hook is not called for deletes. Add
@@ -570,19 +589,21 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 		// Decrement the reference counts.
 		switch {
 		case originalv4 != nil:
-			referencingRIB := niR
-			if nhg := originalv4.GetNextHopGroupNetworkInstance(); nhg != "" {
-				rr, ok := r.NetworkInstanceRIB(nhg)
-				if !ok {
-					return nil, nil, status.Newf(codes.InvalidArgument, "invalid network-instance specified in IPv4 prefix %s", originalv4.GetPrefix()).Err()
-				}
-				referencingRIB = rr
+			referencingRIB, err := getNHGRIB(niR, originalv4.GetNextHopGroupNetworkInstance())
+			if err != nil {
+				return nil, nil, err
 			}
 			referencingRIB.decNHGRefCount(originalv4.GetNextHopGroup())
 		case originalNHG != nil:
 			for id := range originalNHG.NextHop {
 				niR.decNHRefCount(id)
 			}
+		case originalMPLS != nil:
+			referencingRIB, err := getNHGRIB(niR, originalMPLS.GetNextHopGroupNetworkInstance())
+			if err != nil {
+				return nil, nil, err
+			}
+			referencingRIB.decNHGRefCount(originalMPLS.GetNextHopGroup())
 		}
 
 		log.V(2).Infof("operation %d deleted from RIB successfully", op.GetId())
@@ -765,6 +786,11 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 	// IPv4 entries can always be removed, since we allow recursion to happen
 	// inside and outside of gRIBI.
 	if len(caft.Ipv4Entry) != 0 {
+		return true, nil
+	}
+
+	// Similarly to IPv4 entries, we can always remove label entries.
+	if len(caft.LabelEntry) != 0 {
 		return true, nil
 	}
 
@@ -1101,6 +1127,13 @@ func (r *RIBHolder) retrieveIPv4(prefix string) *aft.Afts_Ipv4Entry {
 	return r.r.Afts.Ipv4Entry[prefix]
 }
 
+// doDeleteIPv4 deletes pfx from the IPv4Entry RIB holding the shortest possible lock.
+func (r *RIBHolder) doDeleteIPv4(pfx string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.r.Afts.Ipv4Entry, pfx)
+}
+
 // locklessDeleteIPv4 removes the next-hop with the specified prefix without
 // holding a lock on the RIB. The caller MUST hold the relevant lock. It returns
 // an error if the entry cannot be found.
@@ -1117,6 +1150,13 @@ func (r *RIBHolder) locklessDeleteIPv4(prefix string) error {
 	return nil
 }
 
+// AddMPLS adds the specified label entry described by e to the RIB. If the
+// explicitReplace argument is set to true, it checks whether the entry exists
+// before it is replaced, otherwise replaces are implicit. It returns a bool
+// which indicates whether the entry was added, a second bool that indicates
+// whether the programming was an implicit replace and an error that should be
+// considered fatal by the caller (i.e., there is no possibility that this
+// entry can become valid and be installed in the future).
 func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (bool, bool, error) {
 	if r.r == nil {
 		return false, false, errors.New("invalid RIB structure, nil")
@@ -1126,9 +1166,6 @@ func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (
 		return false, false, errors.New("nil MPLS Entry provided")
 	}
 
-	// This is a hack, since ygot does not know that the field that we
-	// have provided is a list entry, then it doesn't do the right thing. So
-	// we just give it the root so that it knows.
 	nr, err := candidateRIB(&aftpb.Afts{
 		LabelEntry: []*aftpb.Afts_LabelEntryKey{e},
 	})
@@ -1175,6 +1212,8 @@ func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (
 	return true, replaced, nil
 }
 
+// mplsExists validates whether an entry exists in r for the specified MPLS
+// label entry. It returns true if such an entry exists.
 func (r *RIBHolder) mplsExists(label uint32) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -1182,6 +1221,10 @@ func (r *RIBHolder) mplsExists(label uint32) bool {
 	return ok
 }
 
+// doAddMPLS implements the addition of the label entry speciifed by label
+// with the contents of the newRIB specified. It holds the shortest possible
+// lock on the RIB. doMPLS returns a bool indicating whether the update was
+// an implicit replace.
 func (r *RIBHolder) doAddMPLS(label uint32, newRIB *aft.RIB) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1205,6 +1248,65 @@ func (r *RIBHolder) doAddMPLS(label uint32, newRIB *aft.RIB) (bool, error) {
 		return false, fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
 	}
 	return implicit, nil
+}
+
+// DeleteLabelEntry removes the MPLS label entry e from the RIB. It returns a
+// boolean indicating whether the entry has been removed, a copy of the entry
+// that was removed, and an error if the message cannot be parsed. Per the gRIBI
+// specification the payload of the entry is not compared the existing entry
+// before deleting it.
+func (r *RIBHolder) DeleteLabelEntry(e *aftpb.Afts_LabelEntryKey) (bool, *aft.Afts_LabelEntry, error) {
+	if e == nil {
+		return false, nil, errors.New("nil Label entry provided")
+	}
+
+	if r.r == nil {
+		return false, nil, errors.New("invalid RIB structure, nil")
+	}
+
+	lbl := uint32(e.GetLabelUint64())
+
+	de := r.retrieveMPLS(lbl)
+
+	rr := &aft.RIB{}
+	rr.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(lbl))
+
+	if r.checkFn != nil {
+		ok, err := r.checkFn(constants.Delete, rr)
+		switch {
+		case err != nil:
+			// the check told us this was a fatal error that cannot be
+			// recovered from.
+			return false, nil, err
+		case !ok:
+			// we did not complete this operation, but it can be retried.
+			return false, nil, nil
+		}
+	}
+
+	r.doDeleteMPLS(lbl)
+
+	if r.postChangeHook != nil {
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
+	}
+
+	return true, de, nil
+}
+
+// retrieveMPLS returns the MPLS entry specified by label, holding a lock
+// on the RIBHolder as it does so.
+func (r *RIBHolder) retrieveMPLS(label uint32) *aft.Afts_LabelEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.r.Afts.LabelEntry[aft.UnionUint32(label)]
+}
+
+// doDeleteMPLS deletes label from the LabelEntry RIB holding the shortest
+// possible lock.
+func (r *RIBHolder) doDeleteMPLS(label uint32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.r.Afts.LabelEntry, aft.UnionUint32(label))
 }
 
 // DeleteNextHopGroup removes the NextHopGroup entry e from the RIB. It returns a boolean
@@ -1312,13 +1414,6 @@ func (r *RIBHolder) DeleteNextHop(e *aftpb.Afts_NextHopKey) (bool, *aft.Afts_Nex
 	}
 
 	return true, de, nil
-}
-
-// doDeleteIPv4 deletes pfx from the IPv4Entry RIB holding the shortest possible lock.
-func (r *RIBHolder) doDeleteIPv4(pfx string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.r.Afts.Ipv4Entry, pfx)
 }
 
 // retrieveNH returns the specified NextHop, holding a lock

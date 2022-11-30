@@ -70,3 +70,64 @@ func AddMPLSEntry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 		chk.IgnoreOperationID(),
 	)
 }
+
+func DeleteMPLSEntry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(1).AddNextHop(1, 1))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.LabelEntry().WithLabel(100).WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(1))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, wantACK, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithMPLSOperation(100).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	delOps := []func(){
+		func() {
+			c.Modify().DeleteEntry(t, fluent.LabelEntry().WithLabel(100).WithNetworkInstance(defaultNetworkInstanceName))
+		},
+	}
+
+	delRes := DoModifyOps(c, t, delOps, wantACK, false)
+
+	chk.HasResult(t, delRes,
+		fluent.OperationResult().
+			WithMPLSOperation(100).
+			WithOperationType(constants.Delete).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID())
+}

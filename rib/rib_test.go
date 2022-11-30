@@ -2292,6 +2292,53 @@ func TestDeleteEntry(t *testing.T) {
 			},
 		}},
 	}, {
+		desc: "nil MPLS input",
+		inRIB: func() *RIB {
+			r := New(defName, DisableRIBCheckFn())
+			return r
+		}(),
+		inNetworkInstance: defName,
+		wantErr:           true,
+	}, {
+		desc: "delete MPLS",
+		inRIB: func() *RIB {
+			r := New(defName, DisableRIBCheckFn())
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label:      &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
+						LabelEntry: &aftpb.Afts_LabelEntry{},
+					},
+				},
+			}); err != nil {
+				t.Fatalf("cannot set up test case, %v", err)
+			}
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label:      &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
+					LabelEntry: &aftpb.Afts_LabelEntry{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label:      &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
+						LabelEntry: &aftpb.Afts_LabelEntry{},
+					},
+				},
+			},
+		}},
+	}, {
 		desc: "delete NHG",
 		inRIB: func() *RIB {
 			r := New(defName)

@@ -473,6 +473,12 @@ var (
 			ShortName:    "MPLS simple programming entry",
 			RequiresMPLS: true,
 		},
+	}, {
+		In: Test{
+			Fn:           makeTestWithACK(DeleteMPLSEntry, fluent.InstalledInRIB),
+			ShortName:    "MPLS delete entry",
+			RequiresMPLS: true,
+		},
 	}}
 )
 

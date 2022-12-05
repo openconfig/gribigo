@@ -148,7 +148,7 @@ func FlushNIUnspecified(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult,
 		t.Fatalf("did not get the expected canonical error code from server, got code: %s (error: %v), want: %s", got, flushErr, want)
 	}
 	if len(s.Details()) != 1 {
-		t.Fatalf("got more than 1 error details, got: %v", flushErr)
+		t.Fatalf("did not get 1 error detail, got: %v", s.Details())
 	}
 	gotD, ok := s.Details()[0].(*spb.FlushResponseError)
 	if !ok {

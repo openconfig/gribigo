@@ -38,6 +38,12 @@ import (
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
+const (
+	// Keys to check in trailer metadata for populating the status details
+	GRIBIErrorTrailingMetadataName     string = "errordetails-typeurl"
+	GRIBIErrorTrailingMetadataContents string = "errordetails-value-bin"
+)
+
 var (
 	// unixTS is a function that returns a timestamp in nanoseconds for the current time.
 	// It can be overloaded in unit tests to ensure that deterministic output is received.
@@ -350,11 +356,20 @@ func (c *Client) Connect(ctx context.Context) error {
 			resp, err := stream.Recv()
 			trailer := stream.Trailer()
 
-			// Checking Trailer() for obtaining ModifyRPCErrorDetails in scenario
-			// when status.details cannot be populated in err from server
+			// grpc-core does not support populating the status details, therefore some
+			// implementations may support this using trailing metadata. The specific keys
+			// are defined above as constants
+			// (GRIBIErrorTrailingMetadataName and GRIBIErrorTrailingMetadataContents). If
+			// these keys exist in the metadata then we append these values to the error
+			// that is returned to the client.
 			if len(trailer) != 0 {
-				if url, ok := trailer["errordetails-typeurl"]; ok {
-					anyObj := &anypb.Any{TypeUrl: url[0], Value: []byte(trailer.Get("errordetails-value-bin")[0])}
+				url, ok := trailer[GRIBIErrorTrailingMetadataName]
+				var value []string
+				if ok {
+					value = trailer.Get(GRIBIErrorTrailingMetadataContents)
+				}
+				if value != nil {
+					anyObj := &anypb.Any{TypeUrl: url[0], Value: []byte(value[0])}
 					if se, ok := status.FromError(err); ok {
 						p := se.Proto()
 						p.Details = append(p.Details, anyObj)

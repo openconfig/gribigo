@@ -350,18 +350,17 @@ func (c *Client) Connect(ctx context.Context) error {
 			resp, err := stream.Recv()
 			trailer := stream.Trailer()
 
+			// Checking Trailer() for obtaining ModifyRPCErrorDetails in scenario
+			// when status.details cannot be populated in err from server
 			if len(trailer) != 0 {
 				if url, ok := trailer["errordetails-typeurl"]; ok {
 					anyObj := &anypb.Any{TypeUrl: url[0], Value: []byte(trailer.Get("errordetails-value-bin")[0])}
-
 					if se, ok := status.FromError(err); ok {
 						p := se.Proto()
 						p.Details = append(p.Details, anyObj)
 						err = status.ErrorProto(p)
-
 					}
 				}
-
 			}
 			if done := respHandler(resp, err); done {
 				return

@@ -31,6 +31,8 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	status "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
@@ -345,7 +347,23 @@ func (c *Client) Connect(ctx context.Context) error {
 				log.V(2).Infof("shutting down recv goroutine")
 				return
 			}
-			if done := respHandler(stream.Recv()); done {
+			resp, err := stream.Recv()
+			trailer := stream.Trailer()
+
+			if len(trailer) != 0 {
+				if url, ok := trailer["errordetails-typeurl"]; ok {
+					anyObj := &anypb.Any{TypeUrl: url[0], Value: []byte(trailer.Get("errordetails-value-bin")[0])}
+
+					if se, ok := status.FromError(err); ok {
+						p := se.Proto()
+						p.Details = append(p.Details, anyObj)
+						err = status.ErrorProto(p)
+
+					}
+				}
+
+			}
+			if done := respHandler(resp, err); done {
 				return
 			}
 		}

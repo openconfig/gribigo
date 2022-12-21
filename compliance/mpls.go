@@ -70,6 +70,56 @@ func AddMPLSEntry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 	)
 }
 
+// AddMPLSEntryWithLabelStack validates that the gRIBI server supports adding MPLS entries where
+// a label stack is specified in the next-hop. It expects the wantACK acknowledgement type.
+func AddMPLSEntryWithLabelStack(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().
+				WithNetworkInstance(defaultNetworkInstanceName).
+				WithIndex(1).
+				WithIPAddress("192.0.2.1").
+				WithPushedLabelStack(100, 200, 300))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(1).AddNextHop(1, 1))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.LabelEntry().WithLabel(100).WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(1))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, wantACK, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithMPLSOperation(100).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+}
+
 // DeleteMPLSEntry validates that a gRIBI server supports deleting MPLS entries
 // that are installed in the set of LabelEntries on the server. It expects the
 // wantACK acknowledgement type.

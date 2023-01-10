@@ -479,6 +479,12 @@ var (
 			ShortName:    "MPLS delete entry",
 			RequiresMPLS: true,
 		},
+	}, {
+		In: Test{
+			Fn:           makeTestWithACK(AddMPLSEntryWithLabelStack, fluent.InstalledInRIB),
+			ShortName:    "MPLS add entry with NH label stack",
+			RequiresMPLS: true,
+		},
 	}}
 )
 

@@ -441,7 +441,7 @@ func TestAdd(t *testing.T) {
 		},
 		wantErr: true,
 	}, {
-		desc: "MPLS - implicit replacae",
+		desc: "MPLS - implicit replace",
 		inRIBHolder: func() *RIBHolder {
 			r := NewRIBHolder("DEFAULT")
 			r.r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
@@ -503,6 +503,44 @@ func TestAdd(t *testing.T) {
 		},
 		inExplicitReplace: true,
 		wantErr:           true,
+	}, {
+		desc: "nh with label stack",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			if _, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index:   1,
+				NextHop: &aftpb.Afts_NextHop{},
+			}, false); err != nil {
+				t.Fatalf("cannot init test case, %v", err)
+			}
+			return r
+		}(),
+		inType: nh,
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 1,
+			NextHop: &aftpb.Afts_NextHop{
+				PushedMplsLabelStack: []*aftpb.Afts_NextHop_PushedMplsLabelStackUnion{{
+					PushedMplsLabelStackUint64: 42,
+				}, {
+					PushedMplsLabelStackUint64: 84,
+				}},
+			},
+		},
+		wantInstalled: true,
+		wantReplace:   true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {
+						Index: ygot.Uint64(1),
+						PushedMplsLabelStack: []aft.Afts_NextHop_PushedMplsLabelStack_Union{
+							aft.UnionUint32(42),
+							aft.UnionUint32(84),
+						},
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {

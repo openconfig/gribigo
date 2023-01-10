@@ -541,6 +541,47 @@ func TestAdd(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc: "nh with interface reference",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			if _, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index:   1,
+				NextHop: &aftpb.Afts_NextHop{},
+			}, false); err != nil {
+				t.Fatalf("cannot init test case, %v", err)
+			}
+			return r
+		}(),
+		inType: nh,
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 1,
+			NextHop: &aftpb.Afts_NextHop{
+				InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+					Interface: &wpb.StringValue{
+						Value: "eth0",
+					},
+					Subinterface: &wpb.UintValue{
+						Value: 0,
+					},
+				},
+			},
+		},
+		wantInstalled: true,
+		wantReplace:   true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {
+						Index: ygot.Uint64(1),
+						InterfaceRef: &aft.Afts_NextHop_InterfaceRef{
+							Interface:    ygot.String("eth0"),
+							Subinterface: ygot.Uint32(0),
+						},
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {
@@ -588,6 +629,7 @@ func TestAdd(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot diff expected RIB with got RIB, %v", err)
 			}
+
 			if diffN != nil && len(diffN.Update) != 0 {
 				t.Fatalf("did not get expected RIB, diff(as notifications):\n%s", diffN)
 			}

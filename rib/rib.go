@@ -957,7 +957,6 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 
 	for p, v := range paths {
 		sv, err := value.FromScalar(v)
-
 		if err != nil {
 			ps := p.String()
 			if yps, err := ygot.PathToString(p); err == nil {
@@ -965,6 +964,7 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 			}
 			return nil, fmt.Errorf("cannot convert field %s to scalar, %v", ps, sv)
 		}
+
 		if err := ytypes.SetNode(rs, nr, p, sv, &ytypes.InitMissingElements{}); err != nil {
 			return nil, fmt.Errorf("invalid RIB %s, %v", a, err)
 		}

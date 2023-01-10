@@ -47,6 +47,7 @@ const (
 	ipv4
 	nhg
 	nh
+	mpls
 )
 
 func TestAdd(t *testing.T) {
@@ -409,11 +410,109 @@ func TestAdd(t *testing.T) {
 			Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
 		},
 		wantErr: true,
+	}, {
+		desc:        "MPLS - valid entry",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inType:      mpls,
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+		wantInstalled: true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				LabelEntry: map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry{
+					aft.UnionUint32(42): {
+						Label: aft.UnionUint32(42),
+					},
+				},
+			},
+		},
+	}, {
+		desc:        "MPLS - invalid entry",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inType:      mpls,
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label:      &aftpb.Afts_LabelEntryKey_LabelUint64{},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+		wantErr: true,
+	}, {
+		desc: "MPLS - implicit replacae",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			r.r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+			return r
+		}(),
+		inType: mpls,
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+		wantInstalled: true,
+		wantReplace:   true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				LabelEntry: map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry{
+					aft.UnionUint32(42): {
+						Label: aft.UnionUint32(42),
+					},
+				},
+			},
+		},
+	}, {
+		desc: "MPLS - explicit replace",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			r.r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+			return r
+		}(),
+		inType: mpls,
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+		inExplicitReplace: true,
+		wantInstalled:     true,
+		wantReplace:       true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				LabelEntry: map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry{
+					aft.UnionUint32(42): {
+						Label: aft.UnionUint32(42),
+					},
+				},
+			},
+		},
+	}, {
+		desc:        "MPLS - explicit replace - missing",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inType:      mpls,
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+		inExplicitReplace: true,
+		wantErr:           true,
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			r := tt.inRIBHolder
+
+			var (
+				gotInstalled, gotImplicit bool
+				err                       error
+			)
+
 			switch tt.inType {
 			case ipv4:
 				// special case for nil test
@@ -424,41 +523,28 @@ func TestAdd(t *testing.T) {
 					}
 					return
 				}
-				gotInstalled, gotImplicit, err := r.AddIPv4(tt.inEntry.(*aftpb.Afts_Ipv4EntryKey), tt.inExplicitReplace)
-				if (err != nil) != tt.wantErr {
-					t.Fatalf("got unexpected error adding IPv4 entry, got: %v, wantErr? %v", err, tt.wantErr)
-				}
-				if gotInstalled != tt.wantInstalled {
-					t.Fatalf("did not get expected installed IPv4 bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
-				}
-				if gotImplicit != tt.wantReplace {
-					t.Fatalf("did not get expected implicit IPv4 bool, got: %v, want: %v", gotImplicit, tt.wantReplace)
-				}
+				gotInstalled, gotImplicit, err = r.AddIPv4(tt.inEntry.(*aftpb.Afts_Ipv4EntryKey), tt.inExplicitReplace)
 			case nhg:
-				gotInstalled, gotImplicit, err := r.AddNextHopGroup(tt.inEntry.(*aftpb.Afts_NextHopGroupKey), tt.wantReplace)
-				if (err != nil) != tt.wantErr {
-					t.Fatalf("got unexpected error adding NHG entry, got: %v, wantErr? %v", err, tt.wantErr)
-				}
-				if gotInstalled != tt.wantInstalled {
-					t.Fatalf("did not get expected installed NHG bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
-				}
-				if gotImplicit != tt.wantReplace {
-					t.Fatalf("did not get expected implicit NHG bool, got: %v, want: %v", gotImplicit, tt.wantReplace)
-				}
+				gotInstalled, gotImplicit, err = r.AddNextHopGroup(tt.inEntry.(*aftpb.Afts_NextHopGroupKey), tt.inExplicitReplace)
 			case nh:
-				gotInstalled, gotImplicit, err := r.AddNextHop(tt.inEntry.(*aftpb.Afts_NextHopKey), tt.inExplicitReplace)
-				if (err != nil) != tt.wantErr {
-					t.Fatalf("got unexpected error adding NH entry, got: %v, wantErr? %v", err, tt.wantErr)
-				}
-				if gotInstalled != tt.wantInstalled {
-					t.Fatalf("did not get expected installed NH bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
-				}
-				if gotImplicit != tt.wantReplace {
-					t.Fatalf("did not get expected implicit NH bool, got: %v, want: %v", gotImplicit, tt.wantReplace)
-				}
+				gotInstalled, gotImplicit, err = r.AddNextHop(tt.inEntry.(*aftpb.Afts_NextHopKey), tt.inExplicitReplace)
+
+			case mpls:
+				gotInstalled, gotImplicit, err = r.AddMPLS(tt.inEntry.(*aftpb.Afts_LabelEntryKey), tt.inExplicitReplace)
 			default:
 				t.Fatalf("unsupported test type in Add, %v", tt.inType)
 			}
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("got unexpected error adding entry, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+			if gotInstalled != tt.wantInstalled {
+				t.Fatalf("did not get expected installed bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
+			}
+			if gotImplicit != tt.wantReplace {
+				t.Fatalf("did not get expected implicit bool, got: %v, want: %v", gotImplicit, tt.wantReplace)
+			}
+
 			diffN, err := ygot.Diff(r.r, tt.wantRIB)
 			if err != nil {
 				t.Fatalf("cannot diff expected RIB with got RIB, %v", err)
@@ -1084,16 +1170,6 @@ func TestCanResolve(t *testing.T) {
 		}(),
 		wantErrSubstring: "IPv6 entries are unsupported",
 	}, {
-		desc:  "MPLS - invalid",
-		inRIB: New(defName),
-		inNI:  defName,
-		inCand: func() *aft.RIB {
-			r := &aft.RIB{}
-			r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
-			return r
-		}(),
-		wantErrSubstring: "MPLS label entries are unsupported",
-	}, {
 
 		desc:  "Ethernet - invalid",
 		inRIB: New(defName),
@@ -1233,7 +1309,7 @@ func TestCanResolve(t *testing.T) {
 			i.NextHopGroupNetworkInstance = ygot.String("404")
 			return r
 		}(),
-		wantErrSubstring: "invalid unknown network-instance for IPv4Entry",
+		wantErrSubstring: "invalid unknown network-instance for entry",
 	}, {
 		desc: "resolve ipv4 entry in default NI - implicit name",
 		inRIB: func() *RIB {
@@ -1302,6 +1378,75 @@ func TestCanResolve(t *testing.T) {
 			i.NextHopGroupNetworkInstance = ygot.String("vrf-42")
 			return r
 		}(),
+	}, {
+		desc: "MPLS - found in default NI specified explicitly",
+		inNI: defName,
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB[defName].r = &aft.RIB{}
+			cc := r.niRIB[defName].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String(defName)
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "MPLS - found in default NI specified implicitly",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB[defName].r = &aft.RIB{}
+			cc := r.niRIB[defName].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String(defName)
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "MPLS - not found",
+		inNI: defName,
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB[defName].r = &aft.RIB{}
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String(defName)
+			return r
+		}(),
+		want: false,
+	}, {
+		desc: "MPLS found in a non-default NI",
+		inNI: "MPLS-NI",
+		inRIB: func() *RIB {
+			r := New("MPLS-NI")
+			r.niRIB["MPLS-NI"].r = &aft.RIB{}
+			cc := r.niRIB["MPLS-NI"].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String("MPLS-NI")
+			return r
+		}(),
+		want: true,
 	}}
 
 	for _, tt := range tests {

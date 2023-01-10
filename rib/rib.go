@@ -1188,7 +1188,7 @@ func (r *RIBHolder) mplsExists(label uint32) bool {
 	return ok
 }
 
-// doAddMPLS implements the addition of the label entry speciifed by label
+// doAddMPLS implements the addition of the label entry specified by label
 // with the contents of the newRIB specified. It holds the shortest possible
 // lock on the RIB. doMPLS returns a bool indicating whether the update was
 // an implicit replace.

@@ -629,6 +629,7 @@ func TestAdd(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot diff expected RIB with got RIB, %v", err)
 			}
+
 			if diffN != nil && len(diffN.Update) != 0 {
 				t.Fatalf("did not get expected RIB, diff(as notifications):\n%s", diffN)
 			}

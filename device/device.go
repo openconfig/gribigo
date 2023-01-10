@@ -388,6 +388,24 @@ func gnmiNoti(t constants.OpType, ts int64, ni string, e ygot.ValidatedGoStruct)
 			UsePathElem:    true,
 			PathElemPrefix: pfx,
 		})
+	case *aft.Afts_LabelEntry:
+		pfx := []*gpb.PathElem{{
+			Name: "network-instances",
+		}, {
+			Name: "network-instance",
+			Key:  map[string]string{"name": ni},
+		}, {
+			Name: "afts",
+		}, {
+			Name: "mpls",
+		}, {
+			Name: "label-entry",
+			Key:  map[string]string{"label": fmt.Sprintf("%d", t.GetLabel())},
+		}}
+		ns, err = ygot.TogNMINotifications(e, ts, ygot.GNMINotificationsConfig{
+			UsePathElem:    true,
+			PathElemPrefix: pfx,
+		})
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot generate notifications, %v", err)

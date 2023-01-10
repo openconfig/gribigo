@@ -36,6 +36,7 @@ import (
 
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	enumpb "github.com/openconfig/gribi/v1/proto/gribi_aft/enums"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
@@ -440,7 +441,7 @@ func TestAdd(t *testing.T) {
 		},
 		wantErr: true,
 	}, {
-		desc: "MPLS - implicit replacae",
+		desc: "MPLS - implicit replace",
 		inRIBHolder: func() *RIBHolder {
 			r := NewRIBHolder("DEFAULT")
 			r.r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
@@ -502,6 +503,44 @@ func TestAdd(t *testing.T) {
 		},
 		inExplicitReplace: true,
 		wantErr:           true,
+	}, {
+		desc: "nh with label stack",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			if _, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index:   1,
+				NextHop: &aftpb.Afts_NextHop{},
+			}, false); err != nil {
+				t.Fatalf("cannot init test case, %v", err)
+			}
+			return r
+		}(),
+		inType: nh,
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 1,
+			NextHop: &aftpb.Afts_NextHop{
+				PushedMplsLabelStack: []*aftpb.Afts_NextHop_PushedMplsLabelStackUnion{{
+					PushedMplsLabelStackUint64: 42,
+				}, {
+					PushedMplsLabelStackUint64: 84,
+				}},
+			},
+		},
+		wantInstalled: true,
+		wantReplace:   true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {
+						Index: ygot.Uint64(1),
+						PushedMplsLabelStack: []aft.Afts_NextHop_PushedMplsLabelStack_Union{
+							aft.UnionUint32(42),
+							aft.UnionUint32(84),
+						},
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {
@@ -2287,6 +2326,84 @@ func TestDeleteEntry(t *testing.T) {
 					Ipv4: &aftpb.Afts_Ipv4EntryKey{
 						Prefix:    "1.1.1.1/32",
 						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "nil MPLS input",
+		inRIB: func() *RIB {
+			r := New(defName, DisableRIBCheckFn())
+			return r
+		}(),
+		inNetworkInstance: defName,
+		wantErr:           true,
+	}, {
+		desc: "unsupported MPLS input",
+		inRIB: func() *RIB {
+			r := New(defName, DisableRIBCheckFn())
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelOpenconfigmplstypesmplslabelenum{
+						LabelOpenconfigmplstypesmplslabelenum: enumpb.OpenconfigMplsTypesMplsLabelEnum_OPENCONFIGMPLSTYPESMPLSLABELENUM_IMPLICIT_NULL,
+					},
+				},
+			},
+		},
+		wantFails: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelOpenconfigmplstypesmplslabelenum{
+							LabelOpenconfigmplstypesmplslabelenum: enumpb.OpenconfigMplsTypesMplsLabelEnum_OPENCONFIGMPLSTYPESMPLSLABELENUM_IMPLICIT_NULL,
+						},
+					},
+				},
+			},
+			Error: "unsupported label type *gribi_aft.Afts_LabelEntryKey, only uint64 labels are supported, label_openconfigmplstypesmplslabelenum:OPENCONFIGMPLSTYPESMPLSLABELENUM_IMPLICIT_NULL",
+		}},
+	}, {
+		desc: "delete MPLS",
+		inRIB: func() *RIB {
+			r := New(defName, DisableRIBCheckFn())
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label:      &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
+						LabelEntry: &aftpb.Afts_LabelEntry{},
+					},
+				},
+			}); err != nil {
+				t.Fatalf("cannot set up test case, %v", err)
+			}
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label:      &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
+					LabelEntry: &aftpb.Afts_LabelEntry{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label:      &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
+						LabelEntry: &aftpb.Afts_LabelEntry{},
 					},
 				},
 			},

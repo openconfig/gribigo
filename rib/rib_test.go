@@ -541,6 +541,33 @@ func TestAdd(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc:        "nh with interface reference",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inType:      nh,
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 1,
+			NextHop: &aftpb.Afts_NextHop{
+				InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+					Interface:    &wpb.StringValue{Value: "eth0"},
+					Subinterface: &wpb.UintValue{Value: 0},
+				},
+			},
+		},
+		wantInstalled: true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {
+						Index: ygot.Uint64(1),
+						InterfaceRef: &aft.Afts_NextHop_InterfaceRef{
+							Interface:    ygot.String("eth0"),
+							Subinterface: ygot.Uint32(0),
+						},
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {

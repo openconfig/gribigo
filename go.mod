@@ -8,10 +8,10 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/kentik/patricia v1.2.0
 	github.com/openconfig/gnmi v0.0.0-20220920173703-480bf53a74d2
-	github.com/openconfig/goyang v1.1.0
-	github.com/openconfig/gribi v0.1.1-0.20221218044856-ec9f4fc18013
+	github.com/openconfig/goyang v1.2.0
+	github.com/openconfig/gribi v0.1.1-0.20230111180713-7ea0c4e1ee20
 	github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07
-	github.com/openconfig/ygot v0.25.4-0.20221221024117-8fdb69291fda
+	github.com/openconfig/ygot v0.25.6
 	go.uber.org/atomic v1.7.0
 	google.golang.org/genproto v0.0.0-20210811021853-ddbe55d93216
 	google.golang.org/grpc v1.40.0

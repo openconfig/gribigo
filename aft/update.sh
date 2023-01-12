@@ -44,7 +44,7 @@ generator -path=gribi -output_file=oc.go \
     -trim_enum_openconfig_prefix \
     -typedef_enum_with_defmod \
     -enum_suffix_for_simple_union_enums \
-    -exclude_modules=openconfig-interfaces,ietf-interfaces \
+    -exclude_modules=ietf-interfaces \
     -generate_simple_unions \
     -generate_getters \
     -generate_leaf_getters \

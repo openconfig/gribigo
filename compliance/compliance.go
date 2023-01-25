@@ -1296,6 +1296,8 @@ func TestOperationIsolation(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt
 		WithPersistence()
 	clientA.Start(context.Background(), t)
 	clientA.StartSending(context.Background(), t)
+	clientAErr := awaitTimeout(context.Background(), clientA, t, time.Minute)
+	chk.HasNRecvErrors(t, clientAErr, 0)
 
 	clientB.Connection().WithInitialElectionID(electionID.Load(), 0).
 		WithRedundancyMode(fluent.ElectedPrimaryClient).

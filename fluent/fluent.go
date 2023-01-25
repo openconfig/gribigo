@@ -413,8 +413,8 @@ type gRIBIModify struct {
 // It is intended to allow for invalid messages that the fluent library does not
 // allow the creation of to be sent to a server.
 func (g *gRIBIModify) InjectRequest(t testing.TB, m *spb.ModifyRequest) *gRIBIModify {
-  g.parent.c.Q(m)
-  return g
+	g.parent.c.Q(m)
+	return g
 }
 
 // AddEntry creates an operation adding the set of entries specified to the server.

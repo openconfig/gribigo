@@ -306,9 +306,9 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 			case in == nil:
 				log.Errorf("received nil message on Modify channel")
 				skipWrite = true
-      case (in.Params != nil && in.ElectionId != nil), (in.Params != nil && in.Operation != nil), (in.ElectionId != nil && in.Operation != nil):
-        errCh <- status.Errorf(codes.InvalidArgument, "invalid input message, cannot specify >1 of parameters, election ID and operation simultaenously, got: %v", in)
-        return
+			case (in.Params != nil && in.ElectionId != nil), (in.Params != nil && in.Operation != nil), (in.ElectionId != nil && in.Operation != nil):
+				errCh <- status.Errorf(codes.InvalidArgument, "invalid input message, cannot specify >1 of parameters, election ID and operation simultaenously, got: %v", in)
+				return
 			case in.Params != nil:
 				var err error
 				if res, err = s.checkParams(cid, in.Params, gotmsg); err != nil {

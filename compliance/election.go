@@ -36,6 +36,7 @@ type secondClient struct {
 // IsTestOpt marks secondClient as implementing the TestOpt interface.
 func (*secondClient) IsTestOpt() {}
 
+// SecondClient returns an addtional gRIBI client.
 func SecondClient(c *fluent.GRIBIClient) *secondClient {
 	return &secondClient{c: c}
 }

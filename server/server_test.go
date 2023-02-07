@@ -819,6 +819,9 @@ func TestDoModify(t *testing.T) {
 			result: &spb.ModifyResponse{
 				Result: []*spb.AFTResult{{
 					Id:     1,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
+					Id:     1,
 					Status: spb.AFTResult_FIB_PROGRAMMED,
 				}},
 			},
@@ -954,12 +957,18 @@ func TestDoModify(t *testing.T) {
 			result: &spb.ModifyResponse{
 				Result: []*spb.AFTResult{{
 					Id:     1,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
+					Id:     1,
 					Status: spb.AFTResult_FIB_PROGRAMMED,
 				}},
 			},
 		}, {
 			result: &spb.ModifyResponse{
 				Result: []*spb.AFTResult{{
+					Id:     2,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
 					Id:     2,
 					Status: spb.AFTResult_FIB_PROGRAMMED,
 				}},
@@ -1044,12 +1053,18 @@ func TestDoModify(t *testing.T) {
 			result: &spb.ModifyResponse{
 				Result: []*spb.AFTResult{{
 					Id:     1,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
+					Id:     1,
 					Status: spb.AFTResult_FIB_PROGRAMMED,
 				}},
 			},
 		}, {
 			result: &spb.ModifyResponse{
 				Result: []*spb.AFTResult{{
+					Id:     2,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
 					Id:     2,
 					Status: spb.AFTResult_FIB_PROGRAMMED,
 				}},
@@ -1058,12 +1073,18 @@ func TestDoModify(t *testing.T) {
 			result: &spb.ModifyResponse{
 				Result: []*spb.AFTResult{{
 					Id:     3,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
+					Id:     3,
 					Status: spb.AFTResult_FIB_PROGRAMMED,
 				}},
 			},
 		}, {
 			result: &spb.ModifyResponse{
 				Result: []*spb.AFTResult{{
+					Id:     4,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
 					Id:     4,
 					Status: spb.AFTResult_FIB_PROGRAMMED,
 				}},
@@ -1329,6 +1350,9 @@ func TestModifyEntry(t *testing.T) {
 		inFIBACK: true,
 		wantResponse: &spb.ModifyResponse{
 			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_RIB_PROGRAMMED,
+			}, {
 				Id:     2,
 				Status: spb.AFTResult_FIB_PROGRAMMED,
 			}},

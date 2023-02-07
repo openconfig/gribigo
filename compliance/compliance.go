@@ -641,7 +641,7 @@ func InvalidElectionIDAndParams(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 // specifies session parameters (which must be the first message in the stream) and an AFTOperation
 // simulateously.
 func InvalidParamsAndAFTOperation(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
-	defer electionID.Add(2)
+	defer electionID.Inc()
 	c.Connection().WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence().WithInitialElectionID(electionID.Load(), 0)
 	c.Start(context.Background(), t)
 	defer c.Stop(t)

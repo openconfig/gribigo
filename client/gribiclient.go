@@ -813,7 +813,7 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 	case spb.AFTResult_FIB_PROGRAMMED, spb.AFTResult_FIB_FAILED:
 		delete(c.qs.pendq.Ops, op.Id)
 	case spb.AFTResult_RIB_PROGRAMMED:
-		if c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK && !TreatRIBACKAsCompletedInFIBACKMode {
+		if c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK || c.state.SessParams.GetAckType() == spb.SessionParameters_RIB_AND_FIB_ACK && TreatRIBACKAsCompletedInFIBACKMode {
 			delete(c.qs.pendq.Ops, op.Id)
 		}
 	case spb.AFTResult_FAILED:

@@ -808,7 +808,6 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 			resCh <- res
 		}
 	}
-
 }
 
 // electionDetails provides a summary of a single election from the perspective of one client.
@@ -850,13 +849,6 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 	}
 
 	results := []*spb.AFTResult{}
-	okACK := spb.AFTResult_RIB_PROGRAMMED
-	// TODO(robjs): today we just say anything that hit
-	// the RIB hit the FIB. We need to add a feedback loop
-	// that checks this.
-	if fibACK {
-		okACK = spb.AFTResult_FIB_PROGRAMMED
-	}
 
 	var (
 		oks, faileds []*rib.OpResult
@@ -898,10 +890,21 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 
 	for _, ok := range oks {
 		log.V(2).Infof("received OK for %d in operation %s", ok.ID, prototext.Format(op))
+    results = append(results, &spb.AFTResult{
+      Id: ok.ID,
+      Status: spb.AFTResult_RIB_PROGRAMMED,
+    })
+    // For RIB_AND_FIB_ACK we sent both the RIB programmed and FIB programmed
+    // signals back.
+    //
+    // TODO(robjs): Currently, we just say everything that was RIB programmed was
+    // FIB programmed. Add a feedback loop for this.
+    if fibACK {
 		results = append(results, &spb.AFTResult{
 			Id:     ok.ID,
-			Status: okACK,
+			Status: spb.AFTResult_FIB_PROGRAMMED,
 		})
+    }
 	}
 
 	for _, fail := range faileds {

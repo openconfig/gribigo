@@ -806,17 +806,32 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 	c.qs.pendMu.Lock()
 	defer c.qs.pendMu.Unlock()
 	v := c.qs.pendq.Ops[op.Id]
-	if v == nil {
-		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
-	}
 	switch op.GetStatus() {
 	case spb.AFTResult_FIB_PROGRAMMED, spb.AFTResult_FIB_FAILED:
-		delete(c.qs.pendq.Ops, op.Id)
+		switch {
+		case TreatRIBACKAsCompletedInFIBACKMode:
+			// In this case, we have already converged the operation since we treated the RIB
+			// ACK as the completed operation, thus, there's nothing to delete here.
+      return nil, nil
+		case v == nil:
+			return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
+		default:
+			delete(c.qs.pendq.Ops, op.Id)
+		}
 	case spb.AFTResult_RIB_PROGRAMMED:
+    // All RIB_PROGRAMMED entries should have a pending operation.
+		if v == nil {
+			return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
+		}
+
 		if c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK || c.state.SessParams.GetAckType() == spb.SessionParameters_RIB_AND_FIB_ACK && TreatRIBACKAsCompletedInFIBACKMode {
 			delete(c.qs.pendq.Ops, op.Id)
 		}
 	case spb.AFTResult_FAILED:
+    // All FAILED entries should have a pending operation.
+		if v == nil {
+			return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
+		}
 		delete(c.qs.pendq.Ops, op.Id)
 	}
 

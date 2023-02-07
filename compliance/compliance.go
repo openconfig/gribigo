@@ -1435,6 +1435,7 @@ func ReplaceMissingIPv4Entry(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) 
 // TestOperationIsolation verifies no AFTOperation responses are received on a
 // second client after the primary client has disconnected.
 func TestOperationIsolation(c *fluent.GRIBIClient, t testing.TB, opts ...TestOpt) {
+	defer flushServer(c, t)
 	defer electionID.Add(2)
 	clientA, clientB := clientAB(c, t, opts...)
 

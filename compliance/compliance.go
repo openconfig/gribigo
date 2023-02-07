@@ -31,6 +31,9 @@ import (
 	"github.com/openconfig/gribigo/server"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
+
+	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 // init statically sets the first Election ID used by the compliance tests to 1, since 0
@@ -144,6 +147,21 @@ var (
 		In: Test{
 			Fn:        ModifyConnectionSinglePrimaryPreserve,
 			ShortName: "Modify RPC Connection with invalid persist/redundancy parameters",
+		},
+	}, {
+		In: Test{
+			Fn:        InvalidElectionIDAndAFTOperation,
+			ShortName: "Invalid updated election ID and AFTOperation in same ModifyRequest",
+		},
+	}, {
+		In: Test{
+			Fn:        InvalidElectionIDAndParams,
+			ShortName: "Invalid update election ID and SessionParams in same ModifyRequest",
+		},
+	}, {
+		In: Test{
+			Fn:        InvalidParamsAndAFTOperation,
+			ShortName: "Invalid session params and AFT operation in same ModifyRequest",
 		},
 	}, {
 		In: Test{
@@ -535,11 +553,11 @@ func ModifyConnectionWithElectionID(c *fluent.GRIBIClient, t testing.TB, _ ...Te
 	)
 }
 
-// ModifyConnectionSinglePrimaryPreserve is a test that requests
-// ALL_PRIMARY mode with persistence enabled. This is expected to be
-// an erroneous combination and hence it checks that the server
-// returns an error that specifies unsupported parameters and the
-// failed precondition code.
+// ModifyConnectionSinglePrimaryPreserve tests that the server returns an error
+// when a client sends ALL_PRIMARY mode with persistence enabled. This is
+// expected to be an erroneous combination and hence it checks that the server
+// returns an error that specifies unsupported parameters and the failed
+// precondition code.
 func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	c.Connection().WithRedundancyMode(fluent.AllPrimaryClients).WithPersistence()
 	c.Start(context.Background(), t)
@@ -560,6 +578,135 @@ func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB, 
 		AsStatus(t)
 
 	chk.HasRecvClientErrorWithStatus(t, err, want, chk.AllowUnimplemented())
+}
+
+// InvalidElectionIDAndAFTOperation ensures that the server returns an error when the client
+// attempts to update the election ID whilst simultaenously specifying an operation.
+func InvalidElectionIDAndAFTOperation(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer electionID.Inc()
+	c.Connection().WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence().WithInitialElectionID(electionID.Load(), 0)
+	c.Start(context.Background(), t)
+	defer c.Stop(t)
+
+	c.StartSending(context.Background(), t)
+
+	// Inject a specfic invalid entry that specifies election ID in two places along
+	// with an entry.
+	c.Modify().InjectRequest(t, &spb.ModifyRequest{
+		ElectionId: &spb.Uint128{
+			Low:  electionID.Load(),
+			High: 0,
+		},
+		Operation: []*spb.AFTOperation{{
+			ElectionId: &spb.Uint128{
+				Low:  electionID.Load(),
+				High: 0,
+			},
+			Id:              1,
+			NetworkInstance: defaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}},
+	})
+
+	err := awaitTimeout(context.Background(), c, t, time.Minute)
+	if err == nil {
+		t.Fatal("did not get expected error from server, got: nil")
+	}
+
+	want := fluent.ModifyError().
+		WithCode(codes.InvalidArgument).
+		AsStatus(t)
+
+	chk.HasRecvClientErrorWithStatus(t, err, want, chk.IgnoreDetails())
+}
+
+// InvalidElectionIDAndParams validates that the server returns an error when a client
+// specifies an update election ID at the same time as specifying session parameters (which
+// are illegal after the first message).
+func InvalidElectionIDAndParams(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer electionID.Inc()
+	c.Connection().WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence().WithInitialElectionID(electionID.Load(), 0)
+	c.Start(context.Background(), t)
+	defer c.Stop(t)
+
+	c.StartSending(context.Background(), t)
+
+	// Inject a specfic invalid entry that specifies election ID in two places along
+	// with the session parameters.
+	c.Modify().InjectRequest(t, &spb.ModifyRequest{
+		ElectionId: &spb.Uint128{
+			Low:  electionID.Load(),
+			High: 0,
+		},
+		Params: &spb.SessionParameters{
+			Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+			Persistence: spb.SessionParameters_PRESERVE,
+		},
+	})
+
+	err := awaitTimeout(context.Background(), c, t, time.Minute)
+	if err == nil {
+		t.Fatal("did not get expected error from server, got: nil")
+	}
+
+	want := fluent.ModifyError().
+		WithCode(codes.InvalidArgument).
+		AsStatus(t)
+
+	chk.HasRecvClientErrorWithStatus(t, err, want, chk.IgnoreDetails())
+}
+
+// InvalidElectionIDAndAFTOperation validates that the server returns an error when a client
+// specifies session parameters (which must be the first message in the stream) and an AFTOperation
+// simulateously.
+func InvalidParamsAndAFTOperation(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer electionID.Inc()
+	c.Connection().WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence().WithInitialElectionID(electionID.Load(), 0)
+	c.Start(context.Background(), t)
+	defer c.Stop(t)
+
+	c.StartSending(context.Background(), t)
+
+	// Inject a specifically invalid entry that specifies both the
+	// election ID being updated and an entry to perform.
+	c.Modify().InjectRequest(t, &spb.ModifyRequest{
+		Params: &spb.SessionParameters{
+			Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+			Persistence: spb.SessionParameters_PRESERVE,
+		},
+		Operation: []*spb.AFTOperation{{
+			ElectionId: &spb.Uint128{
+				Low:  electionID.Load(),
+				High: 0,
+			},
+			Id:              1,
+			NetworkInstance: defaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}},
+	})
+
+	err := awaitTimeout(context.Background(), c, t, time.Minute)
+	if err == nil {
+		t.Fatal("did not get expected error from server, got: nil")
+	}
+
+	want := fluent.ModifyError().
+		WithCode(codes.InvalidArgument).
+		AsStatus(t)
+
+	chk.HasRecvClientErrorWithStatus(t, err, want, chk.IgnoreDetails())
 }
 
 // AddIPv4Entry adds a fully referenced IPv4Entry and checks whether the specified ACK

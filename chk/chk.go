@@ -281,7 +281,7 @@ func HasRecvClientErrorWithStatus(t testing.TB, err error, want *status.Status, 
 	}
 }
 
-// GetResponseHasEntry checks whether the supplied GetResponse has the gRIBI
+// GetResponseHasEntries checks whether the supplied GetResponse has the gRIBI
 // entry described by the specified want within it. It calls t.Fatalf if no
 // such entry is found.
 func GetResponseHasEntries(t testing.TB, getres *spb.GetResponse, wants ...fluent.GRIBIEntry) {

@@ -40,6 +40,20 @@ var (
 	// unixTS is a function that returns a timestamp in nanoseconds for the current time.
 	// It can be overloaded in unit tests to ensure that deterministic output is received.
 	unixTS = time.Now().UnixNano
+
+	// BusyLoopDelay specifies a delay that should be used when looping around pending
+	// transactions. By default, the client tries not to busy loop, but this can introduce
+	// artificial delays when benchmarking server operations. It is NOT RECOMMENDED to
+	// change the default value other than when measuring convergence time at the client.
+	BusyLoopDelay = 100 * time.Millisecond
+
+	// TreatRIBACKAsCompletedInFIBACKMode allows the caller to modify the client behaviour
+	// to treat a RIB ACK from the target as the end of an operation even though the session
+	// has requested FIB_ACK. This allows benchmarking of the time to receive a RIB_ACK from
+	// a server in FIB_ACK mode. In production clients that require FIB_ACK it is ACTIVELY
+	// HARMFUL to change this value, since the client will consider a server to have converged
+	// on receipt of a RIB_ACK despite the fact that the session requested FIB_ACK.
+	TreatRIBACKAsCompletedInFIBACKMode = false
 )
 
 // Client is a wrapper for the gRIBI client.
@@ -799,7 +813,7 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 	case spb.AFTResult_FIB_PROGRAMMED, spb.AFTResult_FIB_FAILED:
 		delete(c.qs.pendq.Ops, op.Id)
 	case spb.AFTResult_RIB_PROGRAMMED:
-		if c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK {
+		if c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK && !TreatRIBACKAsCompletedInFIBACKMode {
 			delete(c.qs.pendq.Ops, op.Id)
 		}
 	case spb.AFTResult_FAILED:
@@ -1054,7 +1068,7 @@ func (c *Client) AwaitConverged(ctx context.Context) error {
 		if done {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond) // avoid busy looping.
+		time.Sleep(BusyLoopDelay) // avoid busy looping.
 	}
 }
 

@@ -890,21 +890,21 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 
 	for _, ok := range oks {
 		log.V(2).Infof("received OK for %d in operation %s", ok.ID, prototext.Format(op))
-    results = append(results, &spb.AFTResult{
-      Id: ok.ID,
-      Status: spb.AFTResult_RIB_PROGRAMMED,
-    })
-    // For RIB_AND_FIB_ACK we sent both the RIB programmed and FIB programmed
-    // signals back.
-    //
-    // TODO(robjs): Currently, we just say everything that was RIB programmed was
-    // FIB programmed. Add a feedback loop for this.
-    if fibACK {
 		results = append(results, &spb.AFTResult{
 			Id:     ok.ID,
-			Status: spb.AFTResult_FIB_PROGRAMMED,
+			Status: spb.AFTResult_RIB_PROGRAMMED,
 		})
-    }
+		// For RIB_AND_FIB_ACK we sent both the RIB programmed and FIB programmed
+		// signals back.
+		//
+		// TODO(robjs): Currently, we just say everything that was RIB programmed was
+		// FIB programmed. Add a feedback loop for this.
+		if fibACK {
+			results = append(results, &spb.AFTResult{
+				Id:     ok.ID,
+				Status: spb.AFTResult_FIB_PROGRAMMED,
+			})
+		}
 	}
 
 	for _, fail := range faileds {

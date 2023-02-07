@@ -812,14 +812,14 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 		case TreatRIBACKAsCompletedInFIBACKMode:
 			// In this case, we have already converged the operation since we treated the RIB
 			// ACK as the completed operation, thus, there's nothing to delete here.
-      return nil, nil
+			return nil, nil
 		case v == nil:
 			return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
 		default:
 			delete(c.qs.pendq.Ops, op.Id)
 		}
 	case spb.AFTResult_RIB_PROGRAMMED:
-    // All RIB_PROGRAMMED entries should have a pending operation.
+		// All RIB_PROGRAMMED entries should have a pending operation.
 		if v == nil {
 			return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
 		}
@@ -828,7 +828,7 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 			delete(c.qs.pendq.Ops, op.Id)
 		}
 	case spb.AFTResult_FAILED:
-    // All FAILED entries should have a pending operation.
+		// All FAILED entries should have a pending operation.
 		if v == nil {
 			return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
 		}

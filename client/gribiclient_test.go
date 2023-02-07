@@ -1585,29 +1585,29 @@ func TestServerModifyIntegration(t *testing.T) {
 				c.Close()
 			}()
 
-      if err := c.Connect(ctx); err != nil {
-        return fmt.Errorf("Connect(): cannot connect to server, %v", err)
-      }
+			if err := c.Connect(ctx); err != nil {
+				return fmt.Errorf("Connect(): cannot connect to server, %v", err)
+			}
 
 			TreatRIBACKAsCompletedInFIBACKMode = true
 			BusyLoopDelay = 0 * time.Millisecond
 
 			c.Q(&spb.ModifyRequest{
 				Params: &spb.SessionParameters{
-					AckType: spb.SessionParameters_RIB_AND_FIB_ACK,
-          Redundancy: spb.SessionParameters_SINGLE_PRIMARY,
-          Persistence: spb.SessionParameters_PRESERVE,
+					AckType:     spb.SessionParameters_RIB_AND_FIB_ACK,
+					Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+					Persistence: spb.SessionParameters_PRESERVE,
 				},
 			})
 
-      c.Q(&spb.ModifyRequest{
-        ElectionId: &spb.Uint128{
-          Low: 1,
-          High: 0,
-        },
-      })
+			c.Q(&spb.ModifyRequest{
+				ElectionId: &spb.Uint128{
+					Low:  1,
+					High: 0,
+				},
+			})
 
-      c.StartSending()
+			c.StartSending()
 
 			c.Q(&spb.ModifyRequest{
 				Operation: []*spb.AFTOperation{{
@@ -1626,11 +1626,11 @@ func TestServerModifyIntegration(t *testing.T) {
 					},
 				}},
 			})
- 
-      time.Sleep(100*time.Millisecond) // Ensure that we got RIB and FIB ACK.
 
-      ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-      defer cancel()
+			time.Sleep(100 * time.Millisecond) // Ensure that we got RIB and FIB ACK.
+
+			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
 			if err := c.AwaitConverged(ctx); err != nil {
 				return fmt.Errorf("AwaitConverged(): returned error, %v", err)
 			}

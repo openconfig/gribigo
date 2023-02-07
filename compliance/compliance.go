@@ -620,7 +620,7 @@ func InvalidElectionIDAndParams(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 			High: 0,
 		},
 		Params: &spb.SessionParameters{
-			Redundancy:  spb.SessionParameters_ALL_PRIMARY,
+			Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
 			Persistence: spb.SessionParameters_PRESERVE,
 		},
 	})

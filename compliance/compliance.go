@@ -613,7 +613,7 @@ func InvalidElectionIDAndParams(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 	c.StartSending(context.Background(), t)
 
 	// Inject a specfic invalid entry that specifies election ID in two places along
-	// with an entry.
+  // with the session parameters.
 	c.Modify().InjectRequest(t, &spb.ModifyRequest{
 		ElectionId: &spb.Uint128{
 			Low:  electionID.Load(),
@@ -621,6 +621,7 @@ func InvalidElectionIDAndParams(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 		},
 		Params: &spb.SessionParameters{
 			Redundancy: spb.SessionParameters_ALL_PRIMARY,
+      Persistence: spb.SessionParameters_PRESERVE,
 		},
 	})
 
@@ -647,13 +648,13 @@ func InvalidParamsAndAFTOperation(c *fluent.GRIBIClient, t testing.TB, _ ...Test
 
 	c.StartSending(context.Background(), t)
 
-  // Inject a specific entry that has the session parameters and an AFT operation
-  // specified at the same time.
+  // Inject a specifically invalid entry that specifies both the 
+  // election ID being updated and an entry to perform.
 	c.Modify().InjectRequest(t, &spb.ModifyRequest{
-		Params: &spb.SessionParameters{
-			Redundancy: spb.SessionParameters_SINGLE_PRIMARY,
+    Params: &spb.SessionParameters{
+      Redundancy: spb.SessionParameters_SINGLE_PRIMARY,
       Persistence: spb.SessionParameters_PRESERVE,
-		},
+    },
 		Operation: []*spb.AFTOperation{{
 			ElectionId: &spb.Uint128{
 				Low:  electionID.Load(),
@@ -673,7 +674,7 @@ func InvalidParamsAndAFTOperation(c *fluent.GRIBIClient, t testing.TB, _ ...Test
 
 	err := awaitTimeout(context.Background(), c, t, time.Minute)
 	if err == nil {
-		t.Fatalf("did not get expected error from server, got: nil")
+		t.Fatal("did not get expected error from server, got: nil")
 	}
 
 	want := fluent.ModifyError().

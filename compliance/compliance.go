@@ -613,15 +613,15 @@ func InvalidElectionIDAndParams(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 	c.StartSending(context.Background(), t)
 
 	// Inject a specfic invalid entry that specifies election ID in two places along
-  // with the session parameters.
+	// with the session parameters.
 	c.Modify().InjectRequest(t, &spb.ModifyRequest{
 		ElectionId: &spb.Uint128{
 			Low:  electionID.Load(),
 			High: 0,
 		},
 		Params: &spb.SessionParameters{
-			Redundancy: spb.SessionParameters_ALL_PRIMARY,
-      Persistence: spb.SessionParameters_PRESERVE,
+			Redundancy:  spb.SessionParameters_ALL_PRIMARY,
+			Persistence: spb.SessionParameters_PRESERVE,
 		},
 	})
 
@@ -648,13 +648,13 @@ func InvalidParamsAndAFTOperation(c *fluent.GRIBIClient, t testing.TB, _ ...Test
 
 	c.StartSending(context.Background(), t)
 
-  // Inject a specifically invalid entry that specifies both the 
-  // election ID being updated and an entry to perform.
+	// Inject a specifically invalid entry that specifies both the
+	// election ID being updated and an entry to perform.
 	c.Modify().InjectRequest(t, &spb.ModifyRequest{
-    Params: &spb.SessionParameters{
-      Redundancy: spb.SessionParameters_SINGLE_PRIMARY,
-      Persistence: spb.SessionParameters_PRESERVE,
-    },
+		Params: &spb.SessionParameters{
+			Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+			Persistence: spb.SessionParameters_PRESERVE,
+		},
 		Operation: []*spb.AFTOperation{{
 			ElectionId: &spb.Uint128{
 				Low:  electionID.Load(),

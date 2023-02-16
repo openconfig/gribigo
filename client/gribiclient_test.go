@@ -1592,13 +1592,12 @@ func TestServerModifyIntegration(t *testing.T) {
 			TreatRIBACKAsCompletedInFIBACKMode = true
 			BusyLoopDelay = 0 * time.Millisecond
 
-			c.Q(&spb.ModifyRequest{
-				Params: &spb.SessionParameters{
-					AckType:     spb.SessionParameters_RIB_AND_FIB_ACK,
-					Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
-					Persistence: spb.SessionParameters_PRESERVE,
-				},
-			})
+			// Explicitly set our session parameters for the test.
+			c.state.SessParams = &spb.SessionParameters{
+				AckType:     spb.SessionParameters_RIB_AND_FIB_ACK,
+				Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+				Persistence: spb.SessionParameters_PRESERVE,
+			}
 
 			c.Q(&spb.ModifyRequest{
 				ElectionId: &spb.Uint128{

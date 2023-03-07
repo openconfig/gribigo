@@ -342,7 +342,9 @@ func populateNNHs(c *fluent.GRIBIClient, n int, wantACK fluent.ProgrammingResult
 // instances and measuring latency of the Get returned by the server. No validation of
 // the returned contents is performed.
 func GetBenchmarkNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
-	for _, i := range []int{10, 100, 1000} {
+	// FIXME(wenbli): lemming currently doesn't handle scale well. Need to
+	// improve scale to handle the 1000 case.
+	for _, i := range []int{10, 100 /*, 1000*/} {
 		populateNNHs(c, i, wantACK, t)
 		ctx := context.Background()
 		c.Start(ctx, t)

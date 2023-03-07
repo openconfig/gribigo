@@ -21,7 +21,7 @@ import (
 	"strconv"
 
 	log "github.com/golang/glog"
-	"github.com/openconfig/gribigo/device"
+	"github.com/openconfig/lemming"
 
 	"net/http"
 	_ "net/http/pprof"
@@ -43,21 +43,12 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	creds, err := device.TLSCredsFromFile(*certFile, *keyFile)
+	creds, err := lemming.WithTLSCredsFromFile(*certFile, *keyFile)
 	if err != nil {
 		log.Exitf("cannot initialise TLS, got: %v", err)
 	}
 
-	gribiHost, gribiPort, err := splitHostPort(*gribi)
-	if err != nil {
-		log.Exitf("cannot parse gribi listen address: %s", err)
-	}
-	gnmiHost, gnmiPort, err := splitHostPort(*gnmi)
-	if err != nil {
-		log.Exitf("cannot parse gnmi listen address: %s", err)
-	}
-
-	d, err := device.New(ctx, creds, device.GNMIAddr(gnmiHost, gnmiPort), device.GRIBIPort(gribiHost, gribiPort))
+	d, err := lemming.New("DUT", "", creds, lemming.WithGNMIAddr(*gnmi), lemming.WithGRIBIAddr(*gribi))
 	if err != nil {
 		log.Exitf("cannot start device, %v", err)
 	}

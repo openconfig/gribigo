@@ -17,8 +17,6 @@ package main
 import (
 	"context"
 	"flag"
-	"net"
-	"strconv"
 
 	log "github.com/golang/glog"
 	"github.com/openconfig/lemming"
@@ -57,18 +55,4 @@ func main() {
 		log.Infof("%v", http.ListenAndServe("localhost:6060", nil))
 	}()
 	<-ctx.Done()
-}
-
-func splitHostPort(address string) (string, int, error) {
-	addr, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return "", 0, err
-	}
-
-	portnum, err := strconv.Atoi(port)
-	if err != nil {
-		return "", 0, err
-	}
-
-	return addr, portnum, nil
 }

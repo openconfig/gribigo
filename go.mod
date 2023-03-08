@@ -5,25 +5,19 @@ go 1.16
 require (
 	github.com/golang/glog v1.0.0
 	github.com/google/go-cmp v0.5.9
-	github.com/google/protobuf v3.14.0+incompatible // indirect
 	github.com/google/uuid v1.3.0
 	github.com/kentik/patricia v1.2.0
-	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
-	github.com/moby/term v0.0.0-20220808134915-39b0c02b01ae // indirect
-	github.com/openconfig/gnmi v0.0.0-20220920173703-480bf53a74d2
+	github.com/openconfig/gnmi v0.9.1
 	github.com/openconfig/goyang v1.2.0
 	github.com/openconfig/gribi v0.1.1-0.20230111180713-7ea0c4e1ee20
-	github.com/openconfig/lemming v0.1.1-0.20230307003050-67b3edf1d7da
+	github.com/openconfig/lemming v0.1.1-0.20230308220711-b6e3c59e71a1
 	github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07
 	github.com/openconfig/ygot v0.25.7
-	github.com/prometheus/client_golang v1.14.0 // indirect
-	github.com/prometheus/common v0.38.0 // indirect
 	go.uber.org/atomic v1.9.0
 	google.golang.org/genproto v0.0.0-20230216225411-c8e22ba71e44
 	google.golang.org/grpc v1.53.0
 	google.golang.org/protobuf v1.28.1
 	lukechampine.com/uint128 v1.1.1
-	sigs.k8s.io/controller-runtime v0.13.1 // indirect
 )
 
 // pinning to specific versions is required because lemming indirectly depends

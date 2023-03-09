@@ -27,7 +27,7 @@ import (
 	"github.com/kentik/patricia"
 	"github.com/kentik/patricia/string_tree"
 	"github.com/openconfig/gribigo/afthelper"
-	oc "github.com/openconfig/gribigo/ocrt"
+	"github.com/openconfig/lemming/gnmi/oc"
 	"github.com/openconfig/ygot/ytypes"
 )
 
@@ -68,7 +68,7 @@ func (r *Route) toString() (string, error) {
 }
 
 // NewSysRIB returns a SysRIB from an input parsed OpenConfig configuration.
-func NewSysRIB(cfg *oc.Device) (*SysRIB, error) {
+func NewSysRIB(cfg *oc.Root) (*SysRIB, error) {
 	sr := &SysRIB{
 		NI: map[string]*NIRIB{},
 	}
@@ -125,7 +125,7 @@ func NewRouteViaIF(pfx string, intf *Interface) *Route {
 
 // NewSysRIBFromJSON returns a new SysRIB from an RFC7951 marshalled JSON OpenConfig configuration.
 func NewSysRIBFromJSON(jsonCfg []byte) (*SysRIB, error) {
-	cfg := &oc.Device{}
+	cfg := &oc.Root{}
 	if err := oc.Unmarshal(jsonCfg, cfg); err != nil {
 		return nil, fmt.Errorf("cannot unmarshal JSON configuration, %v", err)
 	}
@@ -226,7 +226,7 @@ type niConnected struct {
 // system is attached.
 //
 // This function only returns connected IPv4 routes.
-func connectedRoutesFromConfig(cfg *oc.Device) (map[string]*niConnected, error) {
+func connectedRoutesFromConfig(cfg *oc.Root) (map[string]*niConnected, error) {
 	// TODO(robjs): figure out where the reference that is referencing policy
 	// definitions is that has not yet been removed, improve ygot error message.
 	if err := cfg.Validate(&ytypes.LeafrefOptions{

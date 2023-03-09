@@ -22,7 +22,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openconfig/gribigo/afthelper"
-	oc "github.com/openconfig/gribigo/ocrt"
+	"github.com/openconfig/lemming/gnmi/oc"
 	"github.com/openconfig/ygot/ygot"
 )
 
@@ -37,13 +37,13 @@ func mustCIDR(s string) net.IPNet {
 func TestRoutesFromConfig(t *testing.T) {
 	tests := []struct {
 		desc       string
-		inConfig   *oc.Device
+		inConfig   *oc.Root
 		wantRoutes map[string]*niConnected
 		wantErr    bool
 	}{{
 		desc: "only default NI with explicit interfaces",
-		inConfig: func() *oc.Device {
-			d := &oc.Device{}
+		inConfig: func() *oc.Root {
+			d := &oc.Root{}
 
 			dni := d.GetOrCreateNetworkInstance("DEFAULT")
 			dni.Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
@@ -69,8 +69,8 @@ func TestRoutesFromConfig(t *testing.T) {
 		},
 	}, {
 		desc: "only default NI with implicit interfaces",
-		inConfig: func() *oc.Device {
-			d := &oc.Device{}
+		inConfig: func() *oc.Root {
+			d := &oc.Root{}
 			dni := d.GetOrCreateNetworkInstance("DEFAULT")
 			dni.Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
 			d.GetOrCreateInterface("eth0").GetOrCreateSubinterface(0).GetOrCreateIpv4().GetOrCreateAddress("192.0.2.1").PrefixLength = ygot.Uint8(24)
@@ -91,8 +91,8 @@ func TestRoutesFromConfig(t *testing.T) {
 		},
 	}, {
 		desc: "non-default NI, with multiple routes",
-		inConfig: func() *oc.Device {
-			d := &oc.Device{}
+		inConfig: func() *oc.Root {
+			d := &oc.Root{}
 			dni := d.GetOrCreateNetworkInstance("DEFAULT")
 			dni.Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
 			d.GetOrCreateInterface("eth0").GetOrCreateSubinterface(0).GetOrCreateIpv4().GetOrCreateAddress("192.0.2.1").PrefixLength = ygot.Uint8(24)
@@ -147,8 +147,8 @@ func TestRoutesFromConfig(t *testing.T) {
 		},
 	}, {
 		desc: "multiple default instances",
-		inConfig: func() *oc.Device {
-			d := &oc.Device{}
+		inConfig: func() *oc.Root {
+			d := &oc.Root{}
 			d.GetOrCreateNetworkInstance("one").Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
 			d.GetOrCreateNetworkInstance("two").Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
 			return d
@@ -156,16 +156,16 @@ func TestRoutesFromConfig(t *testing.T) {
 		wantErr: true,
 	}, {
 		desc: "invalid NI type",
-		inConfig: func() *oc.Device {
-			d := &oc.Device{}
+		inConfig: func() *oc.Root {
+			d := &oc.Root{}
 			d.GetOrCreateNetworkInstance("one").Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_L2P2P
 			return d
 		}(),
 		wantErr: true,
 	}, {
 		desc: "skip if with no subif",
-		inConfig: func() *oc.Device {
-			d := &oc.Device{}
+		inConfig: func() *oc.Root {
+			d := &oc.Root{}
 			d.GetOrCreateNetworkInstance("D").Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
 			d.GetOrCreateInterface("eth0")
 			return d
@@ -178,8 +178,8 @@ func TestRoutesFromConfig(t *testing.T) {
 		},
 	}, {
 		desc: "no default instance",
-		inConfig: func() *oc.Device {
-			d := &oc.Device{}
+		inConfig: func() *oc.Root {
+			d := &oc.Root{}
 			d.GetOrCreateInterface("eth0")
 			return d
 		}(),
@@ -202,7 +202,7 @@ func TestRoutesFromConfig(t *testing.T) {
 func TestEgressInterface(t *testing.T) {
 	tests := []struct {
 		desc  string
-		inCfg *oc.Device
+		inCfg *oc.Root
 		// keyed by network-instance
 		inAddRoutes   map[string][]*Route
 		inNI          string
@@ -211,8 +211,8 @@ func TestEgressInterface(t *testing.T) {
 		wantErr       bool
 	}{{
 		desc: "single connected route",
-		inCfg: func() *oc.Device {
-			d := &oc.Device{}
+		inCfg: func() *oc.Root {
+			d := &oc.Root{}
 			d.GetOrCreateInterface("eth0").
 				GetOrCreateSubinterface(0).
 				GetOrCreateIpv4().
@@ -229,8 +229,8 @@ func TestEgressInterface(t *testing.T) {
 		},
 	}, {
 		desc: "connected and less specific",
-		inCfg: func() *oc.Device {
-			d := &oc.Device{}
+		inCfg: func() *oc.Root {
+			d := &oc.Root{}
 			d.GetOrCreateInterface("eth0").
 				GetOrCreateSubinterface(0).
 				GetOrCreateIpv4().
@@ -257,8 +257,8 @@ func TestEgressInterface(t *testing.T) {
 		},
 	}, {
 		desc: "ecmp",
-		inCfg: func() *oc.Device {
-			d := &oc.Device{}
+		inCfg: func() *oc.Root {
+			d := &oc.Root{}
 			d.GetOrCreateInterface("eth0").
 				GetOrCreateSubinterface(0).
 				GetOrCreateIpv4().
@@ -287,8 +287,8 @@ func TestEgressInterface(t *testing.T) {
 		},
 	}, {
 		desc: "recursive route onto connected route",
-		inCfg: func() *oc.Device {
-			d := &oc.Device{}
+		inCfg: func() *oc.Root {
+			d := &oc.Root{}
 			d.GetOrCreateInterface("eth0").
 				GetOrCreateSubinterface(0).
 				GetOrCreateIpv4().
@@ -314,8 +314,8 @@ func TestEgressInterface(t *testing.T) {
 		},
 	}, {
 		desc: "recursive route onto two connected route",
-		inCfg: func() *oc.Device {
-			d := &oc.Device{}
+		inCfg: func() *oc.Root {
+			d := &oc.Root{}
 			d.GetOrCreateInterface("eth0").
 				GetOrCreateSubinterface(0).
 				GetOrCreateIpv4().
@@ -382,8 +382,8 @@ var (
 	defaultNIName = "DEFAULT"
 )
 
-func baseCfg() *oc.Device {
-	d := &oc.Device{}
+func baseCfg() *oc.Root {
+	d := &oc.Root{}
 	d.GetOrCreateNetworkInstance(defaultNIName).Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
 	return d
 }
@@ -391,7 +391,7 @@ func baseCfg() *oc.Device {
 func TestAddRoute(t *testing.T) {
 	tests := []struct {
 		desc              string
-		inCfg             *oc.Device
+		inCfg             *oc.Root
 		inNetworkInstance string
 		inRoute           *Route
 		wantErr           bool

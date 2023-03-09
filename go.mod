@@ -6,7 +6,6 @@ require (
 	github.com/golang/glog v1.0.0
 	github.com/google/go-cmp v0.5.9
 	github.com/google/uuid v1.3.0
-	github.com/kentik/patricia v1.2.0
 	github.com/openconfig/gnmi v0.9.1
 	github.com/openconfig/goyang v1.2.0
 	github.com/openconfig/gribi v0.1.1-0.20230111180713-7ea0c4e1ee20
@@ -31,6 +30,7 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/k-sone/critbitgo v1.4.0 // indirect
+	github.com/kentik/patricia v1.2.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/magiconair/properties v1.8.6 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect

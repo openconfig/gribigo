@@ -792,18 +792,29 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 	c.qs.pendMu.Lock()
 	defer c.qs.pendMu.Unlock()
 	v := c.qs.pendq.Ops[op.Id]
-	if v == nil {
-		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
-	}
+
 	switch op.GetStatus() {
 	case spb.AFTResult_FIB_PROGRAMMED, spb.AFTResult_FIB_FAILED:
 		delete(c.qs.pendq.Ops, op.Id)
 	case spb.AFTResult_RIB_PROGRAMMED:
+		if v == nil {
+			// workaround for FIB before RIB
+			return &OpResult{
+				OperationID:       op.Id,
+				Timestamp:         unixTS(),
+				ProgrammingResult: spb.AFTResult_RIB_PROGRAMMED,
+			}, nil
+		}
+
 		if c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK {
 			delete(c.qs.pendq.Ops, op.Id)
 		}
 	case spb.AFTResult_FAILED:
 		delete(c.qs.pendq.Ops, op.Id)
+	}
+
+	if v == nil {
+		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
 	}
 
 	det := &OpDetailsResults{

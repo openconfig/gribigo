@@ -22,9 +22,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/openconfig/gribigo/device"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
+	"github.com/openconfig/lemming"
 	"github.com/openconfig/testt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -112,14 +112,12 @@ func TestGRIBIClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			creds, err := device.TLSCredsFromFile(testcommon.TLSCreds())
+			creds, err := lemming.WithTLSCredsFromFile(testcommon.TLSCreds())
 			if err != nil {
 				t.Fatalf("cannot load credentials, got err: %v", err)
 			}
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			d, err := device.New(ctx, creds)
 
+			d, err := lemming.New("DUT", "", creds, lemming.WithGNMIAddr(":0"), lemming.WithGRIBIAddr(":0"))
 			if err != nil {
 				t.Fatalf("cannot start server, %v", err)
 			}

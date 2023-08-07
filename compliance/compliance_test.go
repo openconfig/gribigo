@@ -15,15 +15,14 @@
 package compliance
 
 import (
-	"context"
 	"strings"
 	"testing"
 
-	"github.com/openconfig/gribigo/device"
 	"github.com/openconfig/gribigo/fluent"
-	"github.com/openconfig/gribigo/ocrt"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
+	"github.com/openconfig/lemming"
+	"github.com/openconfig/lemming/gnmi/oc"
 	"github.com/openconfig/testt"
 	"github.com/openconfig/ygot/ygot"
 )
@@ -31,23 +30,20 @@ import (
 func TestCompliance(t *testing.T) {
 	for _, tt := range TestSuite {
 		t.Run(tt.In.ShortName, func(t *testing.T) {
-			creds, err := device.TLSCredsFromFile(testcommon.TLSCreds())
-			if err != nil {
-				t.Fatalf("cannot load credentials, got err: %v", err)
-			}
-			ctx, cancel := context.WithCancel(context.Background())
-
-			defer cancel()
-
-			cfg := &ocrt.Device{}
-			cfg.GetOrCreateNetworkInstance(server.DefaultNetworkInstanceName).Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
-			cfg.GetOrCreateNetworkInstance(vrfName).Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_L3VRF
+			cfg := &oc.Root{}
+			cfg.GetOrCreateNetworkInstance(server.DefaultNetworkInstanceName).Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
+			cfg.GetOrCreateNetworkInstance(vrfName).Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_L3VRF
 			jsonConfig, err := ygot.Marshal7951(cfg)
 			if err != nil {
 				t.Fatalf("cannot create configuration for device, error: %v", err)
 			}
 
-			d, err := device.New(ctx, creds, device.DeviceConfig(jsonConfig))
+			creds, err := lemming.WithTLSCredsFromFile(testcommon.TLSCreds())
+			if err != nil {
+				t.Fatalf("cannot load credentials, got err: %v", err)
+			}
+
+			d, err := lemming.New("DUT", "", creds, lemming.WithInitialConfig(jsonConfig), lemming.WithGNMIAddr(":0"), lemming.WithGRIBIAddr(":0"))
 			if err != nil {
 				t.Fatalf("cannot start server, %v", err)
 			}

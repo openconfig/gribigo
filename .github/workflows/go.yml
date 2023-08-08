@@ -9,6 +9,6 @@ on:
 
 jobs:
   common:
-    uses: openconfig/common-ci/.github/workflows/basic_go.yml@156c798bb9222f94d826b4f8540437ccc275e071
+    uses: openconfig/common-ci/.github/workflows/basic_go.yml@8d2987b8a26f4f3190a7f2e7db60f18489a3624a
     with:
       race-tests-excludes-regex: compliance

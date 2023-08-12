@@ -86,6 +86,10 @@ type Client struct {
 
 	// wg tells disconnect() when all the goroutines started by Connect() have exited.
 	wg sync.WaitGroup
+
+	// doneCh is a channel that is written to when the client disconnects, it can be
+	// used by a caller to ensure that the client reconnects.
+	doneCh chan struct{}
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -114,6 +118,7 @@ func New(opts ...Opt) (*Client, error) {
 	c := &Client{
 		started: atomic.NewBool(false),
 		shut:    atomic.NewBool(false),
+		doneCh:  make(chan struct{}, 1),
 	}
 
 	s, err := handleParams(opts...)
@@ -136,6 +141,12 @@ func New(opts ...Opt) (*Client, error) {
 	}
 
 	return c, nil
+}
+
+// Done returns a channel which is written to when the client is disconnected from the
+// server. It can be used to trigger reconnections.
+func (c *Client) Done() <-chan struct{} {
+	return c.doneCh
 }
 
 // handleParams takes the set of gRIBI client options that are provided and uses them
@@ -311,6 +322,15 @@ func (c *Client) Connect(ctx context.Context) error {
 	// Modify this code to do this (make these just be default
 	// handler functions, they could still be inline).
 
+	informDone := func(who string) {
+		select {
+		case c.doneCh <- struct{}{}:
+			log.Infof("writing to done channel, requsted by %s", who)
+		default:
+			log.Infof("dropped message informing caller the client is done.")
+		}
+	}
+
 	// respHandler takes a received modify response and error, and returns
 	// a bool indicating that the loop within which it is called should
 	// exit.
@@ -340,6 +360,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
+		defer informDone("receiver")
 		for {
 			if c.shut.Load() {
 				log.V(2).Infof("shutting down recv goroutine")
@@ -376,6 +397,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
+		defer informDone("sender")
 		for {
 			if c.shut.Load() {
 				log.V(2).Infof("shutting down send goroutine")

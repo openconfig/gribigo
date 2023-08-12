@@ -219,6 +219,35 @@ func (c *Client) UseStub(stub spb.GRIBIClient) error {
 	return nil
 }
 
+// Reset clears the client's transient state - is is recommended to call this method between
+// reconnections at a server to clear pending queues and results which are no longer valid.
+func (c *Client) Reset() {
+	c.StopSending()
+	c.disconnect()
+
+	c.sendErrMu.Lock()
+	defer c.sendErrMu.Unlock()
+	c.sendErr = nil
+
+	c.readErrMu.Lock()
+	defer c.readErrMu.Unlock()
+	c.readErr = nil
+
+	c.qs.sendMu.Lock()
+	defer c.qs.sendMu.Unlock()
+	c.qs.sendq = nil
+
+	c.qs.pendMu.Lock()
+	defer c.qs.pendMu.Unlock()
+	c.qs.pendq = &pendingQueue{
+		Ops: map[uint64]*PendingOp{},
+	}
+
+	c.qs.resultMu.Lock()
+	defer c.qs.resultMu.Unlock()
+	c.qs.resultq = nil
+}
+
 // disconnect shuts down the goroutines started by Connect().
 func (c *Client) disconnect() {
 	if !c.started.Load() || c.shut.Load() {
@@ -309,6 +338,9 @@ func (fibACK) isClientOpt() {}
 // An error is returned if the Modify RPC cannot be established or there is an error
 // response to the initial messages that are sent on the connection.
 func (c *Client) Connect(ctx context.Context) error {
+	// Store that we are no longer shut down, since Connect can be called multiple
+	// times on the same client.
+	c.shut.Store(false)
 
 	stream, err := c.c.Modify(ctx)
 	if err != nil {
@@ -404,7 +436,6 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 
-			// read from the channel
 			if done := reqHandler(<-c.qs.modifyCh); done {
 				return
 			}

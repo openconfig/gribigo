@@ -18,7 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,7 +31,9 @@ import (
 	"github.com/openconfig/gribigo/testcommon"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -1660,4 +1664,150 @@ func TestServerModifyIntegration(t *testing.T) {
 		})
 	}
 
+}
+
+type disconnectMode int64
+
+const (
+	_ disconnectMode = iota
+	EOF
+	PauseError
+	LongPauseError
+	NoError
+)
+
+type disconnectingGRIBI struct {
+	*spb.UnimplementedGRIBIServer
+	mode disconnectMode
+}
+
+func (d *disconnectingGRIBI) Modify(stream spb.GRIBI_ModifyServer) error {
+	go func() {
+		for {
+			if _, err := stream.Recv(); err != nil {
+				return
+			}
+		}
+	}()
+
+	switch d.mode {
+	case EOF:
+		return io.EOF
+	case PauseError:
+		time.Sleep(2 * time.Second)
+		return status.Errorf(codes.ResourceExhausted, "yawn!")
+	case LongPauseError:
+		time.Sleep(100 * time.Second)
+		return status.Errorf(codes.ResourceExhausted, "slept 100 seconds")
+	case NoError:
+		return nil
+	default:
+		panic("unhandled case")
+	}
+}
+
+func (d *disconnectingGRIBI) Flush(_ context.Context, _ *spb.FlushRequest) (*spb.FlushResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "unimplemented")
+}
+
+func (d *disconnectingGRIBI) Get(_ *spb.GetRequest, _ spb.GRIBI_GetServer) error {
+	return status.Errorf(codes.Unimplemented, "unimplemented")
+}
+
+func TestDone(t *testing.T) {
+	tests := []struct {
+		desc         string
+		inMode       disconnectMode
+		inReconnects int
+		wantDone     bool
+	}{{
+		desc:         "EOF returned",
+		inMode:       EOF,
+		inReconnects: 5,
+		wantDone:     true,
+	}, {
+		desc:         "pause",
+		inMode:       PauseError,
+		inReconnects: 1,
+		wantDone:     true,
+	}, {
+		desc:         "context is cancelled",
+		inMode:       LongPauseError,
+		inReconnects: 0,
+		wantDone:     false,
+	}, {
+		desc:         "no error returned",
+		inMode:       NoError,
+		inReconnects: 1,
+		wantDone:     true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+
+			creds, err := credentials.NewServerTLSFromFile(testcommon.TLSCreds())
+			if err != nil {
+				t.Fatalf("cannot load TLS credentials, got err: %v", err)
+			}
+			srv := grpc.NewServer(grpc.Creds(creds))
+			if err != nil {
+				t.Fatalf("cannot create server, err: %v", err)
+			}
+			spb.RegisterGRIBIServer(srv, &disconnectingGRIBI{mode: tt.inMode})
+
+			l, err := net.Listen("tcp", "localhost:0")
+			if err != nil {
+				t.Fatalf("cannot listen, err: %v", err)
+			}
+
+			go srv.Serve(l)
+			defer srv.Stop()
+
+			c, err := New()
+			if err != nil {
+				t.Fatalf("cannot create client, err: %v", err)
+			}
+			dctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer func() {
+				cancel()
+			}()
+			if err := c.Dial(dctx, l.Addr().String()); err != nil {
+				t.Fatalf("c.Dial(_, %s): cannot dial fake server, got err: %v", l.Addr().String(), err)
+			}
+
+			for i := 0; i <= tt.inReconnects; i++ {
+				var (
+					wg     sync.WaitGroup
+					retErr error
+				)
+
+				if err := c.Connect(dctx); err != nil {
+					retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
+				}
+
+				c.Q(&spb.ModifyRequest{})
+				c.StartSending()
+
+				var got bool
+				wg.Add(1)
+				go func(ctx context.Context) {
+					defer wg.Done()
+					select {
+					case <-c.Done():
+						got = true
+						return
+					case <-ctx.Done():
+					}
+				}(dctx)
+
+				wg.Wait()
+				if retErr != nil {
+					t.Fatalf("did not connect to server, got: %v, want: nil", retErr)
+				}
+				if got != tt.wantDone {
+					t.Fatalf("did not get done signal, got: %v, want: %v", got, tt.wantDone)
+				}
+			}
+		})
+	}
 }

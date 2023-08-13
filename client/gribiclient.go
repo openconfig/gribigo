@@ -263,15 +263,20 @@ func (c *Client) Reset() {
 // disconnect shuts down the goroutines started by Connect().
 func (c *Client) disconnect() {
 	skipClose := false
-	select {
-	case v, isEmpty := <-c.sendExitCh:
-		if isEmpty || v == struct{}{} {
-			skipClose = true
+	if c.sendExitCh == nil {
+		skipClose = true
+	} else {
+		select {
+		case v, isEmpty := <-c.sendExitCh:
+			if isEmpty || v == struct{}{} {
+				skipClose = true
+			}
+		default:
 		}
-	default:
 	}
-	fmt.Printf("isZero is %v during disconnect()\n", skipClose)
-	if !skipClose || c.started.Load() || !c.shut.Load() {
+	// c.started.Load() || !c.shut.Load()
+	fmt.Printf("should we skip closing? %v\n", skipClose)
+	if !skipClose {
 		// goroutines have started and have not already exited, so we can
 		// safely called c.q()
 		c.q(nil)
@@ -500,7 +505,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		}
 	}()
 
-	c.started.Store(true)
+	//c.started.Store(true)
 	return nil
 }
 

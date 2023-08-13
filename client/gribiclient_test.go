@@ -1523,6 +1523,7 @@ func TestFlush(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
+			defer tt.inClient.Close()
 			creds, err := credentials.NewServerTLSFromFile(testcommon.TLSCreds())
 			if err != nil {
 				t.Fatalf("cannot load TLS credentials, got err: %v", err)

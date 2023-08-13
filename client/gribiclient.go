@@ -263,16 +263,8 @@ func (c *Client) Reset() {
 // disconnect shuts down the goroutines started by Connect().
 func (c *Client) disconnect() {
 	skipClose := false
-	if c.sendExitCh == nil {
+	if c.sendExitCh == nil || chIsClosed(c.sendExitCh) {
 		skipClose = true
-	} else {
-		select {
-		case v, isEmpty := <-c.sendExitCh:
-			if isEmpty || v == struct{}{} {
-				skipClose = true
-			}
-		default:
-		}
 	}
 	// c.started.Load() || !c.shut.Load()
 	fmt.Printf("should we skip closing? %v\n", skipClose)
@@ -756,13 +748,20 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 	c.q(m)
 }
 
-func (c *Client) nonBlockingQ(m *spb.ModifyRequest) {
-	c.awaiting.RLock()
-	defer c.awaiting.RUnlock()
+// chIsClosed returns true if the channel supplied has been written to,
+// or is closed - otherwise it returns false indicating it is still open. This
+// check can be used to determine whether a goroutine that writes to a channel
+// on exit is still running.
+func chIsClosed(ch <-chan struct{}) bool {
 	select {
-	case c.qs.modifyCh <- nil:
+	case v, ok := <-ch:
+		if v == struct{}{} || !ok {
+			return true
+		}
 	default:
+		return false
 	}
+	return false
 }
 
 // q is the internal implementation of queue that writes the ModifyRequest to
@@ -771,15 +770,7 @@ func (c *Client) q(m *spb.ModifyRequest) {
 	c.awaiting.RLock()
 	defer c.awaiting.RUnlock()
 
-	// Sanity check so we do not indefinitely block here.
-	isOpen := true
-	select {
-	case <-c.sendExitCh:
-		isOpen = false
-	default:
-	}
-
-	if isOpen {
+	if !chIsClosed(c.sendExitCh) {
 		c.qs.modifyCh <- m
 	}
 }

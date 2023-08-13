@@ -59,9 +59,6 @@ type Client struct {
 	// client.
 	qs *clientQs
 
-	// started indicates that the connection has started.
-	started *atomic.Bool
-
 	// shut indicates that RPCs should continue to run, when set
 	// to true, all goroutines that are serving RPCs shut down.
 	shut *atomic.Bool
@@ -92,6 +89,8 @@ type Client struct {
 	// used by a caller to ensure that the client reconnects.
 	doneCh chan struct{}
 
+	// sendExitCh is a channel that is used to indicate that the sender for the
+	// client is exited, such that other goroutines can clean up.
 	sendExitCh chan struct{}
 }
 
@@ -119,9 +118,8 @@ type Opt interface {
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...Opt) (*Client, error) {
 	c := &Client{
-		started: atomic.NewBool(false),
-		shut:    atomic.NewBool(false),
-		doneCh:  make(chan struct{}, 1),
+		shut:   atomic.NewBool(false),
+		doneCh: make(chan struct{}, 1),
 	}
 
 	s, err := handleParams(opts...)
@@ -225,11 +223,8 @@ func (c *Client) UseStub(stub spb.GRIBIClient) error {
 // Reset clears the client's transient state - is is recommended to call this method between
 // reconnections at a server to clear pending queues and results which are no longer valid.
 func (c *Client) Reset() {
-	fmt.Printf("stop sending\n")
 	c.StopSending()
-	fmt.Printf("disconnect\n")
 	c.disconnect()
-	fmt.Printf("ok\n")
 
 	c.sendErrMu.Lock()
 	defer c.sendErrMu.Unlock()
@@ -266,8 +261,6 @@ func (c *Client) disconnect() {
 	if c.sendExitCh == nil || chIsClosed(c.sendExitCh) {
 		skipClose = true
 	}
-	// c.started.Load() || !c.shut.Load()
-	fmt.Printf("should we skip closing? %v\n", skipClose)
 	if !skipClose {
 		// goroutines have started and have not already exited, so we can
 		// safely called c.q()
@@ -412,27 +405,13 @@ func (c *Client) Connect(ctx context.Context) error {
 	go func() {
 		defer c.wg.Done()
 		defer informDone("receiver")
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 		for {
-			go func(ctx context.Context) {
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						fmt.Printf("receiver %s still living\n", id)
-						time.Sleep(1 * time.Second)
-					}
-				}
-			}(ctx)
 			if c.shut.Load() {
-				log.V(2).Infof("shutting down recv goroutine")
-				fmt.Printf("receiver %s dying due to shutdown signal\n", id)
+				log.V(2).Infof("shutting down recv goroutine, id: %s, cause: SHUTDOWN", id)
 				return
 			}
 			if done := respHandler(stream.Recv()); done {
-				fmt.Printf("receiver %s dying due to handler being done\n", id)
+				log.V(2).Infof("shuttting down recv goroutine, id: %s, cause: HANDLER", id)
 				return
 			}
 		}
@@ -470,34 +449,19 @@ func (c *Client) Connect(ctx context.Context) error {
 			c.sendExitCh <- struct{}{}
 			close(c.sendExitCh)
 		}()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 		for {
-			go func(ctx context.Context) {
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						fmt.Printf("sender %s still living\n", id)
-						time.Sleep(1 * time.Second)
-					}
-				}
-			}(ctx)
 			if c.shut.Load() {
-				fmt.Printf("sender %s dying due to shutdown signal\n", id)
-				log.V(2).Infof("shutting down send goroutine")
+				log.V(2).Infof("shutting down send goroutine, id: %s, cause: SHUTDOWN", id)
 				return
 			}
 
 			if done := reqHandler(<-c.qs.modifyCh); done {
-				fmt.Printf("sender %s dying due to handler being done\n", id)
+				log.V(2).Infof("shutting down send goroutine, id: %s, cause: HANDLER", id)
 				return
 			}
 		}
 	}()
 
-	//c.started.Store(true)
 	return nil
 }
 

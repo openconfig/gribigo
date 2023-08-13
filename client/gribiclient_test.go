@@ -1619,7 +1619,13 @@ func TestServerModifyIntegration(t *testing.T) {
 				return fmt.Errorf("Connect(): cannot connect to server, %v", err)
 			}
 
-			c.Q(&spb.ModifyRequest{})
+			c.Q(&spb.ModifyRequest{
+				Params: &spb.SessionParameters{
+					AckType:     spb.SessionParameters_RIB_ACK,
+					Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+					Persistence: spb.SessionParameters_PRESERVE,
+				},
+			})
 			c.StartSending()
 
 			if err := c.AwaitConverged(ctx); err != nil {

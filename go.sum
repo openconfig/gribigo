@@ -202,6 +202,8 @@ github.com/openconfig/gribi v0.1.1-0.20210423184541-ce37eb4ba92f/go.mod h1:OoH46
 github.com/openconfig/gribi v1.0.0 h1:xMwEg0mBD+21mOxuFOw0d9dBKuIPwJEhMUUeUulZdLg=
 github.com/openconfig/gribi v1.0.0/go.mod h1:VFqGH2ZPFIfnKTimP4/AQB4OK0eySW5muJNFxXAwP6k=
 github.com/openconfig/grpctunnel v0.0.0-20220819142823-6f5422b8ca70 h1:t6SvvdfWCMlw0XPlsdxO8EgO+q/fXnTevDjdYREKFwU=
+github.com/openconfig/lemming v0.1.1-0.20230308220711-b6e3c59e71a1 h1:9mhQD+lX/FXBl9st3KE7phTTFtOjr8dPXrlkTlVmUTY=
+github.com/openconfig/lemming v0.1.1-0.20230308220711-b6e3c59e71a1/go.mod h1:BLLP7VBM1W6Z2sFLUOROMZMmjE4CzqfxH7Vb5u/IeUI=
 github.com/openconfig/lemming v0.3.1 h1:gHO/1K0VoOclAufPzqxHFdtr6SYjZ38BU8IQ9r25Tao=
 github.com/openconfig/lemming v0.3.1/go.mod h1:URk1MF8ap8+1JHJICiTX2oTj7BwWOeXXlA1cmdpsjY8=
 github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07 h1:X631iD/B0ximGFb5P9LY5wHju4SiedxUhc5UZEo7VSw=

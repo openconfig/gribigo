@@ -225,8 +225,11 @@ func (c *Client) UseStub(stub spb.GRIBIClient) error {
 // Reset clears the client's transient state - is is recommended to call this method between
 // reconnections at a server to clear pending queues and results which are no longer valid.
 func (c *Client) Reset() {
+	fmt.Printf("stop sending\n")
 	c.StopSending()
+	fmt.Printf("disconnect\n")
 	c.disconnect()
+	fmt.Printf("ok\n")
 
 	c.sendErrMu.Lock()
 	defer c.sendErrMu.Unlock()
@@ -259,13 +262,16 @@ func (c *Client) Reset() {
 
 // disconnect shuts down the goroutines started by Connect().
 func (c *Client) disconnect() {
-	var isZero bool
+	skipClose := false
 	select {
-	case _, isZero = <-c.sendExitCh:
+	case v, isEmpty := <-c.sendExitCh:
+		if isEmpty || v == struct{}{} {
+			skipClose = true
+		}
 	default:
 	}
-	fmt.Printf("isZero is %v during disconnect()\n", isZero)
-	if !isZero || c.started.Load() || !c.shut.Load() {
+	fmt.Printf("isZero is %v during disconnect()\n", skipClose)
+	if !skipClose || c.started.Load() || !c.shut.Load() {
 		// goroutines have started and have not already exited, so we can
 		// safely called c.q()
 		c.q(nil)
@@ -425,11 +431,11 @@ func (c *Client) Connect(ctx context.Context) error {
 			}(ctx)
 			if c.shut.Load() {
 				log.V(2).Infof("shutting down recv goroutine")
-				fmt.Printf("receiver dying due to shutdown signal\n")
+				fmt.Printf("receiver %s dying due to shutdown signal\n", id)
 				return
 			}
 			if done := respHandler(stream.Recv()); done {
-				fmt.Printf("receiver dying due to handler being done\n")
+				fmt.Printf("receiver %s dying due to handler being done\n", id)
 				return
 			}
 		}
@@ -464,6 +470,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		defer func() {
 			// Signal that we are exiting, this allows us to avoid the case that
 			// a race causes the modifyCh to become blocking.
+			c.sendExitCh <- struct{}{}
 			close(c.sendExitCh)
 		}()
 		ctx, cancel := context.WithCancel(context.Background())
@@ -481,13 +488,13 @@ func (c *Client) Connect(ctx context.Context) error {
 				}
 			}(ctx)
 			if c.shut.Load() {
-				fmt.Printf("sender dying due to shutdown signal\n")
+				fmt.Printf("sender %s dying due to shutdown signal\n", id)
 				log.V(2).Infof("shutting down send goroutine")
 				return
 			}
 
 			if done := reqHandler(<-c.qs.modifyCh); done {
-				fmt.Printf("sender dying due to handler being done\n")
+				fmt.Printf("sender %s dying due to handler being done\n", id)
 				return
 			}
 		}
@@ -758,7 +765,18 @@ func (c *Client) nonBlockingQ(m *spb.ModifyRequest) {
 func (c *Client) q(m *spb.ModifyRequest) {
 	c.awaiting.RLock()
 	defer c.awaiting.RUnlock()
-	c.qs.modifyCh <- m
+
+	// Sanity check so we do not indefinitely block here.
+	isOpen := true
+	select {
+	case <-c.sendExitCh:
+		isOpen = false
+	default:
+	}
+
+	if isOpen {
+		c.qs.modifyCh <- m
+	}
 }
 
 // StartSending toggles the client to begin sending messages that are in the send

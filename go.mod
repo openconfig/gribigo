@@ -9,7 +9,7 @@ require (
 	github.com/openconfig/gnmi v0.9.1
 	github.com/openconfig/goyang v1.2.0
 	github.com/openconfig/gribi v1.0.0
-	github.com/openconfig/lemming v0.3.1
+	github.com/openconfig/lemming v0.1.1-0.20230308220711-b6e3c59e71a1
 	github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07
 	github.com/openconfig/ygot v0.27.0
 	go.uber.org/atomic v1.10.0

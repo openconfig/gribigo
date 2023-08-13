@@ -2143,6 +2143,11 @@ func TestReset(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
+			// Setup, make sure it looks like our goroutines are started.
+			tt.inClient.sendExitCh = make(chan struct{}, 1)
+			tt.inClient.sendExitCh <- struct{}{}
+			close(tt.inClient.sendExitCh)
+
 			tt.inClient.Reset()
 			c := tt.inClient
 			// Don't compare the whole struct because there are unexported fields and it is not for public consumption.

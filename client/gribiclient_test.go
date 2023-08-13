@@ -1803,10 +1803,10 @@ func TestDone(t *testing.T) {
 	}, {
 		desc:                 "inner context is cancelled",
 		inMode:               LongPauseError,
-		inTimeoutSeconds:     100,
+		inTimeoutSeconds:     10,
 		inWaitTimeoutSeconds: 1,
 		inReconnects:         1,
-		wantDone:             false,
+		wantDone:             true,
 	}, {
 		desc:         "no error returned",
 		inMode:       NoError,
@@ -1867,8 +1867,9 @@ func TestDone(t *testing.T) {
 						got = true
 						return
 					case <-ctx.Done():
+						// This case only happens if the overall test times out.
 					}
-				}(waitCtx)
+				}(dctx)
 
 				wg.Wait()
 				if retErr != nil {

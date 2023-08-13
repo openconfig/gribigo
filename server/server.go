@@ -345,18 +345,24 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		}
 	}()
 
+	resultDone := make(chan struct{})
 	go func() {
 		for {
-			res := <-resultChan
-			// update that we have received at least one message.
-			if err := ms.Send(res); err != nil {
-				errCh <- status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
+			select {
+			case res := <-resultChan:
+				// update that we have received at least one message.
+				if err := ms.Send(res); err != nil {
+					errCh <- status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
+					return
+				}
+			case <-resultDone:
 				return
 			}
 		}
 	}()
 
 	err := <-errCh
+	close(resultDone)
 
 	// when this client goes away, we need to clean up its state.
 	s.deleteClient(cid)

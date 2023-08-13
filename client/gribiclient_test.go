@@ -166,12 +166,17 @@ func TestQ(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot create client, %v", err)
 			}
+			doneCh := make(chan struct{})
 			if tt.inSending {
 				c.qs.sending = atomic.NewBool(tt.inSending)
 				// avoid test deadlock by emptying the queue if we're sending.
 				go func() {
 					for {
-						<-c.qs.modifyCh
+						select {
+						case <-c.qs.modifyCh:
+						case <-doneCh:
+							return
+						}
 					}
 				}()
 			}
@@ -182,6 +187,7 @@ func TestQ(t *testing.T) {
 			if diff := cmp.Diff(c.qs.sendq, tt.wantQ, protocmp.Transform()); diff != "" {
 				t.Fatalf("did not get expected send queue, %s", diff)
 			}
+			close(doneCh)
 		})
 	}
 }

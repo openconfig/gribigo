@@ -811,40 +811,36 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 	}
 
 	v, ok := c.qs.pendq.Ops[op.Id]
+	if !ok {
+		if op.GetStatus() == spb.AFTResult_FIB_PROGRAMMED && TreatRIBACKAsCompletedInFIBACKMode {
+			// Expected condition, we hav already dequeued this operation because we are treating RIB_ACK as completed
+			// even though we are in FIB programmed mode.
+			return nil, nil
+		}
+		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
+	}
 
-	switch TreatRIBACKAsCompletedInFIBACKMode {
-	case true:
-		switch op.GetStatus() {
-		case spb.AFTResult_RIB_PROGRAMMED:
-			if !ok {
-				return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
-			}
-			delete(c.qs.pendq.Ops, op.Id)
-		case spb.AFTResult_FIB_PROGRAMMED:
-			if !ok {
-				// In FIB_PROGRAMMED mode if we received a RIB ACK then we have already dequeued
-				// this operation, so this is an expected condition.
-				return nil, nil
-			}
-			log.Infof("did not receive a RIB ACK for operation %d, dequeueing based on FIB_ACK", op.Id)
-			delete(c.qs.pendq.Ops, op.Id)
-		case spb.AFTResult_FAILED:
-			delete(c.qs.pendq.Ops, op.Id)
+	// We know that the operation exists - determine how to dequeue it.
+	switch op.GetStatus() {
+	case spb.AFTResult_FIB_FAILED, spb.AFTResult_FIB_PROGRAMMED:
+		if TreatRIBACKAsCompletedInFIBACKMode {
+			log.Infof("RIB ACK not received for operation %d - dequeue is based on FIB ACK", op.Id)
 		}
-	default:
-		if !ok {
-			return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
-		}
-		switch op.GetStatus() {
-		case spb.AFTResult_FIB_PROGRAMMED, spb.AFTResult_FIB_FAILED:
+		delete(c.qs.pendq.Ops, op.Id)
+	case spb.AFTResult_RIB_PROGRAMMED:
+		switch {
+		case TreatRIBACKAsCompletedInFIBACKMode:
+			// Dequeue, since we're specifically being asked to use RIB ACKs as the completion of the
+			// transaction.
 			delete(c.qs.pendq.Ops, op.Id)
-		case spb.AFTResult_RIB_PROGRAMMED:
-			if c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK {
-				delete(c.qs.pendq.Ops, op.Id)
-			}
-		case spb.AFTResult_FAILED:
+		case c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK:
+			// RIB ACK dequeues when we are not expecting FIB ACK.
 			delete(c.qs.pendq.Ops, op.Id)
+		default:
+			// We're in FIB_ACK mode and this is a RIB_ACK, so the transaction is not complete.
 		}
+	case spb.AFTResult_FAILED:
+		delete(c.qs.pendq.Ops, op.Id)
 	}
 
 	if v == nil {

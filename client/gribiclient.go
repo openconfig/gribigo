@@ -847,6 +847,10 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 		}
 	}
 
+	if v == nil {
+		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
+	}
+
 	det := &OpDetailsResults{
 		Type: constants.OpFromAFTOp(v.Op.Op),
 	}

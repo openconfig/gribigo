@@ -246,6 +246,12 @@ func (c *Client) Reset() {
 	c.qs.resultMu.Lock()
 	defer c.qs.resultMu.Unlock()
 	c.qs.resultq = nil
+
+	// Empty the done channel if a reader did not take the message from it.
+	select {
+	case <-c.doneCh:
+	default:
+	}
 }
 
 // disconnect shuts down the goroutines started by Connect().

@@ -1784,10 +1784,12 @@ func newDisconnectingFake(t testing.TB, mode disconnectMode) (*disconnectingGRIB
 
 func TestDone(t *testing.T) {
 	tests := []struct {
-		desc         string
-		inMode       disconnectMode
-		inReconnects int
-		wantDone     bool
+		desc                 string
+		inMode               disconnectMode
+		inReconnects         int
+		inTimeoutSeconds     int
+		inWaitTimeoutSeconds int
+		wantDone             bool
 	}{{
 		desc:         "EOF returned",
 		inMode:       EOF,
@@ -1799,10 +1801,12 @@ func TestDone(t *testing.T) {
 		inReconnects: 1,
 		wantDone:     true,
 	}, {
-		desc:         "context is cancelled",
-		inMode:       LongPauseError,
-		inReconnects: 0,
-		wantDone:     false,
+		desc:                 "inner context is cancelled",
+		inMode:               LongPauseError,
+		inTimeoutSeconds:     100,
+		inWaitTimeoutSeconds: 1,
+		inReconnects:         1,
+		wantDone:             false,
 	}, {
 		desc:         "no error returned",
 		inMode:       NoError,
@@ -1820,10 +1824,14 @@ func TestDone(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot create client, err: %v", err)
 			}
-			dctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer func() {
-				cancel()
-			}()
+
+			dur := 5 * time.Second
+			if tt.inTimeoutSeconds != 0 {
+				dur = time.Duration(tt.inTimeoutSeconds) * time.Second
+			}
+
+			dctx, cancel := context.WithTimeout(context.Background(), dur)
+			defer cancel()
 			if err := c.Dial(dctx, addr); err != nil {
 				t.Fatalf("c.Dial(_, %s): cannot dial fake server, got err: %v", addr, err)
 			}
@@ -1835,7 +1843,15 @@ func TestDone(t *testing.T) {
 					retErr error
 				)
 
-				if err := c.Connect(dctx); err != nil {
+				innerDur := 5 * time.Second
+				if tt.inWaitTimeoutSeconds != 0 {
+					innerDur = time.Duration(tt.inWaitTimeoutSeconds) * time.Second
+				}
+
+				waitCtx, cancel := context.WithTimeout(dctx, innerDur)
+				defer cancel()
+
+				if err := c.Connect(waitCtx); err != nil {
 					retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
 				}
 
@@ -1852,7 +1868,7 @@ func TestDone(t *testing.T) {
 						return
 					case <-ctx.Done():
 					}
-				}(dctx)
+				}(waitCtx)
 
 				wg.Wait()
 				if retErr != nil {

@@ -94,7 +94,6 @@ type Client struct {
 	// used by a caller to ensure that the client reconnects.
 	doneCh chan struct{}
 
-	exitChMu sync.Mutex
 	// sendExitCh is a channel that is used to indicate that the sender for the
 	// client is exited, such that other goroutines can clean up.
 	sendExitCh chan struct{}
@@ -140,8 +139,10 @@ func New(opts ...Opt) (*Client, error) {
 			Ops: map[uint64]*PendingOp{},
 		},
 
-		// modifyCh is unbuffered so that where needed, writes can be blocking.
-		modifyCh: make(chan *spb.ModifyRequest),
+		// modifyCh is buffered to ensure that there are no races writing to it - we
+		// expect that 5 messages is sufficient to ensure that there is time for the
+		// sender to shutdown.
+		modifyCh: make(chan *spb.ModifyRequest, 5),
 		resultq:  []*OpResult{},
 
 		sending: atomic.NewBool(false),
@@ -263,7 +264,6 @@ func (c *Client) Reset() {
 
 // disconnect shuts down the goroutines started by Connect().
 func (c *Client) disconnect() {
-	c.exitChMu.Lock()
 	skipClose := false
 	if c.sendExitCh == nil || chIsClosed(c.sendExitCh) {
 		skipClose = true
@@ -273,7 +273,6 @@ func (c *Client) disconnect() {
 		// safely called c.q()
 		c.q(nil)
 	}
-	c.exitChMu.Unlock()
 	c.wg.Wait()
 }
 
@@ -475,8 +474,6 @@ func (c *Client) Connect(ctx context.Context) error {
 			go debugWatcher(debugCtx, "send", id)
 		}
 		defer func() {
-			c.exitChMu.Lock()
-			defer c.exitChMu.Unlock()
 			// Signal that we are exiting, this allows us to avoid the case that
 			// a race causes the modifyCh to become blocking.
 			log.V(2).Infof("closing send channel in id: %s", id)

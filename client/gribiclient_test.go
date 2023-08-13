@@ -1900,6 +1900,9 @@ func TestDone(t *testing.T) {
 }
 
 func TestReconnect(t *testing.T) {
+	// How many runs to do for unstable tests. Note that some tests have relatively long runtime
+	// so this might result in test target timeouts if too high.
+	manyRuns := 30
 	tests := []struct {
 		desc           string
 		inModes        []disconnectMode // Must use Pause modes if results are expected.
@@ -1988,7 +1991,7 @@ func TestReconnect(t *testing.T) {
 	}, {
 		desc:         "very unstable server",
 		inModes:      []disconnectMode{PauseNoError, PauseEOF, PauseError},
-		inReconnects: 100,
+		inReconnects: manyRuns,
 		inClientOpts: []Opt{
 			PersistEntries(),
 			ElectedPrimaryClient(&spb.Uint128{Low: 42}),
@@ -1998,10 +2001,10 @@ func TestReconnect(t *testing.T) {
 				{ElectionId: &spb.Uint128{Low: uint64(42 + attempt)}},
 			}
 		},
-		inRunTime: 100 * 2 * time.Second,
+		inRunTime: time.Duration(manyRuns) * 2 * time.Second,
 		wantMsgs: func() []*spb.ModifyRequest {
 			msgs := []*spb.ModifyRequest{}
-			for i := 0; i <= 100; i++ {
+			for i := 0; i <= manyRuns; i++ {
 				msgs = append(msgs,
 					[]*spb.ModifyRequest{
 						{Params: &spb.SessionParameters{Persistence: spb.SessionParameters_PRESERVE, Redundancy: spb.SessionParameters_SINGLE_PRIMARY}},
@@ -2014,7 +2017,7 @@ func TestReconnect(t *testing.T) {
 	}, {
 		desc:         "very unstable server - don't check results",
 		inModes:      []disconnectMode{NoError, EOF},
-		inReconnects: 100,
+		inReconnects: manyRuns,
 		inClientOpts: []Opt{
 			PersistEntries(),
 			ElectedPrimaryClient(&spb.Uint128{Low: 42}),
@@ -2024,7 +2027,7 @@ func TestReconnect(t *testing.T) {
 				{ElectionId: &spb.Uint128{Low: uint64(42 + attempt)}},
 			}
 		},
-		inRunTime: 100 * 2 * time.Second,
+		inRunTime: time.Duration(manyRuns) * 2 * time.Second,
 	}}
 
 	for _, tt := range tests {

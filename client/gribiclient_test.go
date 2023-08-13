@@ -1677,10 +1677,31 @@ type disconnectMode int64
 const (
 	_ disconnectMode = iota
 	EOF
+	PauseEOF
 	PauseError
 	LongPauseError
 	NoError
+	PauseNoError
 )
+
+func (d disconnectMode) String() string {
+	switch d {
+	case EOF:
+		return "EOF"
+	case PauseEOF:
+		return "EOF after pause"
+	case PauseError:
+		return "Server error after pause"
+	case LongPauseError:
+		return "Server error after 100s pause"
+	case NoError:
+		return "nil error"
+	case PauseNoError:
+		return "nil error after pause"
+	default:
+		return fmt.Sprintf("%d", d)
+	}
+}
 
 type disconnectingGRIBI struct {
 	*spb.UnimplementedGRIBIServer
@@ -1713,6 +1734,9 @@ func (d *disconnectingGRIBI) Modify(stream spb.GRIBI_ModifyServer) error {
 	switch d.mode {
 	case EOF:
 		err = io.EOF
+	case PauseEOF:
+		time.Sleep(2 * time.Second)
+		err = io.EOF
 	case PauseError:
 		time.Sleep(2 * time.Second)
 		err = status.Errorf(codes.ResourceExhausted, "yawn!")
@@ -1720,6 +1744,8 @@ func (d *disconnectingGRIBI) Modify(stream spb.GRIBI_ModifyServer) error {
 		time.Sleep(100 * time.Second)
 		err = status.Errorf(codes.ResourceExhausted, "slept 100 seconds")
 	case NoError:
+	case PauseNoError:
+		time.Sleep(2 * time.Second)
 	}
 	if d.receiver {
 		wg.Wait()
@@ -1803,6 +1829,7 @@ func TestDone(t *testing.T) {
 			}
 
 			for i := 0; i <= tt.inReconnects; i++ {
+				t.Logf("running reconnect %d for %s\n", i, tt.desc)
 				var (
 					wg     sync.WaitGroup
 					retErr error
@@ -1834,6 +1861,7 @@ func TestDone(t *testing.T) {
 				if got != tt.wantDone {
 					t.Fatalf("did not get done signal, got: %v, want: %v", got, tt.wantDone)
 				}
+				c.StopSending()
 				c.Reset()
 			}
 		})
@@ -1843,7 +1871,7 @@ func TestDone(t *testing.T) {
 func TestReconnect(t *testing.T) {
 	tests := []struct {
 		desc           string
-		inModes        []disconnectMode
+		inModes        []disconnectMode // Must use Pause modes if results are expected.
 		inReconnects   int
 		inClientOpts   []Opt
 		inMsgs         []*spb.ModifyRequest
@@ -1856,7 +1884,7 @@ func TestReconnect(t *testing.T) {
 		wantConnectErr bool
 	}{{
 		desc:         "reconnect - stop sending not called",
-		inModes:      []disconnectMode{NoError, PauseError, EOF},
+		inModes:      []disconnectMode{PauseNoError, PauseError, PauseEOF},
 		inReconnects: 1,
 		inClientOpts: []Opt{
 			PersistEntries(),
@@ -1873,7 +1901,7 @@ func TestReconnect(t *testing.T) {
 		},
 	}, {
 		desc:         "reconnect - stop sending called",
-		inModes:      []disconnectMode{NoError, PauseError, EOF},
+		inModes:      []disconnectMode{PauseNoError, PauseError, EOF},
 		inReconnects: 1,
 		inClientOpts: []Opt{
 			PersistEntries(),
@@ -1891,7 +1919,7 @@ func TestReconnect(t *testing.T) {
 		},
 	}, {
 		desc:         "reconnect - client qs before calling start",
-		inModes:      []disconnectMode{NoError, PauseError, EOF},
+		inModes:      []disconnectMode{PauseNoError, PauseError, PauseEOF},
 		inReconnects: 1,
 		inClientOpts: []Opt{
 			PersistEntries(),
@@ -1909,7 +1937,7 @@ func TestReconnect(t *testing.T) {
 		},
 	}, {
 		desc:         "reconnect - client qs before calling start but has stopped",
-		inModes:      []disconnectMode{NoError, PauseError, EOF},
+		inModes:      []disconnectMode{PauseNoError, PauseError, PauseEOF},
 		inReconnects: 1,
 		inClientOpts: []Opt{
 			PersistEntries(),
@@ -1928,7 +1956,7 @@ func TestReconnect(t *testing.T) {
 		},
 	}, {
 		desc:         "very unstable server",
-		inModes:      []disconnectMode{NoError, EOF, PauseError},
+		inModes:      []disconnectMode{PauseNoError, PauseEOF, PauseError},
 		inReconnects: 100,
 		inClientOpts: []Opt{
 			PersistEntries(),
@@ -1952,11 +1980,25 @@ func TestReconnect(t *testing.T) {
 			}
 			return msgs
 		}(),
+	}, {
+		desc:         "very unstable server - don't check results",
+		inModes:      []disconnectMode{NoError, EOF},
+		inReconnects: 100,
+		inClientOpts: []Opt{
+			PersistEntries(),
+			ElectedPrimaryClient(&spb.Uint128{Low: 42}),
+		},
+		inMsgFn: func(attempt int) []*spb.ModifyRequest {
+			return []*spb.ModifyRequest{
+				{ElectionId: &spb.Uint128{Low: uint64(42 + attempt)}},
+			}
+		},
+		inRunTime: 100 * 2 * time.Second,
 	}}
 
 	for _, tt := range tests {
 		for _, mode := range tt.inModes {
-			t.Run(fmt.Sprintf("%s - mode %d", tt.desc, mode), func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s - mode %s", tt.desc, mode), func(t *testing.T) {
 				server, addr, stop := newDisconnectingFake(t, mode)
 				server.receiver = true
 				defer stop()
@@ -1977,7 +2019,7 @@ func TestReconnect(t *testing.T) {
 				}
 
 				for i := 0; i <= tt.inReconnects; i++ {
-					t.Logf("reconnecting to server (mode: %d), attempt: %d", mode, i)
+					t.Logf("reconnecting to server (mode: %s), attempt: %d", mode, i)
 					var (
 						wg     sync.WaitGroup
 						retErr error
@@ -2042,11 +2084,14 @@ func TestReconnect(t *testing.T) {
 					}
 					c.Reset()
 				}
-				// Now check the messages that we saw at the server.
-				server.mu.Lock()
-				defer server.mu.Unlock()
-				if diff := cmp.Diff(server.msgs, tt.wantMsgs, protocmp.Transform()); diff != "" {
-					t.Fatalf("did not get expected messages, diff(-got,+want):\n%s", diff)
+
+				if tt.wantMsgs != nil {
+					// Now check the messages that we saw at the server.
+					server.mu.Lock()
+					defer server.mu.Unlock()
+					if diff := cmp.Diff(server.msgs, tt.wantMsgs, protocmp.Transform()); diff != "" {
+						t.Fatalf("did not get expected messages, diff(-got,+want):\n%s", diff)
+					}
 				}
 			})
 		}

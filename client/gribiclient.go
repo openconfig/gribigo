@@ -246,6 +246,11 @@ func (c *Client) Reset() {
 	c.qs.resultMu.Lock()
 	defer c.qs.resultMu.Unlock()
 	c.qs.resultq = nil
+
+	// Reinitialise the modify channel -- at this point, no-one is
+	// reading or writing to it, and disconnect() has closed the
+	// previous channel.
+	c.qs.modifyCh = make(chan *spb.ModifyRequest)
 }
 
 // disconnect shuts down the goroutines started by Connect().
@@ -257,6 +262,7 @@ func (c *Client) disconnect() {
 	}
 	c.q(nil) // signals reqHandler to close the stream.
 	c.wg.Wait()
+	close(c.qs.modifyCh)
 }
 
 // Close disconnects the underlying gRPC connection to the gRIBI server.

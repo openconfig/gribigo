@@ -27,6 +27,7 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"github.com/google/uuid"
 	"github.com/openconfig/gribigo/constants"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -90,6 +91,8 @@ type Client struct {
 	// doneCh is a channel that is written to when the client disconnects, it can be
 	// used by a caller to ensure that the client reconnects.
 	doneCh chan struct{}
+
+	sendExitCh chan struct{}
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -256,12 +259,17 @@ func (c *Client) Reset() {
 
 // disconnect shuts down the goroutines started by Connect().
 func (c *Client) disconnect() {
-	if !c.started.Load() || c.shut.Load() {
-		// goroutines have not started or have already exited, so c.q()
-		// would deadlock.
-		return
+	var isZero bool
+	select {
+	case _, isZero = <-c.sendExitCh:
+	default:
 	}
-	c.q(nil)
+	fmt.Printf("isZero is %v during disconnect()\n", isZero)
+	if !isZero || c.started.Load() || !c.shut.Load() {
+		// goroutines have started and have not already exited, so we can
+		// safely called c.q()
+		c.q(nil)
+	}
 	c.wg.Wait()
 }
 
@@ -347,6 +355,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	// Store that we are no longer shut down, since Connect can be called multiple
 	// times on the same client.
 	c.shut.Store(false)
+	c.sendExitCh = make(chan struct{}, 1)
 
 	stream, err := c.c.Modify(ctx)
 	if err != nil {
@@ -395,6 +404,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		return false
 	}
 
+	id := uuid.New().String()
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
@@ -408,7 +418,7 @@ func (c *Client) Connect(ctx context.Context) error {
 					case <-ctx.Done():
 						return
 					default:
-						fmt.Printf("receiver still living\n")
+						fmt.Printf("receiver %s still living\n", id)
 						time.Sleep(1 * time.Second)
 					}
 				}
@@ -451,6 +461,11 @@ func (c *Client) Connect(ctx context.Context) error {
 	go func() {
 		defer c.wg.Done()
 		defer informDone("sender")
+		defer func() {
+			// Signal that we are exiting, this allows us to avoid the case that
+			// a race causes the modifyCh to become blocking.
+			close(c.sendExitCh)
+		}()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		for {
@@ -460,7 +475,7 @@ func (c *Client) Connect(ctx context.Context) error {
 					case <-ctx.Done():
 						return
 					default:
-						fmt.Printf("sender still living\n")
+						fmt.Printf("sender %s still living\n", id)
 						time.Sleep(1 * time.Second)
 					}
 				}

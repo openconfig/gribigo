@@ -38,6 +38,11 @@ import (
 )
 
 var (
+	// debug enables detailed debug reporting throughout the client.
+	debug = false
+)
+
+var (
 	// unixTS is a function that returns a timestamp in nanoseconds for the current time.
 	// It can be overloaded in unit tests to ensure that deterministic output is received.
 	unixTS = time.Now().UnixNano
@@ -89,6 +94,7 @@ type Client struct {
 	// used by a caller to ensure that the client reconnects.
 	doneCh chan struct{}
 
+	exitChMu sync.Mutex
 	// sendExitCh is a channel that is used to indicate that the sender for the
 	// client is exited, such that other goroutines can clean up.
 	sendExitCh chan struct{}
@@ -257,6 +263,7 @@ func (c *Client) Reset() {
 
 // disconnect shuts down the goroutines started by Connect().
 func (c *Client) disconnect() {
+	c.exitChMu.Lock()
 	skipClose := false
 	if c.sendExitCh == nil || chIsClosed(c.sendExitCh) {
 		skipClose = true
@@ -266,6 +273,7 @@ func (c *Client) disconnect() {
 		// safely called c.q()
 		c.q(nil)
 	}
+	c.exitChMu.Unlock()
 	c.wg.Wait()
 }
 
@@ -340,6 +348,19 @@ type fibACK struct{}
 
 func (fibACK) isClientOpt() {}
 
+func debugWatcher(ctx context.Context, role, id string) {
+	for {
+		select {
+		case <-ctx.Done():
+			log.Errorf("goroutine %s:%s: exiting at %s", role, id, time.Now())
+			return
+		default:
+		}
+		log.Errorf("goroutine %s:%s: still running at %s", role, id, time.Now())
+		time.Sleep(1 * time.Second)
+	}
+}
+
 // Connect establishes a Modify RPC to the client and sends the initial session
 // parameters/election ID if required. The Modify RPC is stored within the client
 // such that it can be used for subsequent calls - such that Connect must be called
@@ -405,6 +426,11 @@ func (c *Client) Connect(ctx context.Context) error {
 	go func() {
 		defer c.wg.Done()
 		defer informDone("receiver")
+		if debug {
+			debugCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			go debugWatcher(debugCtx, "recv", id)
+		}
 		for {
 			if c.shut.Load() {
 				log.V(2).Infof("shutting down recv goroutine, id: %s, cause: SHUTDOWN", id)
@@ -443,9 +469,17 @@ func (c *Client) Connect(ctx context.Context) error {
 	go func() {
 		defer c.wg.Done()
 		defer informDone("sender")
+		if debug {
+			debugCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			go debugWatcher(debugCtx, "send", id)
+		}
 		defer func() {
+			c.exitChMu.Lock()
+			defer c.exitChMu.Unlock()
 			// Signal that we are exiting, this allows us to avoid the case that
 			// a race causes the modifyCh to become blocking.
+			log.V(2).Infof("closing send channel in id: %s", id)
 			c.sendExitCh <- struct{}{}
 			close(c.sendExitCh)
 		}()

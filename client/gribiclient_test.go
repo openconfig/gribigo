@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -40,6 +41,12 @@ import (
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
+
+func TestMain(m *testing.M) {
+	debug = true
+	defer func() { debug = false }()
+	os.Exit(m.Run())
+}
 
 func TestHandleParams(t *testing.T) {
 	tests := []struct {

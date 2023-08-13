@@ -1806,11 +1806,8 @@ func TestDone(t *testing.T) {
 					retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
 				}
 
-				fmt.Printf("queueing message\n")
 				c.Q(&spb.ModifyRequest{})
-				fmt.Printf("queued\n")
 				c.StartSending()
-				fmt.Printf("started sending\n")
 
 				var got bool
 				wg.Add(1)
@@ -2040,6 +2037,8 @@ func TestReconnect(t *testing.T) {
 					c.Reset()
 				}
 				// Now check the messages that we saw at the server.
+				server.mu.Lock()
+				defer server.mu.Unlock()
 				if diff := cmp.Diff(server.msgs, tt.wantMsgs, protocmp.Transform()); diff != "" {
 					t.Fatalf("did not get expected messages, diff(-got,+want):\n%s", diff)
 				}

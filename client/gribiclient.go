@@ -261,7 +261,7 @@ func (c *Client) disconnect() {
 		// would deadlock.
 		return
 	}
-	c.q(nil) // signals reqHandler to close the stream.
+	c.q(nil)
 	c.wg.Wait()
 }
 
@@ -399,12 +399,27 @@ func (c *Client) Connect(ctx context.Context) error {
 	go func() {
 		defer c.wg.Done()
 		defer informDone("receiver")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		for {
+			go func(ctx context.Context) {
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						fmt.Printf("receiver still living\n")
+						time.Sleep(1 * time.Second)
+					}
+				}
+			}(ctx)
 			if c.shut.Load() {
 				log.V(2).Infof("shutting down recv goroutine")
+				fmt.Printf("receiver dying due to shutdown signal\n")
 				return
 			}
 			if done := respHandler(stream.Recv()); done {
+				fmt.Printf("receiver dying due to handler being done\n")
 				return
 			}
 		}
@@ -436,13 +451,28 @@ func (c *Client) Connect(ctx context.Context) error {
 	go func() {
 		defer c.wg.Done()
 		defer informDone("sender")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		for {
+			go func(ctx context.Context) {
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						fmt.Printf("sender still living\n")
+						time.Sleep(1 * time.Second)
+					}
+				}
+			}(ctx)
 			if c.shut.Load() {
+				fmt.Printf("sender dying due to shutdown signal\n")
 				log.V(2).Infof("shutting down send goroutine")
 				return
 			}
 
 			if done := reqHandler(<-c.qs.modifyCh); done {
+				fmt.Printf("sender dying due to handler being done\n")
 				return
 			}
 		}
@@ -697,6 +727,15 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 	log.V(2).Infof("sending %s directly to queue", m)
 
 	c.q(m)
+}
+
+func (c *Client) nonBlockingQ(m *spb.ModifyRequest) {
+	c.awaiting.RLock()
+	defer c.awaiting.RUnlock()
+	select {
+	case c.qs.modifyCh <- nil:
+	default:
+	}
 }
 
 // q is the internal implementation of queue that writes the ModifyRequest to

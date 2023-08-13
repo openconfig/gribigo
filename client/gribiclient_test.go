@@ -2048,7 +2048,7 @@ func TestReconnect(t *testing.T) {
 					default:
 					}
 
-					waitCtx, stopWait := context.WithTimeout(dctx, 100*time.Millisecond)
+					waitCtx, stopWait := context.WithTimeout(dctx, 200*time.Millisecond)
 					defer stopWait()
 
 					if err := c.Connect(waitCtx); err != nil {

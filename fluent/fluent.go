@@ -212,9 +212,11 @@ func (g *GRIBIClient) Start(ctx context.Context, t testing.TB) {
 // Stop specifies that the gRIBI client should stop sending operations,
 // and subsequently disconnect from the server.
 func (g *GRIBIClient) Stop(t testing.TB) {
-	g.c.StopSending()
-	if err := g.c.Close(); err != nil {
-		log.Infof("cannot disconnect from server, %v", err)
+	if g.c != nil {
+		g.c.StopSending()
+		if err := g.c.Close(); err != nil {
+			log.Infof("cannot disconnect from server, %v", err)
+		}
 	}
 }
 

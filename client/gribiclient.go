@@ -27,6 +27,7 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"github.com/google/uuid"
 	"github.com/openconfig/gribigo/constants"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -34,6 +35,11 @@ import (
 	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
+)
+
+var (
+	// debug enables detailed debug reporting throughout the client.
+	debug = false
 )
 
 var (
@@ -57,9 +63,6 @@ type Client struct {
 	// qs is the set of queues that are associated with the current
 	// client.
 	qs *clientQs
-
-	// started indicates that the connection has started.
-	started *atomic.Bool
 
 	// shut indicates that RPCs should continue to run, when set
 	// to true, all goroutines that are serving RPCs shut down.
@@ -86,6 +89,14 @@ type Client struct {
 
 	// wg tells disconnect() when all the goroutines started by Connect() have exited.
 	wg sync.WaitGroup
+
+	// doneCh is a channel that is written to when the client disconnects, it can be
+	// used by a caller to ensure that the client reconnects.
+	doneCh chan struct{}
+
+	// sendExitCh is a channel that is used to indicate that the sender for the
+	// client is exited, such that other goroutines can clean up.
+	sendExitCh chan struct{}
 }
 
 // clientState is used to store the configured (immutable) state of the client.
@@ -112,8 +123,8 @@ type Opt interface {
 // that are within the session parameters. A new client, or error, is returned.
 func New(opts ...Opt) (*Client, error) {
 	c := &Client{
-		started: atomic.NewBool(false),
-		shut:    atomic.NewBool(false),
+		shut:   atomic.NewBool(false),
+		doneCh: make(chan struct{}, 1),
 	}
 
 	s, err := handleParams(opts...)
@@ -128,14 +139,22 @@ func New(opts ...Opt) (*Client, error) {
 			Ops: map[uint64]*PendingOp{},
 		},
 
-		// modifyCh is unbuffered so that where needed, writes can be blocking.
-		modifyCh: make(chan *spb.ModifyRequest),
+		// modifyCh is buffered to ensure that there are no races writing to it - we
+		// expect that 5 messages is sufficient to ensure that there is time for the
+		// sender to shutdown.
+		modifyCh: make(chan *spb.ModifyRequest, 5),
 		resultq:  []*OpResult{},
 
 		sending: atomic.NewBool(false),
 	}
 
 	return c, nil
+}
+
+// Done returns a channel which is written to when the client is disconnected from the
+// server. It can be used to trigger reconnections.
+func (c *Client) Done() <-chan struct{} {
+	return c.doneCh
 }
 
 // handleParams takes the set of gRIBI client options that are provided and uses them
@@ -208,14 +227,52 @@ func (c *Client) UseStub(stub spb.GRIBIClient) error {
 	return nil
 }
 
+// Reset clears the client's transient state - is is recommended to call this method between
+// reconnections at a server to clear pending queues and results which are no longer valid.
+func (c *Client) Reset() {
+	c.StopSending()
+	c.disconnect()
+
+	c.sendErrMu.Lock()
+	defer c.sendErrMu.Unlock()
+	c.sendErr = nil
+
+	c.readErrMu.Lock()
+	defer c.readErrMu.Unlock()
+	c.readErr = nil
+
+	c.qs.sendMu.Lock()
+	defer c.qs.sendMu.Unlock()
+	c.qs.sendq = nil
+
+	c.qs.pendMu.Lock()
+	defer c.qs.pendMu.Unlock()
+	c.qs.pendq = &pendingQueue{
+		Ops: map[uint64]*PendingOp{},
+	}
+
+	c.qs.resultMu.Lock()
+	defer c.qs.resultMu.Unlock()
+	c.qs.resultq = nil
+
+	// Empty the done channel if a reader did not take the message from it.
+	select {
+	case <-c.doneCh:
+	default:
+	}
+}
+
 // disconnect shuts down the goroutines started by Connect().
 func (c *Client) disconnect() {
-	if !c.started.Load() || c.shut.Load() {
-		// goroutines have not started or have already exited, so c.q()
-		// would deadlock.
-		return
+	skipClose := false
+	if c.sendExitCh == nil || chIsClosed(c.sendExitCh) {
+		skipClose = true
 	}
-	c.q(nil) // signals reqHandler to close the stream.
+	if !skipClose {
+		// goroutines have started and have not already exited, so we can
+		// safely called c.q()
+		c.q(nil)
+	}
 	c.wg.Wait()
 }
 
@@ -290,6 +347,19 @@ type fibACK struct{}
 
 func (fibACK) isClientOpt() {}
 
+func debugWatcher(ctx context.Context, role, id string) {
+	for {
+		select {
+		case <-ctx.Done():
+			log.Errorf("goroutine %s:%s: exiting at %s", role, id, time.Now())
+			return
+		default:
+		}
+		log.Errorf("goroutine %s:%s: still running at %s", role, id, time.Now())
+		time.Sleep(1 * time.Second)
+	}
+}
+
 // Connect establishes a Modify RPC to the client and sends the initial session
 // parameters/election ID if required. The Modify RPC is stored within the client
 // such that it can be used for subsequent calls - such that Connect must be called
@@ -298,6 +368,10 @@ func (fibACK) isClientOpt() {}
 // An error is returned if the Modify RPC cannot be established or there is an error
 // response to the initial messages that are sent on the connection.
 func (c *Client) Connect(ctx context.Context) error {
+	// Store that we are no longer shut down, since Connect can be called multiple
+	// times on the same client.
+	c.shut.Store(false)
+	c.sendExitCh = make(chan struct{}, 1)
 
 	stream, err := c.c.Modify(ctx)
 	if err != nil {
@@ -310,6 +384,15 @@ func (c *Client) Connect(ctx context.Context) error {
 	// lower-layer operations to the gRIBI server directly.
 	// Modify this code to do this (make these just be default
 	// handler functions, they could still be inline).
+
+	informDone := func(who string) {
+		select {
+		case c.doneCh <- struct{}{}:
+			log.Infof("writing to done channel, requsted by %s", who)
+		default:
+			log.Infof("dropped message informing caller the client is done.")
+		}
+	}
 
 	// respHandler takes a received modify response and error, and returns
 	// a bool indicating that the loop within which it is called should
@@ -337,15 +420,23 @@ func (c *Client) Connect(ctx context.Context) error {
 		return false
 	}
 
+	id := uuid.New().String()
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
+		defer informDone("receiver")
+		if debug {
+			debugCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			go debugWatcher(debugCtx, "recv", id)
+		}
 		for {
 			if c.shut.Load() {
-				log.V(2).Infof("shutting down recv goroutine")
+				log.V(2).Infof("shutting down recv goroutine, id: %s, cause: SHUTDOWN", id)
 				return
 			}
 			if done := respHandler(stream.Recv()); done {
+				log.V(2).Infof("shuttting down recv goroutine, id: %s, cause: HANDLER", id)
 				return
 			}
 		}
@@ -376,20 +467,32 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
+		defer informDone("sender")
+		if debug {
+			debugCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			go debugWatcher(debugCtx, "send", id)
+		}
+		defer func() {
+			// Signal that we are exiting, this allows us to avoid the case that
+			// a race causes the modifyCh to become blocking.
+			log.V(2).Infof("closing send channel in id: %s", id)
+			c.sendExitCh <- struct{}{}
+			close(c.sendExitCh)
+		}()
 		for {
 			if c.shut.Load() {
-				log.V(2).Infof("shutting down send goroutine")
+				log.V(2).Infof("shutting down send goroutine, id: %s, cause: SHUTDOWN", id)
 				return
 			}
 
-			// read from the channel
 			if done := reqHandler(<-c.qs.modifyCh); done {
+				log.V(2).Infof("shutting down send goroutine, id: %s, cause: HANDLER", id)
 				return
 			}
 		}
 	}()
 
-	c.started.Store(true)
 	return nil
 }
 
@@ -640,12 +743,31 @@ func (c *Client) Q(m *spb.ModifyRequest) {
 	c.q(m)
 }
 
+// chIsClosed returns true if the channel supplied has been written to,
+// or is closed - otherwise it returns false indicating it is still open. This
+// check can be used to determine whether a goroutine that writes to a channel
+// on exit is still running.
+func chIsClosed(ch <-chan struct{}) bool {
+	select {
+	case v, ok := <-ch:
+		if v == struct{}{} || !ok {
+			return true
+		}
+	default:
+		return false
+	}
+	return false
+}
+
 // q is the internal implementation of queue that writes the ModifyRequest to
 // the channel to be sent.
 func (c *Client) q(m *spb.ModifyRequest) {
 	c.awaiting.RLock()
 	defer c.awaiting.RUnlock()
-	c.qs.modifyCh <- m
+
+	if !chIsClosed(c.sendExitCh) {
+		c.qs.modifyCh <- m
+	}
 }
 
 // StartSending toggles the client to begin sending messages that are in the send

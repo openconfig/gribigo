@@ -1853,8 +1853,8 @@ func TestDone(t *testing.T) {
 			for i := 0; i <= tt.inReconnects; i++ {
 				t.Logf("running reconnect %d for %s\n", i, tt.desc)
 				var (
-					wg     sync.WaitGroup
-					retErr error
+					wg      sync.WaitGroup
+					connErr string
 				)
 
 				innerDur := 5 * time.Second
@@ -1866,7 +1866,7 @@ func TestDone(t *testing.T) {
 				defer cancel()
 
 				if err := c.Connect(waitCtx); err != nil {
-					retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
+					connErr = fmt.Sprintf("Connect(): cannot connect to server, %v", err)
 				}
 
 				c.Q(&spb.ModifyRequest{})
@@ -1886,8 +1886,8 @@ func TestDone(t *testing.T) {
 				}(dctx)
 
 				wg.Wait()
-				if retErr != nil {
-					t.Fatalf("did not connect to server, got: %v, want: nil", retErr)
+				if connErr != "" {
+					t.Fatalf("did not connect to server, got: %s, want: nil", connErr)
 				}
 				if got != tt.wantDone {
 					t.Fatalf("did not get done signal, got: %v, want: %v", got, tt.wantDone)
@@ -1914,6 +1914,7 @@ func TestReconnect(t *testing.T) {
 		inQBeforeStart bool
 		inRunTime      time.Duration
 		inSkipReset    bool
+		inStopServer   bool
 		wantMsgs       []*spb.ModifyRequest
 		wantConnectErr bool
 	}{{
@@ -2028,6 +2029,12 @@ func TestReconnect(t *testing.T) {
 			}
 		},
 		inRunTime: time.Duration(manyRuns) * 2 * time.Second,
+	}, {
+		desc:         "server that isn't even listening",
+		inModes:      []disconnectMode{EOF}, // Doesn't matter, we are not going to dial it.
+		inReconnects: 10,                    // More than the buffer depth of modifyCh.
+		inRunTime:    5 * time.Second,
+		inStopServer: true,
 	}}
 
 	for _, tt := range tests {
@@ -2053,6 +2060,10 @@ func TestReconnect(t *testing.T) {
 				}
 
 				for i := 0; i <= tt.inReconnects; i++ {
+					if tt.inStopServer && i > 0 {
+						// Kill the server so that its no longer listening.
+						stop()
+					}
 					t.Logf("reconnecting to server (mode: %s), attempt: %d", mode, i)
 					var (
 						wg     sync.WaitGroup
@@ -2069,7 +2080,11 @@ func TestReconnect(t *testing.T) {
 					defer stopWait()
 
 					if err := c.Connect(waitCtx); err != nil {
-						retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
+						switch {
+						case tt.inStopServer && i == 0, !tt.inStopServer:
+							retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
+						default:
+						}
 					}
 
 					runMsg := tt.inMsgs

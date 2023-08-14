@@ -10,10 +10,11 @@ on:
 jobs:
   build:
     name: Build
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         go: ['1.19', '1.20', '1.x']
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
 
     - name: Set up Go ${{ matrix.go }}

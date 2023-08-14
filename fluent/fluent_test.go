@@ -56,6 +56,7 @@ func TestGRIBIClient(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			c.Start(ctx, t)
+			c.Stop(t)
 		},
 	}, {
 		desc: "simple connection to invalid server",
@@ -65,6 +66,7 @@ func TestGRIBIClient(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			c.Start(ctx, t)
+			c.Stop(t)
 		},
 		wantFatalMsg: "cannot dial target",
 	}, {
@@ -77,6 +79,7 @@ func TestGRIBIClient(t *testing.T) {
 			// NB: we discard the error here, this test case is just to check we are
 			// marked converged.
 			c.Await(context.Background(), t)
+			c.Stop(t)
 		},
 	}, {
 		desc: "write basic IPv4 entry",
@@ -89,6 +92,7 @@ func TestGRIBIClient(t *testing.T) {
 			c.Modify().AddEntry(t, IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(1))
 			c.StartSending(context.Background(), t)
 			c.Await(context.Background(), t)
+			c.Stop(t)
 		},
 	}, {
 		desc: "remove basic next-hop",
@@ -107,6 +111,7 @@ func TestGRIBIClient(t *testing.T) {
 			if len(s.SendErrs) != 0 || len(s.ReadErrs) != 0 {
 				t.Fatalf("got unexpected errors, %+v", s)
 			}
+			c.Stop(t)
 		},
 	}}
 
@@ -141,6 +146,9 @@ func TestGRIBIClient(t *testing.T) {
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
 			tt.inFn(d.GRIBIAddr(), t)
+
+			// TODO(robjs): check error when https://github.com/openconfig/lemming/pull/226 is submitted.
+			d.Stop()
 		})
 	}
 }

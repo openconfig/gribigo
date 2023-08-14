@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -40,6 +41,12 @@ import (
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
+
+func TestMain(m *testing.M) {
+	debug = true
+	defer func() { debug = false }()
+	os.Exit(m.Run())
+}
 
 func TestHandleParams(t *testing.T) {
 	tests := []struct {
@@ -166,12 +173,17 @@ func TestQ(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot create client, %v", err)
 			}
+			doneCh := make(chan struct{})
 			if tt.inSending {
 				c.qs.sending = atomic.NewBool(tt.inSending)
 				// avoid test deadlock by emptying the queue if we're sending.
 				go func() {
 					for {
-						<-c.qs.modifyCh
+						select {
+						case <-c.qs.modifyCh:
+						case <-doneCh:
+							return
+						}
 					}
 				}()
 			}
@@ -182,6 +194,7 @@ func TestQ(t *testing.T) {
 			if diff := cmp.Diff(c.qs.sendq, tt.wantQ, protocmp.Transform()); diff != "" {
 				t.Fatalf("did not get expected send queue, %s", diff)
 			}
+			close(doneCh)
 		})
 	}
 }
@@ -1517,6 +1530,7 @@ func TestFlush(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
+			defer tt.inClient.Close()
 			creds, err := credentials.NewServerTLSFromFile(testcommon.TLSCreds())
 			if err != nil {
 				t.Fatalf("cannot load TLS credentials, got err: %v", err)
@@ -1612,7 +1626,13 @@ func TestServerModifyIntegration(t *testing.T) {
 				return fmt.Errorf("Connect(): cannot connect to server, %v", err)
 			}
 
-			c.Q(&spb.ModifyRequest{})
+			c.Q(&spb.ModifyRequest{
+				Params: &spb.SessionParameters{
+					AckType:     spb.SessionParameters_RIB_ACK,
+					Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+					Persistence: spb.SessionParameters_PRESERVE,
+				},
+			})
 			c.StartSending()
 
 			if err := c.AwaitConverged(ctx); err != nil {
@@ -1671,39 +1691,80 @@ type disconnectMode int64
 const (
 	_ disconnectMode = iota
 	EOF
+	PauseEOF
 	PauseError
 	LongPauseError
 	NoError
+	PauseNoError
 )
+
+func (d disconnectMode) String() string {
+	switch d {
+	case EOF:
+		return "EOF"
+	case PauseEOF:
+		return "EOF after pause"
+	case PauseError:
+		return "Server error after pause"
+	case LongPauseError:
+		return "Server error after 100s pause"
+	case NoError:
+		return "nil error"
+	case PauseNoError:
+		return "nil error after pause"
+	default:
+		return fmt.Sprintf("%d", d)
+	}
+}
 
 type disconnectingGRIBI struct {
 	*spb.UnimplementedGRIBIServer
 	mode disconnectMode
+	// Set to true if we should also read the channel.
+	receiver bool
+
+	mu   sync.Mutex
+	msgs []*spb.ModifyRequest
 }
 
 func (d *disconnectingGRIBI) Modify(stream spb.GRIBI_ModifyServer) error {
+	var wg sync.WaitGroup
+
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
-			if _, err := stream.Recv(); err != nil {
+			m, err := stream.Recv()
+			if err != nil {
 				return
 			}
+			d.mu.Lock()
+			d.msgs = append(d.msgs, m)
+			d.mu.Unlock()
 		}
 	}()
 
+	var err error
 	switch d.mode {
 	case EOF:
-		return io.EOF
+		err = io.EOF
+	case PauseEOF:
+		time.Sleep(2 * time.Second)
+		err = io.EOF
 	case PauseError:
 		time.Sleep(2 * time.Second)
-		return status.Errorf(codes.ResourceExhausted, "yawn!")
+		err = status.Errorf(codes.ResourceExhausted, "yawn!")
 	case LongPauseError:
 		time.Sleep(100 * time.Second)
-		return status.Errorf(codes.ResourceExhausted, "slept 100 seconds")
+		err = status.Errorf(codes.ResourceExhausted, "slept 100 seconds")
 	case NoError:
-		return nil
-	default:
-		panic("unhandled case")
+	case PauseNoError:
+		time.Sleep(2 * time.Second)
 	}
+	if d.receiver {
+		wg.Wait()
+	}
+	return err
 }
 
 func (d *disconnectingGRIBI) Flush(_ context.Context, _ *spb.FlushRequest) (*spb.FlushResponse, error) {
@@ -1714,12 +1775,35 @@ func (d *disconnectingGRIBI) Get(_ *spb.GetRequest, _ spb.GRIBI_GetServer) error
 	return status.Errorf(codes.Unimplemented, "unimplemented")
 }
 
+func newDisconnectingFake(t testing.TB, mode disconnectMode) (*disconnectingGRIBI, string, func()) {
+	creds, err := credentials.NewServerTLSFromFile(testcommon.TLSCreds())
+	if err != nil {
+		t.Fatalf("cannot load TLS credentials, got err: %v", err)
+	}
+	srv := grpc.NewServer(grpc.Creds(creds))
+	if err != nil {
+		t.Fatalf("cannot create server, err: %v", err)
+	}
+	s := &disconnectingGRIBI{mode: mode}
+	spb.RegisterGRIBIServer(srv, s)
+
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("cannot listen, err: %v", err)
+	}
+
+	go srv.Serve(l)
+	return s, l.Addr().String(), srv.Stop
+}
+
 func TestDone(t *testing.T) {
 	tests := []struct {
-		desc         string
-		inMode       disconnectMode
-		inReconnects int
-		wantDone     bool
+		desc                 string
+		inMode               disconnectMode
+		inReconnects         int
+		inTimeoutSeconds     int
+		inWaitTimeoutSeconds int
+		wantDone             bool
 	}{{
 		desc:         "EOF returned",
 		inMode:       EOF,
@@ -1731,10 +1815,12 @@ func TestDone(t *testing.T) {
 		inReconnects: 1,
 		wantDone:     true,
 	}, {
-		desc:         "context is cancelled",
-		inMode:       LongPauseError,
-		inReconnects: 0,
-		wantDone:     false,
+		desc:                 "inner context is cancelled",
+		inMode:               LongPauseError,
+		inTimeoutSeconds:     10,
+		inWaitTimeoutSeconds: 1,
+		inReconnects:         1,
+		wantDone:             true,
 	}, {
 		desc:         "no error returned",
 		inMode:       NoError,
@@ -1745,43 +1831,41 @@ func TestDone(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 
-			creds, err := credentials.NewServerTLSFromFile(testcommon.TLSCreds())
-			if err != nil {
-				t.Fatalf("cannot load TLS credentials, got err: %v", err)
-			}
-			srv := grpc.NewServer(grpc.Creds(creds))
-			if err != nil {
-				t.Fatalf("cannot create server, err: %v", err)
-			}
-			spb.RegisterGRIBIServer(srv, &disconnectingGRIBI{mode: tt.inMode})
-
-			l, err := net.Listen("tcp", "localhost:0")
-			if err != nil {
-				t.Fatalf("cannot listen, err: %v", err)
-			}
-
-			go srv.Serve(l)
-			defer srv.Stop()
+			_, addr, stopSrv := newDisconnectingFake(t, tt.inMode)
+			defer stopSrv()
 
 			c, err := New()
 			if err != nil {
 				t.Fatalf("cannot create client, err: %v", err)
 			}
-			dctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer func() {
-				cancel()
-			}()
-			if err := c.Dial(dctx, l.Addr().String()); err != nil {
-				t.Fatalf("c.Dial(_, %s): cannot dial fake server, got err: %v", l.Addr().String(), err)
+
+			dur := 5 * time.Second
+			if tt.inTimeoutSeconds != 0 {
+				dur = time.Duration(tt.inTimeoutSeconds) * time.Second
+			}
+
+			dctx, cancel := context.WithTimeout(context.Background(), dur)
+			defer cancel()
+			if err := c.Dial(dctx, addr); err != nil {
+				t.Fatalf("c.Dial(_, %s): cannot dial fake server, got err: %v", addr, err)
 			}
 
 			for i := 0; i <= tt.inReconnects; i++ {
+				t.Logf("running reconnect %d for %s\n", i, tt.desc)
 				var (
 					wg     sync.WaitGroup
 					retErr error
 				)
 
-				if err := c.Connect(dctx); err != nil {
+				innerDur := 5 * time.Second
+				if tt.inWaitTimeoutSeconds != 0 {
+					innerDur = time.Duration(tt.inWaitTimeoutSeconds) * time.Second
+				}
+
+				waitCtx, cancel := context.WithTimeout(dctx, innerDur)
+				defer cancel()
+
+				if err := c.Connect(waitCtx); err != nil {
 					retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
 				}
 
@@ -1797,6 +1881,7 @@ func TestDone(t *testing.T) {
 						got = true
 						return
 					case <-ctx.Done():
+						// This case only happens if the overall test times out.
 					}
 				}(dctx)
 
@@ -1807,6 +1892,297 @@ func TestDone(t *testing.T) {
 				if got != tt.wantDone {
 					t.Fatalf("did not get done signal, got: %v, want: %v", got, tt.wantDone)
 				}
+				c.StopSending()
+				c.Reset()
+			}
+		})
+	}
+}
+
+func TestReconnect(t *testing.T) {
+	// How many runs to do for unstable tests. Note that some tests have relatively long runtime
+	// so this might result in test target timeouts if too high.
+	manyRuns := 30
+	tests := []struct {
+		desc           string
+		inModes        []disconnectMode // Must use Pause modes if results are expected.
+		inReconnects   int
+		inClientOpts   []Opt
+		inMsgs         []*spb.ModifyRequest
+		inMsgFn        func(int) []*spb.ModifyRequest
+		inCallStop     bool
+		inQBeforeStart bool
+		inRunTime      time.Duration
+		inSkipReset    bool
+		wantMsgs       []*spb.ModifyRequest
+		wantConnectErr bool
+	}{{
+		desc:         "reconnect - stop sending not called",
+		inModes:      []disconnectMode{PauseNoError, PauseError, PauseEOF},
+		inReconnects: 1,
+		inClientOpts: []Opt{
+			PersistEntries(),
+		},
+		inMsgs: []*spb.ModifyRequest{{
+			ElectionId: &spb.Uint128{Low: 1},
+		}},
+		wantMsgs: []*spb.ModifyRequest{
+			// Must get parameters before any other message.
+			{Params: &spb.SessionParameters{Persistence: spb.SessionParameters_PRESERVE}},
+			{ElectionId: &spb.Uint128{Low: 1}},
+			{Params: &spb.SessionParameters{Persistence: spb.SessionParameters_PRESERVE}},
+			{ElectionId: &spb.Uint128{Low: 1}},
+		},
+	}, {
+		desc:         "reconnect - stop sending called",
+		inModes:      []disconnectMode{PauseNoError, PauseError, EOF},
+		inReconnects: 1,
+		inClientOpts: []Opt{
+			PersistEntries(),
+		},
+		inMsgs: []*spb.ModifyRequest{{
+			ElectionId: &spb.Uint128{Low: 1},
+		}},
+		inCallStop: true,
+		wantMsgs: []*spb.ModifyRequest{
+			// Must get parameters before any other message.
+			{Params: &spb.SessionParameters{Persistence: spb.SessionParameters_PRESERVE}},
+			{ElectionId: &spb.Uint128{Low: 1}},
+			{Params: &spb.SessionParameters{Persistence: spb.SessionParameters_PRESERVE}},
+			{ElectionId: &spb.Uint128{Low: 1}},
+		},
+	}, {
+		desc:         "reconnect - client qs before calling start",
+		inModes:      []disconnectMode{PauseNoError, PauseError, PauseEOF},
+		inReconnects: 1,
+		inClientOpts: []Opt{
+			PersistEntries(),
+		},
+		inMsgs: []*spb.ModifyRequest{{
+			ElectionId: &spb.Uint128{Low: 1},
+		}},
+		inQBeforeStart: true,
+		wantMsgs: []*spb.ModifyRequest{
+			// Must get parameters before any other message.
+			{Params: &spb.SessionParameters{Persistence: spb.SessionParameters_PRESERVE}},
+			{ElectionId: &spb.Uint128{Low: 1}},
+			{Params: &spb.SessionParameters{Persistence: spb.SessionParameters_PRESERVE}},
+			{ElectionId: &spb.Uint128{Low: 1}},
+		},
+	}, {
+		desc:         "reconnect - client qs before calling start but has stopped",
+		inModes:      []disconnectMode{PauseNoError, PauseError, PauseEOF},
+		inReconnects: 1,
+		inClientOpts: []Opt{
+			PersistEntries(),
+		},
+		inMsgs: []*spb.ModifyRequest{{
+			ElectionId: &spb.Uint128{Low: 1},
+		}},
+		inCallStop:     true,
+		inQBeforeStart: true,
+		wantMsgs: []*spb.ModifyRequest{
+			// Must get parameters before any other message.
+			{Params: &spb.SessionParameters{Persistence: spb.SessionParameters_PRESERVE}},
+			{ElectionId: &spb.Uint128{Low: 1}},
+			{Params: &spb.SessionParameters{Persistence: spb.SessionParameters_PRESERVE}},
+			{ElectionId: &spb.Uint128{Low: 1}},
+		},
+	}, {
+		desc:         "very unstable server",
+		inModes:      []disconnectMode{PauseNoError, PauseEOF, PauseError},
+		inReconnects: manyRuns,
+		inClientOpts: []Opt{
+			PersistEntries(),
+			ElectedPrimaryClient(&spb.Uint128{Low: 42}),
+		},
+		inMsgFn: func(attempt int) []*spb.ModifyRequest {
+			return []*spb.ModifyRequest{
+				{ElectionId: &spb.Uint128{Low: uint64(42 + attempt)}},
+			}
+		},
+		inRunTime: time.Duration(manyRuns) * 2 * time.Second,
+		wantMsgs: func() []*spb.ModifyRequest {
+			msgs := []*spb.ModifyRequest{}
+			for i := 0; i <= manyRuns; i++ {
+				msgs = append(msgs,
+					[]*spb.ModifyRequest{
+						{Params: &spb.SessionParameters{Persistence: spb.SessionParameters_PRESERVE, Redundancy: spb.SessionParameters_SINGLE_PRIMARY}},
+						{ElectionId: &spb.Uint128{Low: 42}},
+						{ElectionId: &spb.Uint128{Low: uint64(42 + i)}},
+					}...)
+			}
+			return msgs
+		}(),
+	}, {
+		desc:         "very unstable server - don't check results",
+		inModes:      []disconnectMode{NoError, EOF},
+		inReconnects: manyRuns,
+		inClientOpts: []Opt{
+			PersistEntries(),
+			ElectedPrimaryClient(&spb.Uint128{Low: 42}),
+		},
+		inMsgFn: func(attempt int) []*spb.ModifyRequest {
+			return []*spb.ModifyRequest{
+				{ElectionId: &spb.Uint128{Low: uint64(42 + attempt)}},
+			}
+		},
+		inRunTime: time.Duration(manyRuns) * 2 * time.Second,
+	}}
+
+	for _, tt := range tests {
+		for _, mode := range tt.inModes {
+			t.Run(fmt.Sprintf("%s - mode %s", tt.desc, mode), func(t *testing.T) {
+				server, addr, stop := newDisconnectingFake(t, mode)
+				server.receiver = true
+				defer stop()
+
+				c, err := New(tt.inClientOpts...)
+				if err != nil {
+					t.Fatalf("cannot create client, err: %v", err)
+				}
+				to := tt.inRunTime
+				if to.Seconds() < 2.0 {
+					to = 2 * time.Second
+				}
+				dctx, cancel := context.WithTimeout(context.Background(), to)
+				defer cancel()
+
+				if err := c.Dial(dctx, addr); err != nil {
+					t.Fatalf("c.Dial(_, %s): cannot dial fake server, got err: %v", addr, err)
+				}
+
+				for i := 0; i <= tt.inReconnects; i++ {
+					t.Logf("reconnecting to server (mode: %s), attempt: %d", mode, i)
+					var (
+						wg     sync.WaitGroup
+						retErr error
+					)
+
+					select {
+					case <-dctx.Done():
+						t.Fatalf("dial context timed out, %v", err)
+					default:
+					}
+
+					waitCtx, stopWait := context.WithTimeout(dctx, 200*time.Millisecond)
+					defer stopWait()
+
+					if err := c.Connect(waitCtx); err != nil {
+						retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
+					}
+
+					runMsg := tt.inMsgs
+					if tt.inMsgFn != nil {
+						runMsg = tt.inMsgFn(i)
+					}
+
+					if tt.inQBeforeStart {
+						for _, m := range runMsg {
+							c.Q(m)
+						}
+					}
+
+					c.StartSending()
+					if tt.inCallStop {
+						defer c.StopSending()
+					}
+
+					if !tt.inQBeforeStart {
+						for _, m := range runMsg {
+							c.Q(m)
+						}
+					}
+
+					var reconnected bool
+					wg.Add(1)
+					go func(ctx context.Context) {
+						defer wg.Done()
+						select {
+						case <-c.Done():
+							reconnected = true
+							return
+						case <-ctx.Done():
+							reconnected = true
+							return
+						}
+					}(waitCtx)
+
+					wg.Wait()
+					// Sanity check - we should have no error, and have the server go away.
+					if retErr != nil {
+						t.Fatalf("did not connect to server, got: %v, want: nil", retErr)
+					}
+					if !reconnected {
+						t.Fatalf("did not reconnect to server, got: %v, want: true", reconnected)
+					}
+					c.Reset()
+				}
+
+				if tt.wantMsgs != nil {
+					// Now check the messages that we saw at the server.
+					server.mu.Lock()
+					defer server.mu.Unlock()
+					if diff := cmp.Diff(server.msgs, tt.wantMsgs, protocmp.Transform()); diff != "" {
+						t.Fatalf("did not get expected messages, diff(-got,+want):\n%s", diff)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestReset(t *testing.T) {
+	newC := func() *Client {
+		c, _ := New()
+		return c
+	}
+	tests := []struct {
+		desc     string
+		inClient *Client
+	}{{
+		desc:     "no fields set",
+		inClient: newC(),
+	}, {
+		desc: "set fields",
+		inClient: func() *Client {
+			c, _ := New()
+			c.sendErr = []error{errors.New("fish")}
+			c.readErr = []error{errors.New("chips")}
+			c.qs.sendq = []*spb.ModifyRequest{{}}
+			c.qs.pendq = &pendingQueue{
+				Ops: map[uint64]*PendingOp{1: {}},
+			}
+			c.qs.resultq = []*OpResult{{}}
+			return c
+		}(),
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			// Setup, make sure it looks like our goroutines are started.
+			tt.inClient.sendExitCh = make(chan struct{}, 1)
+			tt.inClient.sendExitCh <- struct{}{}
+			close(tt.inClient.sendExitCh)
+
+			tt.inClient.Reset()
+			c := tt.inClient
+			// Don't compare the whole struct because there are unexported fields and it is not for public consumption.
+
+			if len(c.sendErr) != 0 {
+				t.Errorf("unexpected send errors, got: %d, want: 0", len(c.sendErr))
+			}
+			if len(c.readErr) != 0 {
+				t.Errorf("unexpected read errors, got: %d, want: 0", len(c.readErr))
+			}
+			if len(c.qs.sendq) != 0 {
+				t.Errorf("unexpected send queue got: %d, want: 0", len(c.qs.sendq))
+			}
+			if len(c.qs.pendq.Ops) != 0 {
+				t.Errorf("unexpected pending queue, got: %d, want: 0", len(c.qs.pendq.Ops))
+			}
+			if len(c.qs.resultq) != 0 {
+				t.Errorf("unexpected results queue, got: %d, want: 0", len(c.qs.resultq))
 			}
 		})
 	}

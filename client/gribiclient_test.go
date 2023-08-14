@@ -1853,8 +1853,8 @@ func TestDone(t *testing.T) {
 			for i := 0; i <= tt.inReconnects; i++ {
 				t.Logf("running reconnect %d for %s\n", i, tt.desc)
 				var (
-					wg      sync.WaitGroup
-					connErr string
+					wg     sync.WaitGroup
+					retErr error
 				)
 
 				innerDur := 5 * time.Second
@@ -1866,7 +1866,7 @@ func TestDone(t *testing.T) {
 				defer cancel()
 
 				if err := c.Connect(waitCtx); err != nil {
-					connErr = fmt.Sprintf("Connect(): cannot connect to server, %v", err)
+					retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
 				}
 
 				c.Q(&spb.ModifyRequest{})
@@ -1886,8 +1886,8 @@ func TestDone(t *testing.T) {
 				}(dctx)
 
 				wg.Wait()
-				if connErr != "" {
-					t.Fatalf("did not connect to server, got: %s, want: nil", connErr)
+				if retErr != nil {
+					t.Fatalf("did not connect to server, got: %v, want: nil", retErr)
 				}
 				if got != tt.wantDone {
 					t.Fatalf("did not get done signal, got: %v, want: %v", got, tt.wantDone)

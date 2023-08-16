@@ -1914,6 +1914,7 @@ func TestReconnect(t *testing.T) {
 		inQBeforeStart bool
 		inRunTime      time.Duration
 		inSkipReset    bool
+		inStopServer   bool
 		wantMsgs       []*spb.ModifyRequest
 		wantConnectErr bool
 	}{{
@@ -2028,6 +2029,12 @@ func TestReconnect(t *testing.T) {
 			}
 		},
 		inRunTime: time.Duration(manyRuns) * 2 * time.Second,
+	}, {
+		desc:         "server that isn't even listening",
+		inModes:      []disconnectMode{EOF}, // Doesn't matter, we are not going to dial it.
+		inReconnects: 10,                    // More than the buffer depth of modifyCh.
+		inRunTime:    5 * time.Second,
+		inStopServer: true,
 	}}
 
 	for _, tt := range tests {
@@ -2053,6 +2060,10 @@ func TestReconnect(t *testing.T) {
 				}
 
 				for i := 0; i <= tt.inReconnects; i++ {
+					if tt.inStopServer && i > 0 {
+						// Kill the server so that its no longer listening.
+						stop()
+					}
 					t.Logf("reconnecting to server (mode: %s), attempt: %d", mode, i)
 					var (
 						wg     sync.WaitGroup
@@ -2069,7 +2080,11 @@ func TestReconnect(t *testing.T) {
 					defer stopWait()
 
 					if err := c.Connect(waitCtx); err != nil {
-						retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
+						switch {
+						case tt.inStopServer && i == 0, !tt.inStopServer:
+							retErr = fmt.Errorf("Connect(): cannot connect to server, %v", err)
+						default:
+						}
 					}
 
 					runMsg := tt.inMsgs

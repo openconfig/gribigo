@@ -40,6 +40,8 @@ import (
 var (
 	// debug enables detailed debug reporting throughout the client.
 	debug = false
+	// modifyBuffer specifies the depth of the modify channel's buffer.
+	modifyBuffer = 5
 )
 
 var (
@@ -142,7 +144,7 @@ func New(opts ...Opt) (*Client, error) {
 		// modifyCh is buffered to ensure that there are no races writing to it - we
 		// expect that 5 messages is sufficient to ensure that there is time for the
 		// sender to shutdown.
-		modifyCh: make(chan *spb.ModifyRequest, 5),
+		modifyCh: make(chan *spb.ModifyRequest, modifyBuffer),
 		resultq:  []*OpResult{},
 
 		sending: atomic.NewBool(false),
@@ -255,6 +257,8 @@ func (c *Client) Reset() {
 	defer c.qs.resultMu.Unlock()
 	c.qs.resultq = nil
 
+	c.qs.modifyCh = make(chan *spb.ModifyRequest, 5)
+
 	// Empty the done channel if a reader did not take the message from it.
 	select {
 	case <-c.doneCh:
@@ -269,9 +273,8 @@ func (c *Client) disconnect() {
 		skipClose = true
 	}
 	if !skipClose {
-		// goroutines have started and have not already exited, so we can
-		// safely called c.q()
-		c.q(nil)
+		// Close the modifyCh to signal to the request handler to exit.
+		close(c.qs.modifyCh)
 	}
 	c.wg.Wait()
 }
@@ -444,9 +447,9 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	// reqHandler handles an input modify request and returns a bool when
 	// the loop within which it is called should exit.
-	reqHandler := func(m *spb.ModifyRequest) bool {
-		if m == nil {
-			// client close requested by disconnect().
+	reqHandler := func(m *spb.ModifyRequest, readOK bool) bool {
+		if !readOK {
+			// client close requested by disconnect(), since the modifyCh is closed.
 			if err := stream.CloseSend(); err != nil {
 				log.Errorf("got error closing session: %v", err)
 			}
@@ -486,7 +489,8 @@ func (c *Client) Connect(ctx context.Context) error {
 				return
 			}
 
-			if done := reqHandler(<-c.qs.modifyCh); done {
+			v, ok := <-c.qs.modifyCh
+			if done := reqHandler(v, ok); done {
 				log.V(2).Infof("shutting down send goroutine, id: %s, cause: HANDLER", id)
 				return
 			}

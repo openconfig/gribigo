@@ -69,7 +69,19 @@ const (
 	NextHop
 	// NextHopGroup specifies the next-hop-group AFT.
 	NextHopGroup
+	// MPLS specifies the label-entry/MPLS AFT.
+	MPLS
 )
+
+func (a AFT) String() string {
+	return map[AFT]string{
+		All:          "ALL",
+		IPv4:         "IPv4",
+		NextHop:      "NextHop",
+		NextHopGroup: "NextHopGroup",
+		MPLS:         "MPLS",
+	}[a]
+}
 
 // aftMap maps between an AFT enumerated type and the specified type in the
 // gRIBI protobuf.

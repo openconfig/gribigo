@@ -3210,8 +3210,8 @@ func TestResolvedEntryHook(t *testing.T) {
 				},
 			},
 		},
-		inHook: func(_ map[string]*aft.RIB, _ constants.OpType, netinst, prefix string) {
-			gotCh <- fmt.Sprintf("%s->%s", netinst, prefix)
+		inHook: func(_ map[string]*aft.RIB, _ constants.OpType, netinst string, aft constants.AFT, prefix any, _ ...ResolvedDetails) {
+			gotCh <- fmt.Sprintf("%s:%s->%s", aft, netinst, prefix)
 		},
 		checkFn: func() error {
 			got := <-gotCh
@@ -3219,7 +3219,7 @@ func TestResolvedEntryHook(t *testing.T) {
 			if !ok {
 				return fmt.Errorf("got wrong type of result, got: %T, want: string", got)
 			}
-			if got, want := gotS, fmt.Sprintf("%s->10.0.0.0/8", defName); got != want {
+			if got, want := gotS, fmt.Sprintf("IPv4:%s->10.0.0.0/8", defName); got != want {
 				return fmt.Errorf("did not get expected result, got: %v, want: %v", got, want)
 			}
 			return nil
@@ -3239,10 +3239,16 @@ func TestResolvedEntryHook(t *testing.T) {
 				},
 			},
 		},
-		inHook: func(ribs map[string]*aft.RIB, op constants.OpType, netinst, prefix string) {
-			summ, err := afthelper.NextHopAddrsForPrefix(ribs, netinst, prefix)
+		inHook: func(ribs map[string]*aft.RIB, op constants.OpType, netinst string, aft constants.AFT, prefix any, _ ...ResolvedDetails) {
+			p, ok := prefix.(string)
+			if aft != constants.IPv4 || !ok {
+				gotCh <- fmt.Errorf("invalid prefix received, mismatched AFT (%s) or prefix data type (%v:%T)", aft, prefix, prefix)
+				return
+			}
+			summ, err := afthelper.NextHopAddrsForPrefix(ribs, netinst, p)
 			if err != nil {
 				gotCh <- err
+				return
 			}
 			gotCh <- summ
 		},
@@ -3261,6 +3267,38 @@ func TestResolvedEntryHook(t *testing.T) {
 				}
 				if diff := cmp.Diff(got, want); diff != "" {
 					return fmt.Errorf("got diff, %s", diff)
+				}
+			}
+			return nil
+		},
+	}, {
+		desc:  "check that hook was called for an mpls entry",
+		inRIB: baseRIB(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+						LabelUint64: 42,
+					},
+					LabelEntry: &aftpb.Afts_LabelEntry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inHook: func(ribs map[string]*aft.RIB, op constants.OpType, netinst string, aft constants.AFT, key any, _ ...ResolvedDetails) {
+			gotCh <- fmt.Sprintf("%s->%s:%d", netinst, aft, key)
+		},
+		checkFn: func() error {
+			got := <-gotCh
+			switch t := got.(type) {
+			case error:
+				return fmt.Errorf("got error, %v", t)
+			case string:
+				if got, want := t, fmt.Sprintf("%s->MPLS:42", defName); got != want {
+					return fmt.Errorf("did not get expected result, got: %v, want: %v", got, want)
 				}
 			}
 			return nil

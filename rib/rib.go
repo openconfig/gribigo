@@ -604,8 +604,12 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 		return referencingRIB, nil
 	}
 
-	// TODO(robjs): currently, the post-change hook is not called for deletes. Add
-	// support for calling this hook after delete.
+	var (
+		callHook bool
+		aft      constants.AFT
+		key      any
+	)
+
 	switch {
 	case err != nil:
 		fails = append(fails, &OpResult{
@@ -622,6 +626,9 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 				return nil, nil, err
 			}
 			referencingRIB.decNHGRefCount(originalv4.GetNextHopGroup())
+			callHook = true
+			aft = constants.IPv4
+			key = originalv4.GetPrefix()
 		case originalNHG != nil:
 			for id := range originalNHG.NextHop {
 				niR.decNHRefCount(id)
@@ -632,6 +639,9 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 				return nil, nil, err
 			}
 			referencingRIB.decNHGRefCount(originalMPLS.GetNextHopGroup())
+			callHook = true
+			aft = constants.MPLS
+			key = originalMPLS.GetLabel()
 		}
 
 		log.V(2).Infof("operation %d deleted from RIB successfully", op.GetId())
@@ -644,6 +654,12 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 			ID: op.GetId(),
 			Op: op,
 		})
+	}
+
+	if callHook {
+		if err := r.callResolvedEntryHook(constants.Delete, ni, aft, key); err != nil {
+			return oks, fails, fmt.Errorf("cannot run resolvedEntryHook, %v", err)
+		}
 	}
 	return oks, fails, nil
 }

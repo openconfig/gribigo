@@ -61,8 +61,17 @@ type RIBHookFn func(constants.OpType, int64, string, ygot.ValidatedGoStruct)
 //   - the prefix that was impacted.
 //   - the OpType that the entry was subject to (add/replace/delete).
 //   - a string indicating the network instance that the operation was within
-//   - a string indicating the prefix that was impacted
-type ResolvedEntryFn func(ribs map[string]*aft.RIB, optype constants.OpType, netinst, prefix string)
+//   - an enumerated value indicating the AFT the operation was within.
+//   - an any that indicates the impacted AFT entry's key. The function must cast
+//     the any to the relevant type.
+//   - a set of details that the handler function may utilise.
+type ResolvedEntryFn func(ribs map[string]*aft.RIB, optype constants.OpType, netinst string, aft constants.AFT, key any, dets ...ResolvedDetails)
+
+// ResolvedDetails is an interface implemented by any type that is returned as
+// part of the AFT details.
+type ResolvedDetails interface {
+	isResolvedDetail()
+}
 
 // RIBHolderCheckFunc is a function that is used as a check to determine whether
 // a RIB entry is eligible for a particular operation. It takes arguments of:
@@ -469,10 +478,24 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 			Op: op,
 		})
 
-		// call the resolved entry hook if this was an IPv4 prefix.
-		if v4Prefix != "" {
-			if err := r.callResolvedEntryHook(constants.Add, ni, v4Prefix); err != nil {
-				return fmt.Errorf("cannot run resolvedEntyHook, %v", err)
+		var (
+			call bool
+			aft  constants.AFT
+			key  any
+		)
+		switch {
+		case v4Prefix != "":
+			call = true
+			aft = constants.IPv4
+			key = v4Prefix
+		case mplsLabel != 0:
+			call = true
+			aft = constants.MPLS
+			key = mplsLabel
+		}
+		if call {
+			if err := r.callResolvedEntryHook(constants.Add, ni, aft, key); err != nil {
+				return fmt.Errorf("cannot run resolvedEntryHook, %v", err)
 			}
 		}
 
@@ -494,10 +517,15 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 	return nil
 }
 
-// callResolvedEntryHook calls the resolvedEntryHook based on the operation optype on
-// prefix prefix within the network instance netinst occurring. It returns an error
-// if the hook cannot be called. Any error from the hook must be handled externally.
-func (r *RIB) callResolvedEntryHook(optype constants.OpType, netinst, prefix string) error {
+// callResolvedEntryHook calls the resolvedEntryHook supplying information about the triggering
+// operation. Particularky:
+//   - the operation is of type optype
+//   - it corresponds to the network instance netinst
+//   - it is within the aft AFT
+//   - it affects the AFT table entry with key value key.
+//
+// It returns an error if the hook cannot be called. Any error from the hook must be handled externally.
+func (r *RIB) callResolvedEntryHook(optype constants.OpType, netinst string, aft constants.AFT, key any) error {
 	if r.resolvedEntryHook == nil {
 		return nil
 	}
@@ -506,7 +534,7 @@ func (r *RIB) callResolvedEntryHook(optype constants.OpType, netinst, prefix str
 	if err != nil {
 		return err
 	}
-	go r.resolvedEntryHook(ribs, optype, netinst, prefix)
+	go r.resolvedEntryHook(ribs, optype, netinst, aft, key)
 	return nil
 }
 

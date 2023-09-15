@@ -886,7 +886,61 @@ func TestConcreteIPv4Proto(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			got, err := concreteIPv4Proto(tt.inEntry)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("did not get expec	ted error, got: %v, wantErr? %v", err, tt.wantErr)
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(got, tt.want, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestConcreteMPLSProto(t *testing.T) {
+	tests := []struct {
+		desc    string
+		inEntry *aft.Afts_LabelEntry
+		want    *aftpb.Afts_LabelEntryKey
+		wantErr bool
+	}{{
+		desc: "label only",
+		inEntry: &aft.Afts_LabelEntry{
+			Label: aft.UnionUint32(42),
+		},
+		want: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+	}, {
+		desc: "enumerated label",
+		inEntry: &aft.Afts_LabelEntry{
+			Label: aft.MplsTypes_MplsLabel_Enum_IPV4_EXPLICIT_NULL, // not allowed
+		},
+		wantErr: true,
+	}, {
+		desc: "label with metadata set",
+		inEntry: &aft.Afts_LabelEntry{
+			Label:         aft.UnionUint32(42),
+			EntryMetadata: []byte{4, 3, 2, 1},
+		},
+		want: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{
+				EntryMetadata: &wpb.BytesValue{
+					Value: []byte{4, 3, 2, 1},
+				},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := concreteMPLSProto(tt.inEntry)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}
 			if diff := cmp.Diff(got, tt.want, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
 				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
@@ -2925,6 +2979,14 @@ func TestGetRIB(t *testing.T) {
 			t.Fatalf("cannot build RIB, %v", err)
 		}
 
+		cr = &aft.RIB{}
+		mpls := cr.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+		mpls.NextHopGroup = ygot.Uint64(42)
+
+		if _, err := r.doAddMPLS(42, cr); err != nil {
+			t.Fatalf("cannot build RIB, %v", err)
+		}
+
 		return r
 	}()
 
@@ -2965,6 +3027,38 @@ func TestGetRIB(t *testing.T) {
 					Ipv4: &aftpb.Afts_Ipv4EntryKey{
 						Prefix: "1.1.1.1/32",
 						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc: "mpls entry",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("VRF-1")
+
+			cr := &aft.RIB{}
+			mpls := cr.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+			mpls.NextHopGroup = ygot.Uint64(42)
+
+			if _, err := r.doAddMPLS(42, cr); err != nil {
+				t.Fatalf("cannot build RIB, %v", err)
+			}
+			return r
+		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-1",
+				Entry: &spb.AFTEntry_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
 							NextHopGroup: &wpb.UintValue{Value: 42},
 						},
 					},
@@ -3044,6 +3138,27 @@ func TestGetRIB(t *testing.T) {
 					Ipv4: &aftpb.Afts_Ipv4EntryKey{
 						Prefix: "42.42.42.42/32",
 						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to mpls",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_MPLS: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
 							NextHopGroup: &wpb.UintValue{Value: 42},
 						},
 					},

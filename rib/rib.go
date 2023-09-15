@@ -1744,6 +1744,35 @@ func concreteIPv4Proto(e *aft.Afts_Ipv4Entry) (*aftpb.Afts_Ipv4EntryKey, error) 
 	}, nil
 }
 
+// concreteMPLSProto takes the input LabelEntry GoStruct and returns it as a gRIBI
+// LabelEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
+func concreteMPLSProto(e *aft.Afts_LabelEntry) (*aftpb.Afts_LabelEntryKey, error) {
+	mplsProto := &aftpb.Afts_LabelEntry{}
+	if err := protoFromGoStruct(e, &gpb.Path{
+		Elem: []*gpb.PathElem{{
+			Name: "afts",
+		}, {
+			Name: "mpls",
+		}, {
+			Name: "label-entry",
+		}},
+	}, mplsProto); err != nil {
+		return nil, fmt.Errorf("cannot marshal MPLS label %v, %v", e.GetLabel(), err)
+	}
+
+	l, ok := e.GetLabel().(aft.UnionUint32)
+	if !ok {
+		return nil, fmt.Errorf("cannot marshal MPLS label %v, incorrect type %T", e.GetLabel(), e.GetLabel())
+	}
+
+	return &aftpb.Afts_LabelEntryKey{
+		Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+			LabelUint64: uint64(l),
+		},
+		LabelEntry: mplsProto,
+	}, nil
+}
+
 // concreteNextHopProto takes the input NextHop GoStruct and returns it as a gRIBI
 // NextHopEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func concreteNextHopProto(e *aft.Afts_NextHop) (*aftpb.Afts_NextHopKey, error) {
@@ -1844,6 +1873,7 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 	if filter[spb.AFTType_ALL] {
 		filter = map[spb.AFTType]bool{
 			spb.AFTType_IPV4:          true,
+			spb.AFTType_MPLS:          true,
 			spb.AFTType_NEXTHOP:       true,
 			spb.AFTType_NEXTHOP_GROUP: true,
 		}
@@ -1864,6 +1894,28 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 						NetworkInstance: r.name,
 						Entry: &spb.AFTEntry_Ipv4{
 							Ipv4: p,
+						},
+					}},
+				}
+			}
+		}
+	}
+
+	if filter[spb.AFTType_MPLS] {
+		for lbl, e := range r.r.Afts.LabelEntry {
+			select {
+			case <-stopCh:
+				return nil
+			default:
+				p, err := concreteMPLSProto(e)
+				if err != nil {
+					return status.Errorf(codes.Internal, "cannot marshal MPLS entry for label %d into GetResponse, %v", lbl, err)
+				}
+				msgCh <- &spb.GetResponse{
+					Entry: []*spb.AFTEntry{{
+						NetworkInstance: r.name,
+						Entry: &spb.AFTEntry_Mpls{
+							Mpls: p,
 						},
 					}},
 				}

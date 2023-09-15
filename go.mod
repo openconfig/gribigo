@@ -36,7 +36,7 @@ require (
 	github.com/openconfig/gnoi v0.1.0 // indirect
 	github.com/openconfig/gnsi v1.2.2 // indirect
 	github.com/openconfig/gocloser v0.0.0-20220310182203-c6c950ed3b0b // indirect
-	github.com/openconfig/lemming v0.3.2-0.20230901214817-e03a3e5bdcd3 // indirect
+	github.com/openconfig/lemming v0.3.2-0.20230914210403-c6484d12af0a // indirect
 	github.com/openconfig/ygnmi v0.8.7 // indirect
 	github.com/osrg/gobgp/v3 v3.14.0 // indirect
 	github.com/p4lang/p4runtime v1.4.0-rc.5.0.20220728214547-13f0d02a521e // indirect

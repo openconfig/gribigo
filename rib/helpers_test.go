@@ -54,13 +54,13 @@ func TestRIBFromGetResponses(t *testing.T) {
 		wantRIB: &RIB{
 			defaultName: defaultName,
 			niRIB: map[string]*RIBHolder{
-				"DEFAULT": &RIBHolder{
+				"DEFAULT": {
 					name: "DEFAULT",
 					r: &aft.RIB{
 						Afts: &aft.Afts{},
 					},
 				},
-				"VRF-1": &RIBHolder{
+				"VRF-1": {
 					name: "VRF-1",
 					r: &aft.RIB{
 						Afts: &aft.Afts{
@@ -94,7 +94,7 @@ func TestRIBFromGetResponses(t *testing.T) {
 		wantRIB: &RIB{
 			defaultName: defaultName,
 			niRIB: map[string]*RIBHolder{
-				"DEFAULT": &RIBHolder{
+				"DEFAULT": {
 					name: "DEFAULT",
 					r: &aft.RIB{
 						Afts: &aft.Afts{
@@ -128,7 +128,7 @@ func TestRIBFromGetResponses(t *testing.T) {
 		wantRIB: &RIB{
 			defaultName: defaultName,
 			niRIB: map[string]*RIBHolder{
-				"DEFAULT": &RIBHolder{
+				"DEFAULT": {
 					name: "DEFAULT",
 					r: &aft.RIB{
 						Afts: &aft.Afts{
@@ -164,7 +164,7 @@ func TestRIBFromGetResponses(t *testing.T) {
 		wantRIB: &RIB{
 			defaultName: defaultName,
 			niRIB: map[string]*RIBHolder{
-				"DEFAULT": &RIBHolder{
+				"DEFAULT": {
 					name: "DEFAULT",
 					r: &aft.RIB{
 						Afts: &aft.Afts{
@@ -208,7 +208,7 @@ func TestRIBFromGetResponses(t *testing.T) {
 		wantRIB: &RIB{
 			defaultName: defaultName,
 			niRIB: map[string]*RIBHolder{
-				"DEFAULT": &RIBHolder{
+				"DEFAULT": {
 					name: "DEFAULT",
 					r: &aft.RIB{
 						Afts: &aft.Afts{
@@ -221,7 +221,7 @@ func TestRIBFromGetResponses(t *testing.T) {
 						},
 					},
 				},
-				"VRF-1": &RIBHolder{
+				"VRF-1": {
 					name: "VRF-1",
 					r: &aft.RIB{
 						Afts: &aft.Afts{

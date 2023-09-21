@@ -27,7 +27,7 @@ import (
 	"github.com/openconfig/ygot/ygot"
 )
 
-func TestRIBFromGetResponses(t *testing.T) {
+func TestFromGetResponses(t *testing.T) {
 	defaultName := "DEFAULT"
 	tests := []struct {
 		desc          string
@@ -240,9 +240,9 @@ func TestRIBFromGetResponses(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := RIBFromGetResponses(tt.inDefaultName, tt.inResponses)
+			got, err := FromGetResponses(tt.inDefaultName, tt.inResponses)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("RIBFromGetResponses(...): did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+				t.Fatalf("FromGetResponses(...): did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}
 
 			if diff := cmp.Diff(got, tt.wantRIB,
@@ -251,7 +251,154 @@ func TestRIBFromGetResponses(t *testing.T) {
 				cmp.AllowUnexported(RIBHolder{}),
 				cmpopts.IgnoreFields(RIBHolder{}, "mu", "refCounts", "checkFn"),
 			); diff != "" {
-				t.Fatalf("RIBFromGetResponses(...): did not get expected RIB, diff(-got,+want):\n%s", diff)
+				t.Fatalf("FromGetResponses(...): did not get expected RIB, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestFakeRIB(t *testing.T) {
+	dn := "DEFAULT"
+	tests := []struct {
+		desc    string
+		inBuild func() *fakeRIB
+		wantRIB *RIB
+	}{{
+		desc: "nh only",
+		inBuild: func() *fakeRIB {
+			f := NewFake(dn)
+			if err := f.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, err: %v", err)
+			}
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							NextHop: map[uint64]*aft.Afts_NextHop{
+								1: {Index: ygot.Uint64(1)},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "ipv4 only",
+		inBuild: func() *fakeRIB {
+			f := NewFake(dn, DisableRIBCheckFn())
+			if err := f.InjectIPv4(dn, "1.0.0.0/24", 1); err != nil {
+				t.Fatalf("cannot add IPv4, err: %v", err)
+			}
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+								"1.0.0.0/24": {Prefix: ygot.String("1.0.0.0/24"), NextHopGroup: ygot.Uint64(1)},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "nhg only",
+		inBuild: func() *fakeRIB {
+			f := NewFake(dn, DisableRIBCheckFn())
+			if err := f.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG, err: %v", err)
+			}
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
+								1: {
+									Id: ygot.Uint64(1),
+									NextHop: map[uint64]*aft.Afts_NextHopGroup_NextHop{
+										1: {
+											Index:  ygot.Uint64(1),
+											Weight: ygot.Uint64(1),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "full ipv4 chain",
+		inBuild: func() *fakeRIB {
+			f := NewFake(dn)
+			// Discard the errors, since the test will check whether the entries are there.
+			f.InjectNH(dn, 1)
+			f.InjectNHG(dn, 1, map[uint64]uint64{1: 1})
+			f.InjectIPv4(dn, "192.0.2.1/32", 1)
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							NextHop: map[uint64]*aft.Afts_NextHop{
+								1: {
+									Index: ygot.Uint64(1),
+								},
+							},
+							NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
+								1: {
+									Id: ygot.Uint64(1),
+									NextHop: map[uint64]*aft.Afts_NextHopGroup_NextHop{
+										1: {
+											Index:  ygot.Uint64(1),
+											Weight: ygot.Uint64(1),
+										},
+									},
+								},
+							},
+							Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+								"192.0.2.1/32": {
+									Prefix:       ygot.String("192.0.2.1/32"),
+									NextHopGroup: ygot.Uint64(1),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got := tt.inBuild().RIB()
+			if diff := cmp.Diff(got, tt.wantRIB,
+				cmpopts.EquateEmpty(), cmp.AllowUnexported(RIB{}),
+				cmpopts.IgnoreFields(RIB{}, "nrMu", "pendMu", "ribCheck"),
+				cmp.AllowUnexported(RIBHolder{}),
+				cmpopts.IgnoreFields(RIBHolder{}, "mu", "refCounts", "checkFn"),
+			); diff != "" {
+				t.Fatalf("FakeRIB.RIB(...): did not get expected RIB, diff(-got,+want):\n%s", diff)
 			}
 		})
 	}

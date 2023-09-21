@@ -1009,7 +1009,7 @@ func checkElectionForModify(opID uint64, opElecID *spb.Uint128, election *electi
 	return nil, true, nil
 }
 
-// doGet implents the Get RPC for the gRIBI server. It handles the input GetRequest, writing
+// doGet implements the Get RPC for the gRIBI server. It handles the input GetRequest, writing
 // the set of GetResponses to the specified msgCh. When the Get is done, the function writes to
 // doneCh such that the caller knows that the work that is being done is complete. If a message
 // is received on stopCh the function returns. Any errors that are experienced are written to

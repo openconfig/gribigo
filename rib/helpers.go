@@ -17,14 +17,16 @@ package rib
 import (
 	"fmt"
 
+	"github.com/openconfig/ygot/ygot"
+
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
-	"github.com/openconfig/ygot/ygot"
+	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
 
-// RIBFromGetResponses returns a RIB from a slice of gRIBI GetResponse messages.
+// FromGetResponses returns a RIB from a slice of gRIBI GetResponse messages.
 // The supplied defaultName is used as the default network instance name.
-func RIBFromGetResponses(defaultName string, responses []*spb.GetResponse) (*RIB, error) {
+func FromGetResponses(defaultName string, responses []*spb.GetResponse) (*RIB, error) {
 	r := New(defaultName)
 	niAFTs := map[string]*aftpb.Afts{}
 
@@ -69,4 +71,90 @@ func RIBFromGetResponses(defaultName string, responses []*spb.GetResponse) (*RIB
 	}
 
 	return r, nil
+}
+
+// fakeRIB is a RIB for use in testing which exposes methods that can be used to more easily
+// construct a RIB's contents.
+type fakeRIB struct {
+	r *RIB
+}
+
+// NewFake returns a new Fake RIB.
+func NewFake(defaultName string, opt ...RIBOpt) *fakeRIB {
+	return &fakeRIB{
+		r: New(defaultName, opt...),
+	}
+}
+
+// RIB returns the constructed fake RIB to the caller.
+func (f *fakeRIB) RIB() *RIB {
+	return f.r
+}
+
+// InjectIPv4 adds an IPv4 entry to network instance ni, with the specified
+// prefix (pfx), and referencing the specified next-hop-group with index nhg.
+// It returns an error if the entry cannot be injected.
+func (f *fakeRIB) InjectIPv4(ni, pfx string, nhg uint64) error {
+	niR, ok := f.r.NetworkInstanceRIB(ni)
+	if !ok {
+		return fmt.Errorf("unknown NI, %s", ni)
+	}
+	if _, _, err := niR.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+		Prefix: pfx,
+		Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+			NextHopGroup: &wpb.UintValue{Value: nhg},
+		},
+	}, false); err != nil {
+		return fmt.Errorf("cannot add IPv4 entry, err: %v", err)
+	}
+
+	return nil
+}
+
+// InjectNHG adds a next-hop-group entry to network instance ni, with the specified
+// ID (nhgId). The next-hop-group contains the next hops specified in the nhs map,
+// with the key of the map being the next-hop ID and the value being the weight within
+// the group.
+func (f *fakeRIB) InjectNHG(ni string, nhgId uint64, nhs map[uint64]uint64) error {
+	niR, ok := f.r.NetworkInstanceRIB(ni)
+	if !ok {
+		return fmt.Errorf("unknown NI, %s", ni)
+	}
+
+	nhg := &aftpb.Afts_NextHopGroupKey{
+		Id:           nhgId,
+		NextHopGroup: &aftpb.Afts_NextHopGroup{},
+	}
+	for nh, weight := range nhs {
+		nhg.NextHopGroup.NextHop = append(nhg.NextHopGroup.NextHop, &aftpb.Afts_NextHopGroup_NextHopKey{
+			Index: nh,
+			NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+				Weight: &wpb.UintValue{Value: weight},
+			},
+		})
+	}
+
+	if _, _, err := niR.AddNextHopGroup(nhg, false); err != nil {
+		return fmt.Errorf("cannot add NHG entry, err: %v", err)
+	}
+
+	return nil
+}
+
+// InjectNH adds a next-hop entry to network instance ni, with the specified
+// index (nhIdx). An error is returned if it cannot be added.
+func (f *fakeRIB) InjectNH(ni string, nhIdx uint64) error {
+	niR, ok := f.r.NetworkInstanceRIB(ni)
+	if !ok {
+		return fmt.Errorf("unknown NI, %s", ni)
+	}
+
+	if _, _, err := niR.AddNextHop(&aftpb.Afts_NextHopKey{
+		Index:   nhIdx,
+		NextHop: &aftpb.Afts_NextHop{},
+	}, false); err != nil {
+		return fmt.Errorf("cannot add NH entry, err: %v", err)
+	}
+
+	return nil
 }

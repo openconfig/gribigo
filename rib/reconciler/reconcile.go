@@ -24,6 +24,7 @@
 package reconciler
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/openconfig/gribigo/rib"
@@ -48,7 +49,10 @@ type R struct {
 type RIBTarget interface {
 	// Get returns a RIB containing all network-instances and AFTs that are
 	// supported by the RIB.
-	Get() (*rib.RIB, error)
+	Get(context.Context) (*rib.RIB, error)
+	// CleanUp is called to indicate that the RIBTarget should remove any
+	// state or external connections as it is no longer required.
+	CleanUp()
 }
 
 // LocalRIB wraps a RIB that is locally available on the system as a gRIBIgo
@@ -58,9 +62,17 @@ type LocalRIB struct {
 }
 
 // Get returns the contents of the local RIB.
-func (l *LocalRIB) Get() (*rib.RIB, error) {
+func (l *LocalRIB) Get(_ context.Context) (*rib.RIB, error) {
 	return l.r, nil
 }
+
+// CleanUp implements the RIBTarget interface. No local cleanup is required.
+func (l *LocalRIB) CleanUp() {}
+
+var (
+	// Compile time check that LocalRIB implements the RIBTarget interface.
+	_ RIBTarget = &LocalRIB{}
+)
 
 // New returns a new reconciler with the specified intended and target RIBs.
 func New(intended, target RIBTarget) *R {
@@ -72,14 +84,14 @@ func New(intended, target RIBTarget) *R {
 
 // Reconcile performs a reconciliation operation between the intended and specified
 // remote RIB.
-func (r *R) Reconcile() error {
+func (r *R) Reconcile(ctx context.Context) error {
 	// Get the current contents of intended and target.
-	iRIB, err := r.intended.Get()
+	iRIB, err := r.intended.Get(ctx)
 	if err != nil {
 		return fmt.Errorf("cannot reconcile RIBs, cannot get contents of intended, %v", err)
 	}
 
-	tRIB, err := r.target.Get()
+	tRIB, err := r.target.Get(ctx)
 	if err != nil {
 		return fmt.Errorf("cannot reconcile RIBs, cannot get contents of target, %v", err)
 	}

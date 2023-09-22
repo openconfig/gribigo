@@ -24,6 +24,7 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"github.com/kr/pretty"
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/goyang/pkg/yang"
 	"github.com/openconfig/gribigo/aft"
@@ -33,6 +34,7 @@ import (
 	"github.com/openconfig/ygot/ytypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
@@ -322,6 +324,27 @@ func (r *RIB) KnownNetworkInstances() []string {
 	// return the RIB names in a stable order.
 	sort.Strings(names)
 	return names
+}
+
+// RIBContents returns the contents of the RIB in a manner that an external
+// caller can interact with. It returns a map, keyed by network instance name,
+// with a deep copy of the RIB contents. Since copying large RIBs may be expensive
+// care should be taken with when it is used. A copy is used since the RIB continues
+// to handle concurrent changes to the contents from multiple sources.
+func (r *RIB) RIBContents() (map[string]*aft.RIB, error) {
+	// TODO(robjs): Consider whether we need finer grained locking for each network
+	// instance RIB rather than holding the lock whilst we clone the contents.
+	r.nrMu.RLock()
+	defer r.nrMu.RUnlock()
+	ret := map[string]*aft.RIB{}
+	for n, c := range r.niRIB {
+		clone, err := ygot.DeepCopy(c.r)
+		if err != nil {
+			return nil, fmt.Errorf("cannot clone RIB, %v", err)
+		}
+		ret[n] = clone.(*aft.RIB)
+	}
+	return ret, nil
 }
 
 // String returns a string representation of the RIB.
@@ -1797,6 +1820,8 @@ func concreteNextHopProto(e *aft.Afts_NextHop) (*aftpb.Afts_NextHopKey, error) {
 // concreteNextHopGroupProto takes the input NextHopGroup GoStruct and returns it as a gRIBI
 // NextHopGroupEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func concreteNextHopGroupProto(e *aft.Afts_NextHopGroup) (*aftpb.Afts_NextHopGroupKey, error) {
+	fmt.Printf("input: %v\n", e)
+	fmt.Printf("val: %d\n", *e.Id)
 	nhgproto := &aftpb.Afts_NextHopGroup{}
 	if err := protoFromGoStruct(e, &gpb.Path{
 		Elem: []*gpb.PathElem{{
@@ -1809,6 +1834,7 @@ func concreteNextHopGroupProto(e *aft.Afts_NextHopGroup) (*aftpb.Afts_NextHopGro
 	}, nhgproto); err != nil {
 		return nil, fmt.Errorf("cannot marshal next-hop index %d, %v", e.GetId(), err)
 	}
+	fmt.Printf("concrete nhg: %s\n", prototext.Format(nhgproto))
 	return &aftpb.Afts_NextHopGroupKey{
 		Id:           *e.Id,
 		NextHopGroup: nhgproto,
@@ -1832,13 +1858,17 @@ func protoFromGoStruct(s ygot.ValidatedGoStruct, prefix *gpb.Path, pb proto.Mess
 			vals[u.Path] = u.Val
 		}
 	}
+	pretty.Printf("vals: %s\n", vals)
 
 	if err := protomap.ProtoFromPaths(pb, vals,
 		protomap.ProtobufMessagePrefix(prefix),
 		protomap.ValuePathPrefix(prefix),
-		protomap.IgnoreExtraPaths()); err != nil {
+		protomap.IgnoreExtraPaths(),
+	); err != nil {
 		return fmt.Errorf("cannot unmarshal gNMI paths, %v", err)
 	}
+
+	fmt.Printf("unmarshalled: %s\n", prototext.Format(pb))
 
 	return nil
 }

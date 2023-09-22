@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -16,7 +17,7 @@ func TestLocalRIB(t *testing.T) {
 		}
 
 		want := rib.New("DEFAULT")
-		got, err := l.Get()
+		got, err := l.Get(context.Background())
 		if err != nil {
 			t.Fatalf("(*LocalRIB).Get(): did not get expected error, got: %v, want: nil", err)
 		}

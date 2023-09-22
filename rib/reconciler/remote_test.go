@@ -2,7 +2,6 @@ package reconciler
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -175,8 +174,6 @@ func TestGet(t *testing.T) {
 			if err != nil {
 				t.Fatalf("(*RemoteRIB).Get(ctx).RIBContents(): can't introspect RIB, err: %v", err)
 			}
-			fmt.Printf("%s\n", got.String())
-			fmt.Printf("%s\n", tt.inInjectedRIB)
 
 			if diff := cmp.Diff(gotContents, tt.wantRIBContents); diff != "" {
 				t.Fatalf("(*RemoteRIB).Get(ctx): did not get expected contents, diff(-got,+want):\n%s", diff)

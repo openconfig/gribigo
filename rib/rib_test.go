@@ -865,6 +865,17 @@ func TestConcreteNHGProto(t *testing.T) {
 			a.GetOrCreateNextHop(1).Weight = ygot.Uint64(1)
 			return a
 		}(),
+		want: &aftpb.Afts_NextHopGroupKey{
+			Id: 1,
+			NextHopGroup: &aftpb.Afts_NextHopGroup{
+				NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+						Weight: &wpb.UintValue{Value: 1},
+					},
+				}},
+			},
+		},
 	}}
 
 	for _, tt := range tests {
@@ -3205,8 +3216,15 @@ func TestGetRIB(t *testing.T) {
 				NetworkInstance: "VRF-42",
 				Entry: &spb.AFTEntry_NextHopGroup{
 					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
-						Id:           42,
-						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+						Id: 42,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index: 1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+									Weight: &wpb.UintValue{Value: 1},
+								},
+							}},
+						},
 					},
 				},
 			}},

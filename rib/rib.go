@@ -24,7 +24,6 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
-	"github.com/kr/pretty"
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/goyang/pkg/yang"
 	"github.com/openconfig/gribigo/aft"
@@ -34,7 +33,6 @@ import (
 	"github.com/openconfig/ygot/ytypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
@@ -1820,8 +1818,6 @@ func concreteNextHopProto(e *aft.Afts_NextHop) (*aftpb.Afts_NextHopKey, error) {
 // concreteNextHopGroupProto takes the input NextHopGroup GoStruct and returns it as a gRIBI
 // NextHopGroupEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func concreteNextHopGroupProto(e *aft.Afts_NextHopGroup) (*aftpb.Afts_NextHopGroupKey, error) {
-	fmt.Printf("input: %v\n", e)
-	fmt.Printf("val: %d\n", *e.Id)
 	nhgproto := &aftpb.Afts_NextHopGroup{}
 	if err := protoFromGoStruct(e, &gpb.Path{
 		Elem: []*gpb.PathElem{{
@@ -1834,7 +1830,6 @@ func concreteNextHopGroupProto(e *aft.Afts_NextHopGroup) (*aftpb.Afts_NextHopGro
 	}, nhgproto); err != nil {
 		return nil, fmt.Errorf("cannot marshal next-hop index %d, %v", e.GetId(), err)
 	}
-	fmt.Printf("concrete nhg: %s\n", prototext.Format(nhgproto))
 	return &aftpb.Afts_NextHopGroupKey{
 		Id:           *e.Id,
 		NextHopGroup: nhgproto,
@@ -1858,7 +1853,6 @@ func protoFromGoStruct(s ygot.ValidatedGoStruct, prefix *gpb.Path, pb proto.Mess
 			vals[u.Path] = u.Val
 		}
 	}
-	pretty.Printf("vals: %s\n", vals)
 
 	if err := protomap.ProtoFromPaths(pb, vals,
 		protomap.ProtobufMessagePrefix(prefix),
@@ -1867,8 +1861,6 @@ func protoFromGoStruct(s ygot.ValidatedGoStruct, prefix *gpb.Path, pb proto.Mess
 	); err != nil {
 		return fmt.Errorf("cannot unmarshal gNMI paths, %v", err)
 	}
-
-	fmt.Printf("unmarshalled: %s\n", prototext.Format(pb))
 
 	return nil
 }

@@ -215,6 +215,8 @@ github.com/openconfig/ygot v0.29.10 h1:FRZXxyeCdiJXz6uat5uOm3Hlg+PUu2N0mY+eiva12
 github.com/openconfig/ygot v0.29.10/go.mod h1:RNnn1ytQ8GZV5LPts36l0cyoRjsYYpruiruJEvmU2sg=
 github.com/openconfig/ygot v0.29.11-0.20230922074452-052ed885651c h1:0rE/tRnck61Guj+zkButSrb1VMWtDP0xX4cmanEDHL4=
 github.com/openconfig/ygot v0.29.11-0.20230922074452-052ed885651c/go.mod h1:RNnn1ytQ8GZV5LPts36l0cyoRjsYYpruiruJEvmU2sg=
+github.com/openconfig/ygot v0.29.11-0.20230922181344-6c3af4108a57 h1:z7bNYTNR1HzxYQNVwBUaf0veA4j4vuTBW7mTLRW4M1w=
+github.com/openconfig/ygot v0.29.11-0.20230922181344-6c3af4108a57/go.mod h1:RNnn1ytQ8GZV5LPts36l0cyoRjsYYpruiruJEvmU2sg=
 github.com/p4lang/p4runtime v1.4.0-rc.5.0.20220728214547-13f0d02a521e h1:AfZKoikDXbZ7zWvO/lvCRzLo7i6lM+gNleYVMxPiWyQ=
 github.com/p4lang/p4runtime v1.4.0-rc.5.0.20220728214547-13f0d02a521e/go.mod h1:m9laObIMXM9N1ElGXijc66/MSM5eheZJLRLxg/TG+fU=
 github.com/pborman/getopt v0.0.0-20190409184431-ee0cd42419d3/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=

@@ -6,7 +6,6 @@ import (
 
 	"github.com/openconfig/gribigo/client"
 	"github.com/openconfig/gribigo/rib"
-	"google.golang.org/protobuf/encoding/prototext"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
@@ -56,8 +55,6 @@ func (r *RemoteRIB) Get(ctx context.Context) (*rib.RIB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot get remote RIB, %v", err)
 	}
-
-	fmt.Printf("%s\n", prototext.Format(resp))
 
 	// We always disable the RIB checking function because we want to see entries that have
 	// not got valid references so that we can reconcile them.

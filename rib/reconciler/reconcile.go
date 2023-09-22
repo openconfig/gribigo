@@ -32,6 +32,8 @@ import (
 )
 
 type R struct {
+	// intended and target are the mechanisms by which to access the intended
+	// RIB (source of truth) and the target it is to be reconciled with.
 	intended, target RIBTarget
 
 	// intended is a RIB containing the AFT entries that are intended to be
@@ -91,6 +93,7 @@ func (r *R) Reconcile() error {
 		return fmt.Errorf("cannot reconcile RIBs, cannot calculate diff, %v", err)
 	}
 	_ = diffs
+	_, _ = r.lastIntended, r.lastTarget
 
 	// Enqueue the operations towards target that bring it in-line with intended.
 	// TODO(robjs): Implement enqueuing in client.

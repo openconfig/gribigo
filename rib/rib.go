@@ -330,19 +330,7 @@ func (r *RIB) KnownNetworkInstances() []string {
 // care should be taken with when it is used. A copy is used since the RIB continues
 // to handle concurrent changes to the contents from multiple sources.
 func (r *RIB) RIBContents() (map[string]*aft.RIB, error) {
-	// TODO(robjs): Consider whether we need finer grained locking for each network
-	// instance RIB rather than holding the lock whilst we clone the contents.
-	r.nrMu.RLock()
-	defer r.nrMu.RUnlock()
-	ret := map[string]*aft.RIB{}
-	for n, c := range r.niRIB {
-		clone, err := ygot.DeepCopy(c.r)
-		if err != nil {
-			return nil, fmt.Errorf("cannot clone RIB, %v", err)
-		}
-		ret[n] = clone.(*aft.RIB)
-	}
-	return ret, nil
+	return r.copyRIBs()
 }
 
 // String returns a string representation of the RIB.
@@ -563,6 +551,11 @@ func (r *RIB) callResolvedEntryHook(optype constants.OpType, netinst string, aft
 // AFT struct, of the set of RIBs stored by the instance r. A DeepCopy of the RIBs is returned,
 // along with an error that indicates whether the entries could be copied.
 func (r *RIB) copyRIBs() (map[string]*aft.RIB, error) {
+	// TODO(robjs): Consider whether we need finer grained locking for each network
+	// instance RIB rather than holding the lock whilst we clone the contents.
+	r.nrMu.RLock()
+	defer r.nrMu.RUnlock()
+
 	rib := map[string]*aft.RIB{}
 	for name, niR := range r.niRIB {
 		// this is likely expensive on very large RIBs, but with today's implementatiom

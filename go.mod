@@ -11,7 +11,7 @@ require (
 	github.com/openconfig/gribi v1.0.0
 	github.com/openconfig/lemming v0.3.2-0.20230914210403-c6484d12af0a
 	github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07
-	github.com/openconfig/ygot v0.29.10
+	github.com/openconfig/ygot v0.29.11-0.20230922181344-6c3af4108a57
 	go.uber.org/atomic v1.10.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230822172742-b8732ec3820d
 	google.golang.org/grpc v1.58.0-dev

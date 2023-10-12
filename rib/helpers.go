@@ -26,7 +26,7 @@ import (
 
 // FromGetResponses returns a RIB from a slice of gRIBI GetResponse messages.
 // The supplied defaultName is used as the default network instance name.
-func FromGetResponses(defaultName string, responses []*spb.GetResponse) (*RIB, error) {
+func FromGetResponses(defaultName string, responses []*spb.GetResponse, opt ...RIBOpt) (*RIB, error) {
 	r := New(defaultName)
 	niAFTs := map[string]*aftpb.Afts{}
 

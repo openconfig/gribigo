@@ -324,6 +324,15 @@ func (r *RIB) KnownNetworkInstances() []string {
 	return names
 }
 
+// RIBContents returns the contents of the RIB in a manner that an external
+// caller can interact with. It returns a map, keyed by network instance name,
+// with a deep copy of the RIB contents. Since copying large RIBs may be expensive
+// care should be taken with when it is used. A copy is used since the RIB continues
+// to handle concurrent changes to the contents from multiple sources.
+func (r *RIB) RIBContents() (map[string]*aft.RIB, error) {
+	return r.copyRIBs()
+}
+
 // String returns a string representation of the RIB.
 func (r *RIB) String() string {
 	r.nrMu.RLock()
@@ -542,6 +551,11 @@ func (r *RIB) callResolvedEntryHook(optype constants.OpType, netinst string, aft
 // AFT struct, of the set of RIBs stored by the instance r. A DeepCopy of the RIBs is returned,
 // along with an error that indicates whether the entries could be copied.
 func (r *RIB) copyRIBs() (map[string]*aft.RIB, error) {
+	// TODO(robjs): Consider whether we need finer grained locking for each network
+	// instance RIB rather than holding the lock whilst we clone the contents.
+	r.nrMu.RLock()
+	defer r.nrMu.RUnlock()
+
 	rib := map[string]*aft.RIB{}
 	for name, niR := range r.niRIB {
 		// this is likely expensive on very large RIBs, but with today's implementatiom
@@ -1836,7 +1850,8 @@ func protoFromGoStruct(s ygot.ValidatedGoStruct, prefix *gpb.Path, pb proto.Mess
 	if err := protomap.ProtoFromPaths(pb, vals,
 		protomap.ProtobufMessagePrefix(prefix),
 		protomap.ValuePathPrefix(prefix),
-		protomap.IgnoreExtraPaths()); err != nil {
+		protomap.IgnoreExtraPaths(),
+	); err != nil {
 		return fmt.Errorf("cannot unmarshal gNMI paths, %v", err)
 	}
 

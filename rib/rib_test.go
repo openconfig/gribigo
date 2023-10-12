@@ -851,6 +851,46 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 	}
 }
 
+func TestConcreteNHGProto(t *testing.T) {
+	tests := []struct {
+		desc    string
+		inEntry *aft.Afts_NextHopGroup
+		want    *aftpb.Afts_NextHopGroupKey
+		wantErr bool
+	}{{
+		desc: "populated nhg",
+		inEntry: func() *aft.Afts_NextHopGroup {
+			a := &aft.Afts_NextHopGroup{}
+			a.Id = ygot.Uint64(1)
+			a.GetOrCreateNextHop(1).Weight = ygot.Uint64(1)
+			return a
+		}(),
+		want: &aftpb.Afts_NextHopGroupKey{
+			Id: 1,
+			NextHopGroup: &aftpb.Afts_NextHopGroup{
+				NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+						Weight: &wpb.UintValue{Value: 1},
+					},
+				}},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := concreteNextHopGroupProto(tt.inEntry)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, want: %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(got, tt.want, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestConcreteIPv4Proto(t *testing.T) {
 	tests := []struct {
 		desc    string
@@ -3176,8 +3216,15 @@ func TestGetRIB(t *testing.T) {
 				NetworkInstance: "VRF-42",
 				Entry: &spb.AFTEntry_NextHopGroup{
 					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
-						Id:           42,
-						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+						Id: 42,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index: 1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+									Weight: &wpb.UintValue{Value: 1},
+								},
+							}},
+						},
 					},
 				},
 			}},
@@ -4228,4 +4275,103 @@ func TestFlush(t *testing.T) {
 			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
 		}
 	}
+}
+
+func TestRIBContents(t *testing.T) {
+	tests := []struct {
+		desc    string
+		inRIB   *RIB
+		want    map[string]*aft.RIB
+		wantErr bool
+	}{{
+		desc: "one NI",
+		inRIB: &RIB{
+			niRIB: map[string]*RIBHolder{
+				"default": {
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+								"1.0.0.0/24": {
+									Prefix: ygot.String("1.0.0.0/24"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		want: map[string]*aft.RIB{
+			"default": {
+				Afts: &aft.Afts{
+					Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+						"1.0.0.0/24": {
+							Prefix: ygot.String("1.0.0.0/24"),
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "two NIs",
+		inRIB: &RIB{
+			niRIB: map[string]*RIBHolder{
+				"default": {
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+								"1.0.0.0/24": {
+									Prefix: ygot.String("1.0.0.0/24"),
+								},
+							},
+						},
+					},
+				},
+				"pepsicola": {
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							NextHop: map[uint64]*aft.Afts_NextHop{
+								1: {
+									Index: ygot.Uint64(1),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		want: map[string]*aft.RIB{
+			"default": {
+				Afts: &aft.Afts{
+					Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+						"1.0.0.0/24": {
+							Prefix: ygot.String("1.0.0.0/24"),
+						},
+					},
+				},
+			},
+			"pepsicola": {
+				Afts: &aft.Afts{
+					NextHop: map[uint64]*aft.Afts_NextHop{
+						1: {
+							Index: ygot.Uint64(1),
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := tt.inRIB.RIBContents()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("(*RIB).RIBContents(): did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+
+			if diff := cmp.Diff(got, tt.want); diff != "" {
+				t.Fatalf("(*RIB).RIBContents(): did not get expected contents, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+
 }

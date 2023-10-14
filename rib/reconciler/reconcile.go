@@ -27,6 +27,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/gribigo/rib"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
@@ -119,9 +120,57 @@ func (r *R) Reconcile(ctx context.Context) error {
 //   - entries that are present in src but not dst are returned as ADD
 //     operations.
 //   - entries that are present in src but not dst and their contents diff are
-//     returned as MODIFY operations.
+//     returned as ADD operations. This takes advantage of the implicit replace
+//     functionality implemented by gRIBI.
 //   - entries that are not present in src but are present in dst are returned
 //     as DELETE operations.
 func diff(src, dst *rib.RIB) ([]*spb.AFTOperation, error) {
-	return nil, fmt.Errorf("unimplemented")
+	srcContents, err := src.RIBContents()
+	if err != nil {
+		return nil, fmt.Errorf("cannot copy source RIB contents, err: %v", err)
+	}
+	dstContents, err := dst.RIBContents()
+	if err != nil {
+		return nil, fmt.Errorf("cannot copy destination RIB contents, err: %v", err)
+	}
+
+	ops := []*spb.AFTOperation{}
+	var id uint64
+	for srcNI, srcNIEntries := range srcContents {
+		dstNIEntries, ok := dstContents[srcNI]
+		if !ok {
+			// The network instance does not exist in the destination therefore
+			// all entries are ADDs.
+			for pfx, e := range srcNIEntries.GetAfts().Ipv4Entry {
+				op, err := v4AddOperation(srcNI, pfx, id+1, e)
+				if err != nil {
+					return nil, err
+				}
+				ops = append(ops, op)
+			}
+			continue
+		}
+		// For each AFT:
+		//  * if a key is present in src but not in dst -> generate an ADD
+		//  * if a key is present in src and in dst -> diff, and generate an ADD if the contents differ.
+		//  * if a key is present in dst, but not in src -> generate a DELETE.
+		_ = dstNIEntries
+	}
+
+	return ops, nil
+}
+
+func v4AddOperation(ni string, pfx string, id uint64, e *aft.Afts_Ipv4Entry) (*spb.AFTOperation, error) {
+	p, err := rib.ConcreteIPv4Proto(e)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create operation for prefix %s, %v", pfx, err)
+	}
+	return &spb.AFTOperation{
+		Id:              id,
+		NetworkInstance: ni,
+		Op:              spb.AFTOperation_ADD,
+		Entry: &spb.AFTOperation_Ipv4{
+			Ipv4: p,
+		},
+	}, nil
 }

@@ -40,11 +40,12 @@ func TestLocalRIB(t *testing.T) {
 func TestDiff(t *testing.T) {
 	dn := "DEFAULT"
 	tests := []struct {
-		desc    string
-		inSrc   *rib.RIB
-		inDst   *rib.RIB
-		wantOps []*spb.AFTOperation
-		wantErr bool
+		desc              string
+		inSrc             *rib.RIB
+		inDst             *rib.RIB
+		inExplicitReplace map[spb.AFTType]bool
+		wantOps           []*spb.AFTOperation
+		wantErr           bool
 	}{{
 		desc: "VRF NI in src, but not in dst",
 		inSrc: func() *rib.RIB {
@@ -79,7 +80,7 @@ func TestDiff(t *testing.T) {
 			},
 		}},
 	}, {
-		desc: "default NI with differing IPv4 entries",
+		desc: "default NI with added and removed IPv4 entries",
 		inSrc: func() *rib.RIB {
 			r := rib.NewFake(dn)
 			if err := r.InjectNH(dn, 1); err != nil {
@@ -106,11 +107,127 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
+		wantOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: dn,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.0.0.0/24",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}, {
+			Id:              2,
+			NetworkInstance: dn,
+			Op:              spb.AFTOperation_DELETE,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "2.0.0.0/24",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "default NI with IPv4 entry with different contents",
+		inSrc: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG 1, %v", err)
+			}
+			if err := r.InjectNHG(dn, 2, map[uint64]uint64{1: 2}); err != nil {
+				t.Fatalf("cannot add NHG 2, %v", err)
+			}
+			if err := r.InjectIPv4(dn, "1.0.0.0/24", 2); err != nil {
+				t.Fatalf("cannot add IPv4, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inDst: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG 1, %v", err)
+			}
+			if err := r.InjectIPv4(dn, "1.0.0.0/24", 1); err != nil {
+				t.Fatalf("cannot add IPv4, %v", err)
+			}
+			return r.RIB()
+		}(),
+		wantOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: dn,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.0.0.0/24",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 2},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "default NI with IPv4 entry with different contents, explicit replace",
+		inSrc: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG 1, %v", err)
+			}
+			if err := r.InjectNHG(dn, 2, map[uint64]uint64{1: 2}); err != nil {
+				t.Fatalf("cannot add NHG 2, %v", err)
+			}
+			if err := r.InjectIPv4(dn, "1.0.0.0/24", 2); err != nil {
+				t.Fatalf("cannot add IPv4, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inDst: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG 1, %v", err)
+			}
+			if err := r.InjectIPv4(dn, "1.0.0.0/24", 1); err != nil {
+				t.Fatalf("cannot add IPv4, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inExplicitReplace: map[spb.AFTType]bool{
+			spb.AFTType_IPV4: true,
+		},
+		wantOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: dn,
+			Op:              spb.AFTOperation_REPLACE,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.0.0.0/24",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 2},
+					},
+				},
+			},
+		}},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := diff(tt.inSrc, tt.inDst)
+			got, err := diff(tt.inSrc, tt.inDst, tt.inExplicitReplace)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}

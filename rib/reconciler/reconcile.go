@@ -26,9 +26,11 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/gribigo/rib"
+	"k8s.io/klog"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
@@ -100,8 +102,8 @@ func (r *R) Reconcile(ctx context.Context) error {
 	}
 
 	// Perform diff on their contents.
-
-	diffs, err := diff(iRIB, tRIB)
+	// TODO(robjs): Plumb through explicitReplace map.
+	diffs, err := diff(iRIB, tRIB, nil)
 	if err != nil {
 		return fmt.Errorf("cannot reconcile RIBs, cannot calculate diff, %v", err)
 	}
@@ -124,7 +126,10 @@ func (r *R) Reconcile(ctx context.Context) error {
 //     functionality implemented by gRIBI.
 //   - entries that are not present in src but are present in dst are returned
 //     as DELETE operations.
-func diff(src, dst *rib.RIB) ([]*spb.AFTOperation, error) {
+//
+// If an entry within the explicitReplace map is set to true then explicit, rather
+// than implicit replaces are generated for that function.
+func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOperation, error) {
 	srcContents, err := src.RIBContents()
 	if err != nil {
 		return nil, fmt.Errorf("cannot copy source RIB contents, err: %v", err)
@@ -142,7 +147,8 @@ func diff(src, dst *rib.RIB) ([]*spb.AFTOperation, error) {
 			// The network instance does not exist in the destination therefore
 			// all entries are ADDs.
 			for pfx, e := range srcNIEntries.GetAfts().Ipv4Entry {
-				op, err := v4AddOperation(srcNI, pfx, id+1, e)
+				id++
+				op, err := v4Operation(spb.AFTOperation_ADD, srcNI, pfx, id, e)
 				if err != nil {
 					return nil, err
 				}
@@ -154,13 +160,50 @@ func diff(src, dst *rib.RIB) ([]*spb.AFTOperation, error) {
 		//  * if a key is present in src but not in dst -> generate an ADD
 		//  * if a key is present in src and in dst -> diff, and generate an ADD if the contents differ.
 		//  * if a key is present in dst, but not in src -> generate a DELETE.
-		_ = dstNIEntries
+		for pfx, srcE := range srcNIEntries.GetAfts().Ipv4Entry {
+			if dstE, ok := dstNIEntries.GetAfts().Ipv4Entry[pfx]; !ok || !reflect.DeepEqual(srcE, dstE) {
+				opType := spb.AFTOperation_ADD
+				if ok && explicitReplace[spb.AFTType_IPV4] {
+					opType = spb.AFTOperation_REPLACE
+				}
+				id++
+				op, err := v4Operation(opType, srcNI, pfx, id, srcE)
+				if err != nil {
+					return nil, err
+				}
+				ops = append(ops, op)
+			}
+		}
+
+		for pfx, dstE := range dstNIEntries.GetAfts().Ipv4Entry {
+			if _, ok := srcNIEntries.GetAfts().Ipv4Entry[pfx]; !ok {
+				id++
+				op, err := v4Operation(spb.AFTOperation_DELETE, srcNI, pfx, id, dstE)
+				if err != nil {
+					return nil, err
+				}
+				ops = append(ops, op)
+			}
+		}
+
+		if srcN, dstN := len(srcNIEntries.GetAfts().NextHopGroup), len(dstNIEntries.GetAfts().NextHopGroup); srcN != 0 || dstN != 0 {
+			// TODO(robjs): Implement diffing of NHG entries.
+			klog.Warningf("next-hop-group reconcilation unimplemented, NHG entries, src: %d, dst: %d", srcN, dstN)
+		}
+
+		if srcN, dstN := len(srcNIEntries.GetAfts().NextHop), len(dstNIEntries.GetAfts().NextHop); srcN != 0 || dstN != 0 {
+			// TODO(robjs): Implement mapping of NH entries.
+			klog.Warningf("next-hop reconcilation unimplemented, NHG entries, src: %d, dst: %d", srcN, dstN)
+		}
 	}
 
 	return ops, nil
 }
 
-func v4AddOperation(ni string, pfx string, id uint64, e *aft.Afts_Ipv4Entry) (*spb.AFTOperation, error) {
+// v4Operation builds a gRIBI IPv4 operation with the specified method corresponding to the
+// prefix pfx in network instance ni, using the specified ID for the operation. The contents
+// of the operation are the entry e.
+func v4Operation(method spb.AFTOperation_Operation, ni, pfx string, id uint64, e *aft.Afts_Ipv4Entry) (*spb.AFTOperation, error) {
 	p, err := rib.ConcreteIPv4Proto(e)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create operation for prefix %s, %v", pfx, err)
@@ -168,7 +211,7 @@ func v4AddOperation(ni string, pfx string, id uint64, e *aft.Afts_Ipv4Entry) (*s
 	return &spb.AFTOperation{
 		Id:              id,
 		NetworkInstance: ni,
-		Op:              spb.AFTOperation_ADD,
+		Op:              method,
 		Entry: &spb.AFTOperation_Ipv4{
 			Ipv4: p,
 		},

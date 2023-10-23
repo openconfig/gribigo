@@ -183,39 +183,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 			dstNIEntries = &aft.RIB{}
 			dstNIEntries.GetOrCreateAfts()
 		}
-		/*if !ok {
-			// The network instance does not exist in the destination therefore
-			// all entries are ADDs.
-			for pfx, e := range srcNIEntries.GetAfts().Ipv4Entry {
-				id++
-				op, err := v4Operation(spb.AFTOperation_ADD, srcNI, pfx, id, e)
-				if err != nil {
-					return nil, err
-				}
-				ops.Add.TopLevel = append(ops.Add.TopLevel, op)
-			}
 
-			for nhgID, e := range srcNIEntries.GetAfts().NextHopGroup {
-				id++
-				op, err := nhgOperation(spb.AFTOperation_ADD, srcNI, nhgID, id, e)
-				if err != nil {
-					return nil, err
-				}
-				ops.Add.NHG = append(ops.Add.NHG, op)
-			}
-
-			for nhID, e := range srcNIEntries.GetAfts().NextHop {
-				id++
-				op, err := nhOperation(spb.AFTOperation_ADD, srcNI, nhID, id, e)
-				if err != nil {
-					return nil, err
-				}
-				ops.Add.NH = append(ops.Add.NH, op)
-			}
-
-			continue
-		}
-		*/
 		// For each AFT:
 		//  * if a key is present in src but not in dst -> generate an ADD
 		//  * if a key is present in src and in dst -> diff, and generate an ADD if the contents differ.

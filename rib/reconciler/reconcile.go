@@ -30,7 +30,6 @@ import (
 
 	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/gribigo/rib"
-	"k8s.io/klog"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
@@ -116,6 +115,39 @@ func (r *R) Reconcile(ctx context.Context) error {
 
 }
 
+// ops stores a set of operations with their corresponding types. Operations
+// are stored as NH (nexthop), NHG (next-hop-group) and top-level (MPLS, IPv4,
+// IPv6). This allows a gRIBI client to sequence the ops suitably.
+type ops struct {
+	// NH stores the next-hop operations in the operation set.
+	NH []*spb.AFTOperation
+	// NHG stores the next-hop-group operations in the operation set.
+	NHG []*spb.AFTOperation
+	// TopLevel stores the IPv4, IPv6, and MPLS operations in the operation set.
+	TopLevel []*spb.AFTOperation
+}
+
+// reconcile ops stores the operations that are required for a specific reconciliation
+// run.
+type reconcileOps struct {
+	// Add stores the operations that are explicitly adding new entries.
+	Add *ops
+	// Replace stores the operations that are implicit or explicit replaces of
+	// existing entries.
+	Replace *ops
+	// Delete stores the operations that are removing entries.
+	Delete *ops
+}
+
+// newReconcileOps returns a new reconcileOps struct with the fields initialised.
+func newReconcileOps() *reconcileOps {
+	return &reconcileOps{
+		Add:     &ops{},
+		Replace: &ops{},
+		Delete:  &ops{},
+	}
+}
+
 // diff returns the difference between the src and dst RIBs expressed as gRIBI
 // AFTOperations. That is to say, for each network instance RIB within the RIBs:
 //
@@ -129,7 +161,10 @@ func (r *R) Reconcile(ctx context.Context) error {
 //
 // If an entry within the explicitReplace map is set to true then explicit, rather
 // than implicit replaces are generated for that function.
-func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOperation, error) {
+func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOps, error) {
+	if src == nil || dst == nil {
+		return nil, fmt.Errorf("invalid nil input RIBs, src: %v, dst: %v", src, dst)
+	}
 	srcContents, err := src.RIBContents()
 	if err != nil {
 		return nil, fmt.Errorf("cannot copy source RIB contents, err: %v", err)
@@ -139,15 +174,16 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 		return nil, fmt.Errorf("cannot copy destination RIB contents, err: %v", err)
 	}
 
-	// Store the "top-level" operations (i.e., IPv4, IPv6, MPLS) and then the NHG and NHs
-	// separately. This allows us to return the operations separately so that they can be
-	// ordered in terms of programming. NHs need to be installed/replaced before NHGs, and
-	// then subsequently top-level entries.
-	topLevelOps, nhgOps, nhOps := []*spb.AFTOperation{}, []*spb.AFTOperation{}, []*spb.AFTOperation{}
+	ops := newReconcileOps()
+
 	var id uint64
 	for srcNI, srcNIEntries := range srcContents {
 		dstNIEntries, ok := dstContents[srcNI]
 		if !ok {
+			dstNIEntries = &aft.RIB{}
+			dstNIEntries.GetOrCreateAfts()
+		}
+		/*if !ok {
 			// The network instance does not exist in the destination therefore
 			// all entries are ADDs.
 			for pfx, e := range srcNIEntries.GetAfts().Ipv4Entry {
@@ -156,7 +192,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 				if err != nil {
 					return nil, err
 				}
-				topLevelOps = append(topLevelOps, op)
+				ops.Add.TopLevel = append(ops.Add.TopLevel, op)
 			}
 
 			for nhgID, e := range srcNIEntries.GetAfts().NextHopGroup {
@@ -165,11 +201,21 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 				if err != nil {
 					return nil, err
 				}
-				nhgOps = append(nhgOps, op)
+				ops.Add.NHG = append(ops.Add.NHG, op)
+			}
+
+			for nhID, e := range srcNIEntries.GetAfts().NextHop {
+				id++
+				op, err := nhOperation(spb.AFTOperation_ADD, srcNI, nhID, id, e)
+				if err != nil {
+					return nil, err
+				}
+				ops.Add.NH = append(ops.Add.NH, op)
 			}
 
 			continue
 		}
+		*/
 		// For each AFT:
 		//  * if a key is present in src but not in dst -> generate an ADD
 		//  * if a key is present in src and in dst -> diff, and generate an ADD if the contents differ.
@@ -185,7 +231,14 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 				if err != nil {
 					return nil, err
 				}
-				topLevelOps = append(topLevelOps, op)
+
+				// If this entry already exists then this is an addition rather than a replace.
+				switch ok {
+				case true:
+					ops.Replace.TopLevel = append(ops.Replace.TopLevel, op)
+				case false:
+					ops.Add.TopLevel = append(ops.Add.TopLevel, op)
+				}
 			}
 		}
 
@@ -200,10 +253,40 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 				if err != nil {
 					return nil, err
 				}
-				nhgOps = append(nhgOps, op)
+
+				// If this entry already exists then this is an addition rather than a replace.
+				switch ok {
+				case true:
+					ops.Replace.NHG = append(ops.Replace.NHG, op)
+				case false:
+					ops.Add.NHG = append(ops.Add.NHG, op)
+				}
 			}
 		}
 
+		for nhID, srcE := range srcNIEntries.GetAfts().NextHop {
+			if dstE, ok := dstNIEntries.GetAfts().NextHop[nhID]; !ok || !reflect.DeepEqual(srcE, dstE) {
+				opType := spb.AFTOperation_ADD
+				if ok && explicitReplace[spb.AFTType_NEXTHOP] {
+					opType = spb.AFTOperation_REPLACE
+				}
+				id++
+				op, err := nhOperation(opType, srcNI, nhID, id, srcE)
+				if err != nil {
+					return nil, err
+				}
+
+				// If this entry already exists then this is an addition rather than a replace.
+				switch ok {
+				case true:
+					ops.Replace.NH = append(ops.Replace.NH, op)
+				case false:
+					ops.Add.NH = append(ops.Add.NH, op)
+				}
+			}
+		}
+
+		// Delete operations.
 		for pfx, dstE := range dstNIEntries.GetAfts().Ipv4Entry {
 			if _, ok := srcNIEntries.GetAfts().Ipv4Entry[pfx]; !ok {
 				id++
@@ -211,7 +294,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 				if err != nil {
 					return nil, err
 				}
-				topLevelOps = append(topLevelOps, op)
+				ops.Delete.TopLevel = append(ops.Delete.TopLevel, op)
 			}
 		}
 
@@ -222,19 +305,21 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 				if err != nil {
 					return nil, err
 				}
-				nhgOps = append(nhgOps, op)
+				ops.Delete.NHG = append(ops.Delete.NHG, op)
 			}
 		}
 
-		if srcN, dstN := len(srcNIEntries.GetAfts().NextHop), len(dstNIEntries.GetAfts().NextHop); srcN != 0 || dstN != 0 {
-			// TODO(robjs): Implement mapping of NH entries.
-			klog.Warningf("next-hop reconcilation unimplemented, NHG entries, src: %d, dst: %d", srcN, dstN)
+		for nhID, dstE := range dstNIEntries.GetAfts().NextHop {
+			if _, ok := srcNIEntries.GetAfts().NextHop[nhID]; !ok {
+				id++
+				op, err := nhOperation(spb.AFTOperation_DELETE, srcNI, nhID, id, dstE)
+				if err != nil {
+					return nil, err
+				}
+				ops.Delete.NH = append(ops.Delete.NH, op)
+			}
 		}
 	}
-
-	ops := append([]*spb.AFTOperation{}, nhOps...)
-	ops = append(ops, nhgOps...)
-	ops = append(ops, topLevelOps...)
 
 	return ops, nil
 }
@@ -271,6 +356,24 @@ func nhgOperation(method spb.AFTOperation_Operation, ni string, nhgID, id uint64
 		Op:              method,
 		Entry: &spb.AFTOperation_NextHopGroup{
 			NextHopGroup: p,
+		},
+	}, nil
+}
+
+// nhOperation builds a gRIBI NH operation with the specified method, corresponding to the
+// NH ID nhID, in network instance ni, using the specified ID for the operation. The contents
+// of the operation are the entry e.
+func nhOperation(method spb.AFTOperation_Operation, ni string, nhID, id uint64, e *aft.Afts_NextHop) (*spb.AFTOperation, error) {
+	p, err := rib.ConcreteNextHopProto(e)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create operation for NH %d, %v", nhID, err)
+	}
+	return &spb.AFTOperation{
+		Id:              id,
+		NetworkInstance: ni,
+		Op:              method,
+		Entry: &spb.AFTOperation_NextHop{
+			NextHop: p,
 		},
 	}, nil
 }

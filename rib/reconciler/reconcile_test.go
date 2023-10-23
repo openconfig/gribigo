@@ -67,6 +67,23 @@ func TestDiff(t *testing.T) {
 		}(),
 		inDst: rib.NewFake(dn).RIB(),
 		wantOps: []*spb.AFTOperation{{
+			Id:              2,
+			NetworkInstance: "FOO",
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 1},
+							},
+						}},
+					},
+				},
+			},
+		}, {
 			Id:              1,
 			NetworkInstance: "FOO",
 			Op:              spb.AFTOperation_ADD,
@@ -164,6 +181,23 @@ func TestDiff(t *testing.T) {
 			return r.RIB()
 		}(),
 		wantOps: []*spb.AFTOperation{{
+			Id:              2,
+			NetworkInstance: dn,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 2,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 2},
+							},
+						}},
+					},
+				},
+			},
+		}, {
 			Id:              1,
 			NetworkInstance: dn,
 			Op:              spb.AFTOperation_ADD,
@@ -211,6 +245,23 @@ func TestDiff(t *testing.T) {
 			spb.AFTType_IPV4: true,
 		},
 		wantOps: []*spb.AFTOperation{{
+			Id:              2,
+			NetworkInstance: dn,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 2,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 2},
+							},
+						}},
+					},
+				},
+			},
+		}, {
 			Id:              1,
 			NetworkInstance: dn,
 			Op:              spb.AFTOperation_REPLACE,
@@ -223,6 +274,191 @@ func TestDiff(t *testing.T) {
 				},
 			},
 		}},
+	}, {
+		desc: "NHG installed",
+		inSrc: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG 1, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inDst: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			return r.RIB()
+		}(),
+		wantOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: dn,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 1},
+							},
+						}},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "NHG deleted",
+		inSrc: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inDst: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG 1, %v", err)
+			}
+			return r.RIB()
+		}(),
+		wantOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: dn,
+			Op:              spb.AFTOperation_DELETE,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 1},
+							},
+						}},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "NHG implicitly replaced",
+		inSrc: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNH(dn, 2); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{
+				1: 2,
+				2: 4,
+			}); err != nil {
+				t.Fatalf("cannot add NHG 1, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inDst: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNH(dn, 2); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG 1, %v", err)
+			}
+			return r.RIB()
+		}(),
+		wantOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: dn,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 2},
+							},
+						}, {
+							Index: 2,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 4},
+							},
+						}},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "NHG explicitly replaced",
+		inSrc: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNH(dn, 2); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{
+				1: 2,
+				2: 4,
+			}); err != nil {
+				t.Fatalf("cannot add NHG 1, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inDst: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNH(dn, 2); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG 1, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inExplicitReplace: map[spb.AFTType]bool{
+			spb.AFTType_NEXTHOP_GROUP: true,
+		},
+		wantOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: dn,
+			Op:              spb.AFTOperation_REPLACE,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 2},
+							},
+						}, {
+							Index: 2,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 4},
+							},
+						}},
+					},
+				},
+			},
+		}},
 	}}
 
 	for _, tt := range tests {
@@ -231,7 +467,10 @@ func TestDiff(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}
-			if diff := cmp.Diff(got, tt.wantOps, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(got, tt.wantOps,
+				protocmp.Transform(),
+				protocmp.SortRepeatedFields(&aftpb.Afts_NextHopGroup{}, "next_hop"),
+			); diff != "" {
 				t.Fatalf("diff(%s, %s): did not get expected operations, diff(-got,+want):\n%s", tt.inSrc, tt.inDst, diff)
 			}
 		})

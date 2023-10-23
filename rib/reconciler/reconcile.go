@@ -139,7 +139,11 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 		return nil, fmt.Errorf("cannot copy destination RIB contents, err: %v", err)
 	}
 
-	ops := []*spb.AFTOperation{}
+	// Store the "top-level" operations (i.e., IPv4, IPv6, MPLS) and then the NHG and NHs
+	// separately. This allows us to return the operations separately so that they can be
+	// ordered in terms of programming. NHs need to be installed/replaced before NHGs, and
+	// then subsequently top-level entries.
+	topLevelOps, nhgOps, nhOps := []*spb.AFTOperation{}, []*spb.AFTOperation{}, []*spb.AFTOperation{}
 	var id uint64
 	for srcNI, srcNIEntries := range srcContents {
 		dstNIEntries, ok := dstContents[srcNI]
@@ -152,8 +156,18 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 				if err != nil {
 					return nil, err
 				}
-				ops = append(ops, op)
+				topLevelOps = append(topLevelOps, op)
 			}
+
+			for nhgID, e := range srcNIEntries.GetAfts().NextHopGroup {
+				id++
+				op, err := nhgOperation(spb.AFTOperation_ADD, srcNI, nhgID, id, e)
+				if err != nil {
+					return nil, err
+				}
+				nhgOps = append(nhgOps, op)
+			}
+
 			continue
 		}
 		// For each AFT:
@@ -171,7 +185,22 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 				if err != nil {
 					return nil, err
 				}
-				ops = append(ops, op)
+				topLevelOps = append(topLevelOps, op)
+			}
+		}
+
+		for nhgID, srcE := range srcNIEntries.GetAfts().NextHopGroup {
+			if dstE, ok := dstNIEntries.GetAfts().NextHopGroup[nhgID]; !ok || !reflect.DeepEqual(srcE, dstE) {
+				opType := spb.AFTOperation_ADD
+				if ok && explicitReplace[spb.AFTType_NEXTHOP_GROUP] {
+					opType = spb.AFTOperation_REPLACE
+				}
+				id++
+				op, err := nhgOperation(opType, srcNI, nhgID, id, srcE)
+				if err != nil {
+					return nil, err
+				}
+				nhgOps = append(nhgOps, op)
 			}
 		}
 
@@ -182,13 +211,19 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 				if err != nil {
 					return nil, err
 				}
-				ops = append(ops, op)
+				topLevelOps = append(topLevelOps, op)
 			}
 		}
 
-		if srcN, dstN := len(srcNIEntries.GetAfts().NextHopGroup), len(dstNIEntries.GetAfts().NextHopGroup); srcN != 0 || dstN != 0 {
-			// TODO(robjs): Implement diffing of NHG entries.
-			klog.Warningf("next-hop-group reconcilation unimplemented, NHG entries, src: %d, dst: %d", srcN, dstN)
+		for nhgID, dstE := range dstNIEntries.GetAfts().NextHopGroup {
+			if _, ok := srcNIEntries.GetAfts().NextHopGroup[nhgID]; !ok {
+				id++
+				op, err := nhgOperation(spb.AFTOperation_DELETE, srcNI, nhgID, id, dstE)
+				if err != nil {
+					return nil, err
+				}
+				nhgOps = append(nhgOps, op)
+			}
 		}
 
 		if srcN, dstN := len(srcNIEntries.GetAfts().NextHop), len(dstNIEntries.GetAfts().NextHop); srcN != 0 || dstN != 0 {
@@ -196,6 +231,10 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) ([]*spb.AFTOp
 			klog.Warningf("next-hop reconcilation unimplemented, NHG entries, src: %d, dst: %d", srcN, dstN)
 		}
 	}
+
+	ops := append([]*spb.AFTOperation{}, nhOps...)
+	ops = append(ops, nhgOps...)
+	ops = append(ops, topLevelOps...)
 
 	return ops, nil
 }
@@ -214,6 +253,24 @@ func v4Operation(method spb.AFTOperation_Operation, ni, pfx string, id uint64, e
 		Op:              method,
 		Entry: &spb.AFTOperation_Ipv4{
 			Ipv4: p,
+		},
+	}, nil
+}
+
+// nhgOperation builds a gRIBI NHG operation with the specified method, corresponding to the
+// NHG ID nhgID, in network instance ni, using the specified ID for the operation. The
+// contents of the operation are the entry e.
+func nhgOperation(method spb.AFTOperation_Operation, ni string, nhgID, id uint64, e *aft.Afts_NextHopGroup) (*spb.AFTOperation, error) {
+	p, err := rib.ConcreteNextHopGroupProto(e)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create operation for NHG %d, %v", nhgID, err)
+	}
+	return &spb.AFTOperation{
+		Id:              id,
+		NetworkInstance: ni,
+		Op:              method,
+		Entry: &spb.AFTOperation_NextHopGroup{
+			NextHopGroup: p,
 		},
 	}, nil
 }

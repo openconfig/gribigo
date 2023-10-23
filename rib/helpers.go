@@ -143,15 +143,19 @@ func (f *fakeRIB) InjectNHG(ni string, nhgId uint64, nhs map[uint64]uint64) erro
 
 // InjectNH adds a next-hop entry to network instance ni, with the specified
 // index (nhIdx). An error is returned if it cannot be added.
-func (f *fakeRIB) InjectNH(ni string, nhIdx uint64) error {
+func (f *fakeRIB) InjectNH(ni string, nhIdx uint64, intName string) error {
 	niR, ok := f.r.NetworkInstanceRIB(ni)
 	if !ok {
 		return fmt.Errorf("unknown NI, %s", ni)
 	}
 
 	if _, _, err := niR.AddNextHop(&aftpb.Afts_NextHopKey{
-		Index:   nhIdx,
-		NextHop: &aftpb.Afts_NextHop{},
+		Index: nhIdx,
+		NextHop: &aftpb.Afts_NextHop{
+			InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+				Interface: &wpb.StringValue{Value: intName},
+			},
+		},
 	}, false); err != nil {
 		return fmt.Errorf("cannot add NH entry, err: %v", err)
 	}

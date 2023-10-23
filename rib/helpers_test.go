@@ -267,7 +267,7 @@ func TestFakeRIB(t *testing.T) {
 		desc: "nh only",
 		inBuild: func() *fakeRIB {
 			f := NewFake(dn)
-			if err := f.InjectNH(dn, 1); err != nil {
+			if err := f.InjectNH(dn, 1, "int42"); err != nil {
 				t.Fatalf("cannot add NH, err: %v", err)
 			}
 			return f
@@ -280,7 +280,12 @@ func TestFakeRIB(t *testing.T) {
 					r: &aft.RIB{
 						Afts: &aft.Afts{
 							NextHop: map[uint64]*aft.Afts_NextHop{
-								1: {Index: ygot.Uint64(1)},
+								1: {
+									Index: ygot.Uint64(1),
+									InterfaceRef: &aft.Afts_NextHop_InterfaceRef{
+										Interface: ygot.String("int42"),
+									},
+								},
 							},
 						},
 					},
@@ -348,7 +353,7 @@ func TestFakeRIB(t *testing.T) {
 		inBuild: func() *fakeRIB {
 			f := NewFake(dn)
 			// Discard the errors, since the test will check whether the entries are there.
-			f.InjectNH(dn, 1)
+			f.InjectNH(dn, 1, "int42")
 			f.InjectNHG(dn, 1, map[uint64]uint64{1: 1})
 			f.InjectIPv4(dn, "192.0.2.1/32", 1)
 			return f
@@ -363,6 +368,9 @@ func TestFakeRIB(t *testing.T) {
 							NextHop: map[uint64]*aft.Afts_NextHop{
 								1: {
 									Index: ygot.Uint64(1),
+									InterfaceRef: &aft.Afts_NextHop_InterfaceRef{
+										Interface: ygot.String("int42"),
+									},
 								},
 							},
 							NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{

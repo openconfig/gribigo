@@ -124,7 +124,7 @@ func TestGet(t *testing.T) {
 		inServer:  newServer,
 		inInjectedRIB: func() *rib.RIB {
 			r := rib.NewFake(dn)
-			if err := r.InjectNH(dn, 1); err != nil {
+			if err := r.InjectNH(dn, 1, "int42"); err != nil {
 				t.Fatalf("cannot add NH, %v", err)
 			}
 			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
@@ -141,7 +141,7 @@ func TestGet(t *testing.T) {
 				a := r.GetOrCreateAfts()
 				a.GetOrCreateIpv4Entry("1.0.0.0/24").NextHopGroup = ygot.Uint64(1)
 				a.GetOrCreateNextHopGroup(1).GetOrCreateNextHop(1).Weight = ygot.Uint64(1)
-				a.GetOrCreateNextHop(1)
+				a.GetOrCreateNextHop(1).GetOrCreateInterfaceRef().Interface = ygot.String("int42")
 				return r
 			}(),
 		},

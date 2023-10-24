@@ -112,17 +112,17 @@ func (f *fakeRIB) InjectIPv4(ni, pfx string, nhg uint64) error {
 }
 
 // InjectNHG adds a next-hop-group entry to network instance ni, with the specified
-// ID (nhgId). The next-hop-group contains the next hops specified in the nhs map,
+// ID (nhgID). The next-hop-group contains the next hops specified in the nhs map,
 // with the key of the map being the next-hop ID and the value being the weight within
 // the group.
-func (f *fakeRIB) InjectNHG(ni string, nhgId uint64, nhs map[uint64]uint64) error {
+func (f *fakeRIB) InjectNHG(ni string, nhgID uint64, nhs map[uint64]uint64) error {
 	niR, ok := f.r.NetworkInstanceRIB(ni)
 	if !ok {
 		return fmt.Errorf("unknown NI, %s", ni)
 	}
 
 	nhg := &aftpb.Afts_NextHopGroupKey{
-		Id:           nhgId,
+		Id:           nhgID,
 		NextHopGroup: &aftpb.Afts_NextHopGroup{},
 	}
 	for nh, weight := range nhs {
@@ -142,7 +142,8 @@ func (f *fakeRIB) InjectNHG(ni string, nhgId uint64, nhs map[uint64]uint64) erro
 }
 
 // InjectNH adds a next-hop entry to network instance ni, with the specified
-// index (nhIdx). An error is returned if it cannot be added.
+// index (nhIdx), and interface ref to intName. An error is returned if it cannot
+// be added.
 func (f *fakeRIB) InjectNH(ni string, nhIdx uint64, intName string) error {
 	niR, ok := f.r.NetworkInstanceRIB(ni)
 	if !ok {
@@ -158,6 +159,28 @@ func (f *fakeRIB) InjectNH(ni string, nhIdx uint64, intName string) error {
 		},
 	}, false); err != nil {
 		return fmt.Errorf("cannot add NH entry, err: %v", err)
+	}
+
+	return nil
+}
+
+// InjectMPLS adds an MPLS (Label) entry to network instance ni, with the
+// specified next-hop-group. An error is returned if it cannot be added.
+func (f *fakeRIB) InjectMPLS(ni string, label, nhg uint64) error {
+	niR, ok := f.r.NetworkInstanceRIB(ni)
+	if !ok {
+		return fmt.Errorf("unknown NI, %s", ni)
+	}
+
+	if _, _, err := niR.AddMPLS(&aftpb.Afts_LabelEntryKey{
+		Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+			LabelUint64: label,
+		},
+		LabelEntry: &aftpb.Afts_LabelEntry{
+			NextHopGroup: &wpb.UintValue{Value: nhg},
+		},
+	}, false); err != nil {
+		return fmt.Errorf("cannot add MPLS entry, err: %v", err)
 	}
 
 	return nil

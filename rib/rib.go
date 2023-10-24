@@ -1737,9 +1737,9 @@ func (r *RIBHolder) nhReferenced(i uint64) bool {
 	return r.refCounts.NextHop[i] > 0
 }
 
-// concreteIPv4Proto takes the input Ipv4Entry GoStruct and returns it as a gRIBI
+// ConcreteIPv4Proto takes the input Ipv4Entry GoStruct and returns it as a gRIBI
 // Ipv4EntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
-func concreteIPv4Proto(e *aft.Afts_Ipv4Entry) (*aftpb.Afts_Ipv4EntryKey, error) {
+func ConcreteIPv4Proto(e *aft.Afts_Ipv4Entry) (*aftpb.Afts_Ipv4EntryKey, error) {
 	ip4proto := &aftpb.Afts_Ipv4Entry{}
 	if err := protoFromGoStruct(e, &gpb.Path{
 		Elem: []*gpb.PathElem{{
@@ -1758,9 +1758,9 @@ func concreteIPv4Proto(e *aft.Afts_Ipv4Entry) (*aftpb.Afts_Ipv4EntryKey, error) 
 	}, nil
 }
 
-// concreteMPLSProto takes the input LabelEntry GoStruct and returns it as a gRIBI
+// ConcreteMPLSProto takes the input LabelEntry GoStruct and returns it as a gRIBI
 // LabelEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
-func concreteMPLSProto(e *aft.Afts_LabelEntry) (*aftpb.Afts_LabelEntryKey, error) {
+func ConcreteMPLSProto(e *aft.Afts_LabelEntry) (*aftpb.Afts_LabelEntryKey, error) {
 	mplsProto := &aftpb.Afts_LabelEntry{}
 	if err := protoFromGoStruct(e, &gpb.Path{
 		Elem: []*gpb.PathElem{{
@@ -1787,9 +1787,9 @@ func concreteMPLSProto(e *aft.Afts_LabelEntry) (*aftpb.Afts_LabelEntryKey, error
 	}, nil
 }
 
-// concreteNextHopProto takes the input NextHop GoStruct and returns it as a gRIBI
+// ConcreteNextHopProto takes the input NextHop GoStruct and returns it as a gRIBI
 // NextHopEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
-func concreteNextHopProto(e *aft.Afts_NextHop) (*aftpb.Afts_NextHopKey, error) {
+func ConcreteNextHopProto(e *aft.Afts_NextHop) (*aftpb.Afts_NextHopKey, error) {
 	nhproto := &aftpb.Afts_NextHop{}
 	if err := protoFromGoStruct(e, &gpb.Path{
 		Elem: []*gpb.PathElem{{
@@ -1808,9 +1808,9 @@ func concreteNextHopProto(e *aft.Afts_NextHop) (*aftpb.Afts_NextHopKey, error) {
 	}, nil
 }
 
-// concreteNextHopGroupProto takes the input NextHopGroup GoStruct and returns it as a gRIBI
+// ConcreteNextHopGroupProto takes the input NextHopGroup GoStruct and returns it as a gRIBI
 // NextHopGroupEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
-func concreteNextHopGroupProto(e *aft.Afts_NextHopGroup) (*aftpb.Afts_NextHopGroupKey, error) {
+func ConcreteNextHopGroupProto(e *aft.Afts_NextHopGroup) (*aftpb.Afts_NextHopGroupKey, error) {
 	nhgproto := &aftpb.Afts_NextHopGroup{}
 	if err := protoFromGoStruct(e, &gpb.Path{
 		Elem: []*gpb.PathElem{{
@@ -1900,7 +1900,7 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 			case <-stopCh:
 				return nil
 			default:
-				p, err := concreteIPv4Proto(e)
+				p, err := ConcreteIPv4Proto(e)
 				if err != nil {
 					return status.Errorf(codes.Internal, "cannot marshal IPv4Entry for %s into GetResponse, %v", pfx, err)
 				}
@@ -1922,7 +1922,7 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 			case <-stopCh:
 				return nil
 			default:
-				p, err := concreteMPLSProto(e)
+				p, err := ConcreteMPLSProto(e)
 				if err != nil {
 					return status.Errorf(codes.Internal, "cannot marshal MPLS entry for label %d into GetResponse, %v", lbl, err)
 				}
@@ -1944,7 +1944,7 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 			case <-stopCh:
 				return nil
 			default:
-				p, err := concreteNextHopGroupProto(e)
+				p, err := ConcreteNextHopGroupProto(e)
 				if err != nil {
 					return status.Errorf(codes.Internal, "cannot marshal NextHopGroupEntry for index %d into GetResponse, %v", index, err)
 				}
@@ -1966,7 +1966,7 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 			case <-stopCh:
 				return nil
 			default:
-				p, err := concreteNextHopProto(e)
+				p, err := ConcreteNextHopProto(e)
 				if err != nil {
 					return status.Errorf(codes.Internal, "cannot marshal NextHopEntry for ID %d into GetResponse, %v", id, err)
 				}

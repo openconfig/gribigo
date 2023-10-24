@@ -880,7 +880,7 @@ func TestConcreteNHGProto(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := concreteNextHopGroupProto(tt.inEntry)
+			got, err := ConcreteNextHopGroupProto(tt.inEntry)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, want: %v", err, tt.wantErr)
 			}
@@ -924,7 +924,7 @@ func TestConcreteIPv4Proto(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := concreteIPv4Proto(tt.inEntry)
+			got, err := ConcreteIPv4Proto(tt.inEntry)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}
@@ -978,7 +978,7 @@ func TestConcreteMPLSProto(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := concreteMPLSProto(tt.inEntry)
+			got, err := ConcreteMPLSProto(tt.inEntry)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}

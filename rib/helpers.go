@@ -112,17 +112,17 @@ func (f *fakeRIB) InjectIPv4(ni, pfx string, nhg uint64) error {
 }
 
 // InjectNHG adds a next-hop-group entry to network instance ni, with the specified
-// ID (nhgId). The next-hop-group contains the next hops specified in the nhs map,
+// ID (nhgID). The next-hop-group contains the next hops specified in the nhs map,
 // with the key of the map being the next-hop ID and the value being the weight within
 // the group.
-func (f *fakeRIB) InjectNHG(ni string, nhgId uint64, nhs map[uint64]uint64) error {
+func (f *fakeRIB) InjectNHG(ni string, nhgID uint64, nhs map[uint64]uint64) error {
 	niR, ok := f.r.NetworkInstanceRIB(ni)
 	if !ok {
 		return fmt.Errorf("unknown NI, %s", ni)
 	}
 
 	nhg := &aftpb.Afts_NextHopGroupKey{
-		Id:           nhgId,
+		Id:           nhgID,
 		NextHopGroup: &aftpb.Afts_NextHopGroup{},
 	}
 	for nh, weight := range nhs {

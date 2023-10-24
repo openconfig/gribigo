@@ -165,6 +165,17 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 	if src == nil || dst == nil {
 		return nil, fmt.Errorf("invalid nil input RIBs, src: %v, dst: %v", src, dst)
 	}
+
+	// Re-map ALL into the supported address families.
+	if _, ok := explicitReplace[spb.AFTType_ALL]; ok {
+		explicitReplace = map[spb.AFTType]bool{
+			spb.AFTType_IPV4:          true,
+			spb.AFTType_MPLS:          true,
+			spb.AFTType_NEXTHOP:       true,
+			spb.AFTType_NEXTHOP_GROUP: true,
+		}
+	}
+
 	srcContents, err := src.RIBContents()
 	if err != nil {
 		return nil, fmt.Errorf("cannot copy source RIB contents, err: %v", err)
@@ -196,6 +207,28 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 				}
 				id++
 				op, err := v4Operation(opType, srcNI, pfx, id, srcE)
+				if err != nil {
+					return nil, err
+				}
+
+				// If this entry already exists then this is an addition rather than a replace.
+				switch ok {
+				case true:
+					ops.Replace.TopLevel = append(ops.Replace.TopLevel, op)
+				case false:
+					ops.Add.TopLevel = append(ops.Add.TopLevel, op)
+				}
+			}
+		}
+
+		for lbl, srcE := range srcNIEntries.GetAfts().LabelEntry {
+			if dstE, ok := dstNIEntries.GetAfts().LabelEntry[lbl]; !ok || !reflect.DeepEqual(srcE, dstE) {
+				opType := spb.AFTOperation_ADD
+				if ok && explicitReplace[spb.AFTType_MPLS] {
+					opType = spb.AFTOperation_REPLACE
+				}
+				id++
+				op, err := mplsOperation(opType, srcNI, lbl, id, srcE)
 				if err != nil {
 					return nil, err
 				}
@@ -259,6 +292,17 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 			if _, ok := srcNIEntries.GetAfts().Ipv4Entry[pfx]; !ok {
 				id++
 				op, err := v4Operation(spb.AFTOperation_DELETE, srcNI, pfx, id, dstE)
+				if err != nil {
+					return nil, err
+				}
+				ops.Delete.TopLevel = append(ops.Delete.TopLevel, op)
+			}
+		}
+
+		for lbl, dstE := range dstNIEntries.GetAfts().LabelEntry {
+			if _, ok := srcNIEntries.GetAfts().LabelEntry[lbl]; !ok {
+				id++
+				op, err := mplsOperation(spb.AFTOperation_DELETE, srcNI, lbl, id, dstE)
 				if err != nil {
 					return nil, err
 				}
@@ -342,6 +386,24 @@ func nhOperation(method spb.AFTOperation_Operation, ni string, nhID, id uint64, 
 		Op:              method,
 		Entry: &spb.AFTOperation_NextHop{
 			NextHop: p,
+		},
+	}, nil
+}
+
+// mplsOperation builds a gRIBI LabelEntry operation with the specified method corresponding to
+// the MPLS label entry lbl. The operation is targeted at network instance ni, and uses the specified
+// ID. The contents of the operation are the entry e.
+func mplsOperation(method spb.AFTOperation_Operation, ni string, lbl aft.Afts_LabelEntry_Label_Union, id uint64, e *aft.Afts_LabelEntry) (*spb.AFTOperation, error) {
+	p, err := rib.ConcreteMPLSProto(e)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create operation for label %d, %v", lbl, err)
+	}
+	return &spb.AFTOperation{
+		Id:              id,
+		NetworkInstance: ni,
+		Op:              method,
+		Entry: &spb.AFTOperation_Mpls{
+			Mpls: p,
 		},
 	}, nil
 }

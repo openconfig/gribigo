@@ -142,7 +142,8 @@ func (f *fakeRIB) InjectNHG(ni string, nhgId uint64, nhs map[uint64]uint64) erro
 }
 
 // InjectNH adds a next-hop entry to network instance ni, with the specified
-// index (nhIdx). An error is returned if it cannot be added.
+// index (nhIdx), and interface ref to intName. An error is returned if it cannot
+// be added.
 func (f *fakeRIB) InjectNH(ni string, nhIdx uint64, intName string) error {
 	niR, ok := f.r.NetworkInstanceRIB(ni)
 	if !ok {
@@ -158,6 +159,28 @@ func (f *fakeRIB) InjectNH(ni string, nhIdx uint64, intName string) error {
 		},
 	}, false); err != nil {
 		return fmt.Errorf("cannot add NH entry, err: %v", err)
+	}
+
+	return nil
+}
+
+// InjectMPLS adds an MPLS (Label) entry to network instance ni, with the
+// specified next-hop-group. An error is returned if it cannot be added.
+func (f *fakeRIB) InjectMPLS(ni string, label, nhg uint64) error {
+	niR, ok := f.r.NetworkInstanceRIB(ni)
+	if !ok {
+		return fmt.Errorf("unknown NI, %s", ni)
+	}
+
+	if _, _, err := niR.AddMPLS(&aftpb.Afts_LabelEntryKey{
+		Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+			LabelUint64: label,
+		},
+		LabelEntry: &aftpb.Afts_LabelEntry{
+			NextHopGroup: &wpb.UintValue{Value: nhg},
+		},
+	}, false); err != nil {
+		return fmt.Errorf("cannot add MPLS entry, err: %v", err)
 	}
 
 	return nil

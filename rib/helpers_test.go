@@ -317,6 +317,33 @@ func TestFakeRIB(t *testing.T) {
 			},
 		},
 	}, {
+		desc: "mpls only",
+		inBuild: func() *fakeRIB {
+			f := NewFake(dn, DisableRIBCheckFn())
+			if err := f.InjectMPLS(dn, 42, 1); err != nil {
+				t.Fatalf("cannot add MPLS, err: %v", err)
+			}
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							LabelEntry: map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry{
+								aft.UnionUint32(42): {
+									Label:        aft.UnionUint32(42),
+									NextHopGroup: ygot.Uint64(1),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
 		desc: "nhg only",
 		inBuild: func() *fakeRIB {
 			f := NewFake(dn, DisableRIBCheckFn())

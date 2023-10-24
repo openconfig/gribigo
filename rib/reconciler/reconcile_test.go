@@ -865,6 +865,114 @@ func TestDiff(t *testing.T) {
 				}},
 			},
 		},
+	}, {
+		desc: "explicit replace for all types",
+		inSrc: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1, "int42"); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			// NHG ID = 1 is unchanged.
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG, %v", err)
+			}
+			if err := r.InjectNHG(dn, 2, map[uint64]uint64{1: 64}); err != nil {
+				t.Fatalf("cannot add NHG, %v", err)
+			}
+			if err := r.InjectMPLS(dn, 42, 2); err != nil {
+				t.Fatalf("cannot add label entry, %v", err)
+			}
+			if err := r.InjectIPv4(dn, "1.0.0.0/24", 2); err != nil {
+				t.Fatalf("cannot add IPv4 entry, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inDst: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1, "int10"); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG, %v", err)
+			}
+			if err := r.InjectNHG(dn, 2, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG, %v", err)
+			}
+			if err := r.InjectMPLS(dn, 42, 1); err != nil {
+				t.Fatalf("cannot add label entry, %v", err)
+			}
+			if err := r.InjectIPv4(dn, "1.0.0.0/24", 1); err != nil {
+				t.Fatalf("cannot add IPv4 entry, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inExplicitReplace: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
+		wantOps: &reconcileOps{
+			Replace: &ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id:              1,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_REPLACE,
+					Entry: &spb.AFTOperation_Ipv4{
+						Ipv4: &aftpb.Afts_Ipv4EntryKey{
+							Prefix: "1.0.0.0/24",
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+								NextHopGroup: &wpb.UintValue{Value: 2},
+							},
+						},
+					},
+				}, {
+					Id:              2,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_REPLACE,
+					Entry: &spb.AFTOperation_Mpls{
+						Mpls: &aftpb.Afts_LabelEntryKey{
+							Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+								LabelUint64: 42,
+							},
+							LabelEntry: &aftpb.Afts_LabelEntry{
+								NextHopGroup: &wpb.UintValue{Value: 2},
+							},
+						},
+					},
+				}},
+				NHG: []*spb.AFTOperation{{
+					Id:              3,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_REPLACE,
+					Entry: &spb.AFTOperation_NextHopGroup{
+						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+							Id: 2,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{
+								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+									Index: 1,
+									NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+										Weight: &wpb.UintValue{Value: 64},
+									},
+								}},
+							},
+						},
+					},
+				}},
+				NH: []*spb.AFTOperation{{
+					Id:              4,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_REPLACE,
+					Entry: &spb.AFTOperation_NextHop{
+						NextHop: &aftpb.Afts_NextHopKey{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHop{
+								InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+									Interface: &wpb.StringValue{Value: "int42"},
+								},
+							},
+						},
+					},
+				}},
+			},
+		},
 	}}
 
 	for _, tt := range tests {

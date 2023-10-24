@@ -165,6 +165,17 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 	if src == nil || dst == nil {
 		return nil, fmt.Errorf("invalid nil input RIBs, src: %v, dst: %v", src, dst)
 	}
+
+	// Re-map ALL into the supported address families.
+	if _, ok := explicitReplace[spb.AFTType_ALL]; ok {
+		explicitReplace = map[spb.AFTType]bool{
+			spb.AFTType_IPV4:          true,
+			spb.AFTType_MPLS:          true,
+			spb.AFTType_NEXTHOP:       true,
+			spb.AFTType_NEXTHOP_GROUP: true,
+		}
+	}
+
 	srcContents, err := src.RIBContents()
 	if err != nil {
 		return nil, fmt.Errorf("cannot copy source RIB contents, err: %v", err)

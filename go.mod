@@ -16,6 +16,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230822172742-b8732ec3820d
 	google.golang.org/grpc v1.58.0-dev
 	google.golang.org/protobuf v1.31.0
+	k8s.io/klog v1.0.0
 	lukechampine.com/uint128 v1.2.0
 )
 

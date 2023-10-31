@@ -212,7 +212,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 					opType = spb.AFTOperation_REPLACE
 				}
 				id.Add(1)
-				op, err := v4Operation(opType, srcNI, pfx, id, srcE)
+				op, err := v4Operation(opType, srcNI, id, srcE)
 				if err != nil {
 					return nil, err
 				}
@@ -234,7 +234,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 					opType = spb.AFTOperation_REPLACE
 				}
 				id.Add(1)
-				op, err := mplsOperation(opType, srcNI, lbl, id, srcE)
+				op, err := mplsOperation(opType, srcNI, id, srcE)
 				if err != nil {
 					return nil, err
 				}
@@ -256,7 +256,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 					opType = spb.AFTOperation_REPLACE
 				}
 				id.Add(1)
-				op, err := nhgOperation(opType, srcNI, nhgID, id, srcE)
+				op, err := nhgOperation(opType, srcNI, id, srcE)
 				if err != nil {
 					return nil, err
 				}
@@ -278,7 +278,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 					opType = spb.AFTOperation_REPLACE
 				}
 				id.Add(1)
-				op, err := nhOperation(opType, srcNI, nhID, id, srcE)
+				op, err := nhOperation(opType, srcNI, id, srcE)
 				if err != nil {
 					return nil, err
 				}
@@ -297,7 +297,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 		for pfx, dstE := range dstNIEntries.GetAfts().Ipv4Entry {
 			if _, ok := srcNIEntries.GetAfts().Ipv4Entry[pfx]; !ok {
 				id.Add(1)
-				op, err := v4Operation(spb.AFTOperation_DELETE, srcNI, pfx, id, dstE)
+				op, err := v4Operation(spb.AFTOperation_DELETE, srcNI, id, dstE)
 				if err != nil {
 					return nil, err
 				}
@@ -308,7 +308,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 		for lbl, dstE := range dstNIEntries.GetAfts().LabelEntry {
 			if _, ok := srcNIEntries.GetAfts().LabelEntry[lbl]; !ok {
 				id.Add(1)
-				op, err := mplsOperation(spb.AFTOperation_DELETE, srcNI, lbl, id, dstE)
+				op, err := mplsOperation(spb.AFTOperation_DELETE, srcNI, id, dstE)
 				if err != nil {
 					return nil, err
 				}
@@ -319,7 +319,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 		for nhgID, dstE := range dstNIEntries.GetAfts().NextHopGroup {
 			if _, ok := srcNIEntries.GetAfts().NextHopGroup[nhgID]; !ok {
 				id.Add(1)
-				op, err := nhgOperation(spb.AFTOperation_DELETE, srcNI, nhgID, id, dstE)
+				op, err := nhgOperation(spb.AFTOperation_DELETE, srcNI, id, dstE)
 				if err != nil {
 					return nil, err
 				}
@@ -330,7 +330,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 		for nhID, dstE := range dstNIEntries.GetAfts().NextHop {
 			if _, ok := srcNIEntries.GetAfts().NextHop[nhID]; !ok {
 				id.Add(1)
-				op, err := nhOperation(spb.AFTOperation_DELETE, srcNI, nhID, id, dstE)
+				op, err := nhOperation(spb.AFTOperation_DELETE, srcNI, id, dstE)
 				if err != nil {
 					return nil, err
 				}
@@ -342,13 +342,13 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 	return ops, nil
 }
 
-// v4Operation builds a gRIBI IPv4 operation with the specified method corresponding to the
-// prefix pfx in network instance ni, using the specified ID for the operation. The contents
+// v4Operation builds a gRIBI IPv4 operation with the specified method corresponding to a
+// prefix in the network instance ni, using the specified ID for the operation. The contents
 // of the operation are the entry e.
-func v4Operation(method spb.AFTOperation_Operation, ni, pfx string, id *atomic.Uint64, e *aft.Afts_Ipv4Entry) (*spb.AFTOperation, error) {
+func v4Operation(method spb.AFTOperation_Operation, ni string, id *atomic.Uint64, e *aft.Afts_Ipv4Entry) (*spb.AFTOperation, error) {
 	p, err := rib.ConcreteIPv4Proto(e)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create operation for prefix %s, %v", pfx, err)
+		return nil, fmt.Errorf("cannot create operation for prefix %s, %v", e.GetPrefix(), err)
 	}
 	return &spb.AFTOperation{
 		Id:              id.Load(),
@@ -360,13 +360,13 @@ func v4Operation(method spb.AFTOperation_Operation, ni, pfx string, id *atomic.U
 	}, nil
 }
 
-// nhgOperation builds a gRIBI NHG operation with the specified method, corresponding to the
-// NHG ID nhgID, in network instance ni, using the specified ID for the operation. The
+// nhgOperation builds a gRIBI NHG operation with the specified method, corresponding to a
+// NHG in network instance ni, using the specified ID for the operation. The
 // contents of the operation are the entry e.
-func nhgOperation(method spb.AFTOperation_Operation, ni string, nhgID uint64, id *atomic.Uint64, e *aft.Afts_NextHopGroup) (*spb.AFTOperation, error) {
+func nhgOperation(method spb.AFTOperation_Operation, ni string, id *atomic.Uint64, e *aft.Afts_NextHopGroup) (*spb.AFTOperation, error) {
 	p, err := rib.ConcreteNextHopGroupProto(e)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create operation for NHG %d, %v", nhgID, err)
+		return nil, fmt.Errorf("cannot create operation for NHG %d, %v", e.GetId(), err)
 	}
 	return &spb.AFTOperation{
 		Id:              id.Load(),
@@ -378,13 +378,13 @@ func nhgOperation(method spb.AFTOperation_Operation, ni string, nhgID uint64, id
 	}, nil
 }
 
-// nhOperation builds a gRIBI NH operation with the specified method, corresponding to the
-// NH ID nhID, in network instance ni, using the specified ID for the operation. The contents
+// nhOperation builds a gRIBI NH operation with the specified method, corresponding to a
+// NH in network instance ni, using the specified ID for the operation. The contents
 // of the operation are the entry e.
-func nhOperation(method spb.AFTOperation_Operation, ni string, nhID uint64, id *atomic.Uint64, e *aft.Afts_NextHop) (*spb.AFTOperation, error) {
+func nhOperation(method spb.AFTOperation_Operation, ni string, id *atomic.Uint64, e *aft.Afts_NextHop) (*spb.AFTOperation, error) {
 	p, err := rib.ConcreteNextHopProto(e)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create operation for NH %d, %v", nhID, err)
+		return nil, fmt.Errorf("cannot create operation for NH %d, %v", e.GetIndex(), err)
 	}
 	return &spb.AFTOperation{
 		Id:              id.Load(),
@@ -399,10 +399,10 @@ func nhOperation(method spb.AFTOperation_Operation, ni string, nhID uint64, id *
 // mplsOperation builds a gRIBI LabelEntry operation with the specified method corresponding to
 // the MPLS label entry lbl. The operation is targeted at network instance ni, and uses the specified
 // ID. The contents of the operation are the entry e.
-func mplsOperation(method spb.AFTOperation_Operation, ni string, lbl aft.Afts_LabelEntry_Label_Union, id *atomic.Uint64, e *aft.Afts_LabelEntry) (*spb.AFTOperation, error) {
+func mplsOperation(method spb.AFTOperation_Operation, ni string, id *atomic.Uint64, e *aft.Afts_LabelEntry) (*spb.AFTOperation, error) {
 	p, err := rib.ConcreteMPLSProto(e)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create operation for label %d, %v", lbl, err)
+		return nil, fmt.Errorf("cannot create operation for label %d, %v", e.GetLabel(), err)
 	}
 	return &spb.AFTOperation{
 		Id:              id.Load(),

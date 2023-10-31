@@ -134,6 +134,16 @@ type Ops struct {
 	TopLevel []*spb.AFTOperation
 }
 
+// Merge adds the operations from the "in" operations to the receiver ops.
+func (o *Ops) Merge(in *Ops) {
+	if in == nil {
+		return
+	}
+	o.NH = append(o.NH, in.NH...)
+	o.NHG = append(o.NHG, in.NHG...)
+	o.TopLevel = append(o.TopLevel, in.TopLevel...)
+}
+
 // ReconcileOps stores the operations that are required for a specific reconciliation
 // run.
 type ReconcileOps struct {
@@ -144,6 +154,16 @@ type ReconcileOps struct {
 	Replace *Ops
 	// Delete stores the operations that are removing entries.
 	Delete *Ops
+}
+
+// Merge adds the operations from the "in" operations to the receiver operations.
+func (r *ReconcileOps) Merge(in *ReconcileOps) {
+	if in == nil {
+		return
+	}
+	r.Add.Merge(in.Add)
+	r.Replace.Merge(in.Replace)
+	r.Delete.Merge(in.Delete)
 }
 
 // NewReconcileOps returns a new reconcileOps struct with the fields initialised.

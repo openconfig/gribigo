@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"testing"
 	"time"
@@ -72,6 +73,43 @@ func TestNewRemoteRIB(t *testing.T) {
 
 			if _, err := NewRemoteRIB(ctx, tt.inDefName, addr); (err != nil) != tt.wantErr {
 				t.Fatalf("NewRemoteRIB(ctx, %s, %s): did not get expected error, got: %v, wantErr? %v", tt.inDefName, addr, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestNewRemoteRIBWithStub(t *testing.T) {
+	tests := []struct {
+		desc      string
+		inDefName string
+		wantErr   bool
+	}{{
+		desc:      "successful dial",
+		inDefName: "DEFAULT",
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			addr, stop := newServer(t, nil)
+			defer stop()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			tlsc := credentials.NewTLS(&tls.Config{
+				InsecureSkipVerify: true,
+			})
+
+			c, err := grpc.DialContext(ctx, addr,
+				grpc.WithTransportCredentials(tlsc),
+				grpc.WithBlock(),
+			)
+			if err != nil {
+				t.Fatalf("grpc.DialContext(%s): cannot dial server, %v", addr, err)
+			}
+
+			if _, err := NewRemoteRIBWithStub(tt.inDefName, spb.NewGRIBIClient(c)); err != nil {
+				t.Fatalf("NewRemoteRIBWIthStub(...): cannot create client, %v", err)
 			}
 		})
 	}

@@ -101,7 +101,33 @@ func newBadServer(t *testing.T, r *rib.RIB) (string, func()) {
 
 	go srv.Serve(l)
 	return l.Addr().String(), srv.Stop
+}
 
+type hangingGRIBI struct {
+	*spb.UnimplementedGRIBIServer
+}
+
+func (h *hangingGRIBI) Get(_ *spb.GetRequest, _ spb.GRIBI_GetServer) error {
+	time.Sleep(600 * time.Second)
+	return nil
+}
+
+func newHangingServer(t *testing.T, r *rib.RIB) (string, func()) {
+	creds, err := credentials.NewServerTLSFromFile(testcommon.TLSCreds())
+	if err != nil {
+		t.Fatalf("cannot load TLS credentials, got err: %v", err)
+	}
+	srv := grpc.NewServer(grpc.Creds(creds))
+	s := &hangingGRIBI{}
+
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("cannot create listener, got err: %v", err)
+	}
+	spb.RegisterGRIBIServer(srv, s)
+
+	go srv.Serve(l)
+	return l.Addr().String(), srv.Stop
 }
 
 func TestGet(t *testing.T) {
@@ -145,6 +171,11 @@ func TestGet(t *testing.T) {
 				return r
 			}(),
 		},
+	}, {
+		desc:      "hanging gRIBI",
+		inDefName: dn,
+		inServer:  newHangingServer,
+		wantErr:   true,
 	}}
 
 	for _, tt := range tests {

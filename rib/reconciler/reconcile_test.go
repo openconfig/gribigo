@@ -2,7 +2,9 @@ package reconciler
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -44,7 +46,7 @@ func TestDiff(t *testing.T) {
 		inSrc             *rib.RIB
 		inDst             *rib.RIB
 		inExplicitReplace map[spb.AFTType]bool
-		wantOps           *reconcileOps
+		wantOps           *ReconcileOps
 		wantErr           bool
 	}{{
 		desc: "VRF NI in src, but not in dst",
@@ -66,8 +68,8 @@ func TestDiff(t *testing.T) {
 			return r.RIB()
 		}(),
 		inDst: rib.NewFake(dn).RIB(),
-		wantOps: &reconcileOps{
-			Add: &ops{
+		wantOps: &ReconcileOps{
+			Add: &Ops{
 				NH: []*spb.AFTOperation{{
 					Id:              3,
 					NetworkInstance: "FOO",
@@ -144,8 +146,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Add: &ops{
+		wantOps: &ReconcileOps{
+			Add: &Ops{
 				TopLevel: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -160,7 +162,7 @@ func TestDiff(t *testing.T) {
 					},
 				}},
 			},
-			Delete: &ops{
+			Delete: &Ops{
 				TopLevel: []*spb.AFTOperation{{
 					Id:              2,
 					NetworkInstance: dn,
@@ -207,8 +209,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Add: &ops{
+		wantOps: &ReconcileOps{
+			Add: &Ops{
 				NHG: []*spb.AFTOperation{{
 					Id:              2,
 					NetworkInstance: dn,
@@ -228,7 +230,7 @@ func TestDiff(t *testing.T) {
 					},
 				}},
 			},
-			Replace: &ops{
+			Replace: &Ops{
 				TopLevel: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -278,8 +280,8 @@ func TestDiff(t *testing.T) {
 		inExplicitReplace: map[spb.AFTType]bool{
 			spb.AFTType_IPV4: true,
 		},
-		wantOps: &reconcileOps{
-			Add: &ops{
+		wantOps: &ReconcileOps{
+			Add: &Ops{
 				NHG: []*spb.AFTOperation{{
 					Id:              2,
 					NetworkInstance: dn,
@@ -299,7 +301,7 @@ func TestDiff(t *testing.T) {
 					},
 				}},
 			},
-			Replace: &ops{
+			Replace: &Ops{
 				TopLevel: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -334,8 +336,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Add: &ops{
+		wantOps: &ReconcileOps{
+			Add: &Ops{
 				NHG: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -375,8 +377,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Delete: &ops{
+		wantOps: &ReconcileOps{
+			Delete: &Ops{
 				NHG: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -428,8 +430,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Replace: &ops{
+		wantOps: &ReconcileOps{
+			Replace: &Ops{
 				NHG: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -489,8 +491,8 @@ func TestDiff(t *testing.T) {
 		inExplicitReplace: map[spb.AFTType]bool{
 			spb.AFTType_NEXTHOP_GROUP: true,
 		},
-		wantOps: &reconcileOps{
-			Replace: &ops{
+		wantOps: &ReconcileOps{
+			Replace: &Ops{
 				NHG: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -535,8 +537,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Add: &ops{
+		wantOps: &ReconcileOps{
+			Add: &Ops{
 				NH: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -573,8 +575,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Delete: &ops{
+		wantOps: &ReconcileOps{
+			Delete: &Ops{
 				NH: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -608,8 +610,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Replace: &ops{
+		wantOps: &ReconcileOps{
+			Replace: &Ops{
 				NH: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -646,8 +648,8 @@ func TestDiff(t *testing.T) {
 		inExplicitReplace: map[spb.AFTType]bool{
 			spb.AFTType_NEXTHOP: true,
 		},
-		wantOps: &reconcileOps{
-			Replace: &ops{
+		wantOps: &ReconcileOps{
+			Replace: &Ops{
 				NH: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -693,8 +695,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Add: &ops{
+		wantOps: &ReconcileOps{
+			Add: &Ops{
 				TopLevel: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -737,8 +739,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Delete: &ops{
+		wantOps: &ReconcileOps{
+			Delete: &Ops{
 				TopLevel: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -790,8 +792,8 @@ func TestDiff(t *testing.T) {
 			}
 			return r.RIB()
 		}(),
-		wantOps: &reconcileOps{
-			Replace: &ops{
+		wantOps: &ReconcileOps{
+			Replace: &Ops{
 				TopLevel: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -846,8 +848,8 @@ func TestDiff(t *testing.T) {
 		inExplicitReplace: map[spb.AFTType]bool{
 			spb.AFTType_MPLS: true,
 		},
-		wantOps: &reconcileOps{
-			Replace: &ops{
+		wantOps: &ReconcileOps{
+			Replace: &Ops{
 				TopLevel: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -909,8 +911,8 @@ func TestDiff(t *testing.T) {
 		inExplicitReplace: map[spb.AFTType]bool{
 			spb.AFTType_ALL: true,
 		},
-		wantOps: &reconcileOps{
-			Replace: &ops{
+		wantOps: &ReconcileOps{
+			Replace: &Ops{
 				TopLevel: []*spb.AFTOperation{{
 					Id:              1,
 					NetworkInstance: dn,
@@ -977,7 +979,8 @@ func TestDiff(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := diff(tt.inSrc, tt.inDst, tt.inExplicitReplace)
+			id := &atomic.Uint64{}
+			got, err := diff(tt.inSrc, tt.inDst, tt.inExplicitReplace, id)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}
@@ -989,13 +992,13 @@ func TestDiff(t *testing.T) {
 			// Keep the test input as pithy as possible whilst ensuring safe adds
 			// in the real implementation.
 			if tt.wantOps.Add == nil {
-				tt.wantOps.Add = &ops{}
+				tt.wantOps.Add = &Ops{}
 			}
 			if tt.wantOps.Replace == nil {
-				tt.wantOps.Replace = &ops{}
+				tt.wantOps.Replace = &Ops{}
 			}
 			if tt.wantOps.Delete == nil {
-				tt.wantOps.Delete = &ops{}
+				tt.wantOps.Delete = &Ops{}
 			}
 
 			if diff := cmp.Diff(got, tt.wantOps,
@@ -1004,6 +1007,328 @@ func TestDiff(t *testing.T) {
 				protocmp.SortRepeatedFields(&aftpb.Afts_NextHopGroup{}, "next_hop"),
 			); diff != "" {
 				t.Fatalf("diff(%s, %s): did not get expected operations, diff(-got,+want):\n%s", tt.inSrc, tt.inDst, diff)
+			}
+		})
+	}
+}
+
+func TestReconcile(t *testing.T) {
+	dn := "DEFAULT"
+	tests := []struct {
+		desc       string
+		inIntended RIBTarget
+		inTarget   RIBTarget
+		inID       *atomic.Uint64
+		wantOps    *ReconcileOps
+		wantErr    bool
+	}{{
+		desc: "local-local: one entry in intended, not in target",
+		inIntended: func() RIBTarget {
+			r := rib.NewFake(dn, rib.DisableRIBCheckFn())
+			if err := r.InjectIPv4(dn, "1.0.0.0/24", 1); err != nil {
+				t.Fatalf("cannot add prefix to intended, %v", err)
+			}
+			return NewLocalRIB(r.RIB())
+		}(),
+		inTarget: func() RIBTarget {
+			r := rib.NewFake(dn, rib.DisableRIBCheckFn())
+			return NewLocalRIB(r.RIB())
+		}(),
+		inID: &atomic.Uint64{},
+		wantOps: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id:              1,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_ADD,
+					Entry: &spb.AFTOperation_Ipv4{
+						Ipv4: &aftpb.Afts_Ipv4EntryKey{
+							Prefix: "1.0.0.0/24",
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				}},
+			},
+			Replace: &Ops{},
+			Delete:  &Ops{},
+		},
+	}, {
+		desc: "local-local: no differences between intended and target",
+		inIntended: func() RIBTarget {
+			r := rib.NewFake(dn, rib.DisableRIBCheckFn())
+			if err := r.InjectNHG(dn, 100, map[uint64]uint64{
+				1: 10,
+				2: 20,
+				3: 30,
+			}); err != nil {
+				t.Fatalf("cannot add NHG, err: %v", err)
+			}
+			return NewLocalRIB(r.RIB())
+		}(),
+		inTarget: func() RIBTarget {
+			r := rib.NewFake(dn, rib.DisableRIBCheckFn())
+			if err := r.InjectNHG(dn, 100, map[uint64]uint64{
+				1: 10,
+				2: 20,
+				3: 30,
+			}); err != nil {
+				t.Fatalf("cannot add NHG, err: %v", err)
+			}
+			return NewLocalRIB(r.RIB())
+		}(),
+		inID: &atomic.Uint64{},
+		wantOps: &ReconcileOps{
+			Add:     &Ops{},
+			Replace: &Ops{},
+			Delete:  &Ops{},
+		},
+	}, {
+		desc:       "local-local: entry in target that is not in intended",
+		inIntended: NewLocalRIB(rib.NewFake(dn, rib.DisableRIBCheckFn()).RIB()),
+		inTarget: func() RIBTarget {
+			r := rib.NewFake(dn, rib.DisableRIBCheckFn())
+			if err := r.InjectNH(dn, 1, "eth0"); err != nil {
+				t.Fatalf("cannot add NH, err: %v", err)
+			}
+			return NewLocalRIB(r.RIB())
+		}(),
+		inID: &atomic.Uint64{},
+		wantOps: &ReconcileOps{
+			Add:     &Ops{},
+			Replace: &Ops{},
+			Delete: &Ops{
+				NH: []*spb.AFTOperation{{
+					Id:              1,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_DELETE,
+					Entry: &spb.AFTOperation_NextHop{
+						NextHop: &aftpb.Afts_NextHopKey{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHop{
+								InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+									Interface: &wpb.StringValue{Value: "eth0"},
+								},
+							},
+						},
+					},
+				}},
+			},
+		},
+	}, {
+		desc: "local-local: non-zero starting ID",
+		inIntended: func() RIBTarget {
+			r := rib.NewFake(dn, rib.DisableRIBCheckFn())
+			if err := r.InjectIPv4(dn, "1.0.0.0/24", 1); err != nil {
+				t.Fatalf("cannot add prefix to intended, %v", err)
+			}
+			return NewLocalRIB(r.RIB())
+		}(),
+		inTarget: func() RIBTarget {
+			r := rib.NewFake(dn, rib.DisableRIBCheckFn())
+			return NewLocalRIB(r.RIB())
+		}(),
+		inID: func() *atomic.Uint64 {
+			u := &atomic.Uint64{}
+			u.Store(42)
+			return u
+		}(),
+		wantOps: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id:              43,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_ADD,
+					Entry: &spb.AFTOperation_Ipv4{
+						Ipv4: &aftpb.Afts_Ipv4EntryKey{
+							Prefix: "1.0.0.0/24",
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				}},
+			},
+			Replace: &Ops{},
+			Delete:  &Ops{},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			rr := New(tt.inIntended, tt.inTarget)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			got, err := rr.Reconcile(ctx, tt.inID)
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+
+			if diff := cmp.Diff(got, tt.wantOps,
+				protocmp.Transform(),
+				cmpopts.EquateEmpty(),
+			); diff != "" {
+				t.Fatalf("did not get expected RIB, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestReconcileRemote(t *testing.T) {
+	dn := "DEFAULT"
+	tests := []struct {
+		desc                  string
+		inIntendedServer      func(*testing.T, *rib.RIB) (string, func())
+		inTargetServer        func(*testing.T, *rib.RIB) (string, func())
+		inInjectedIntendedRIB *rib.RIB
+		inInjectedRemoteRIB   *rib.RIB
+		inID                  *atomic.Uint64
+		wantOps               *ReconcileOps
+		wantErr               bool
+	}{{
+		desc:                  "no routes to add",
+		inIntendedServer:      newServer,
+		inTargetServer:        newServer,
+		inInjectedIntendedRIB: rib.New(dn, rib.DisableRIBCheckFn()),
+		inInjectedRemoteRIB:   rib.New(dn, rib.DisableRIBCheckFn()),
+		inID:                  &atomic.Uint64{},
+		wantOps: &ReconcileOps{
+			Add:     &Ops{},
+			Delete:  &Ops{},
+			Replace: &Ops{},
+		},
+	}, {
+		desc:             "route to add from intended to target",
+		inIntendedServer: newServer,
+		inTargetServer:   newServer,
+		inInjectedIntendedRIB: func() *rib.RIB {
+			r := rib.NewFake(dn, rib.DisableRIBCheckFn())
+			for i, a := range []string{"84.18.210.139/32", "142.250.72.174/32"} {
+				if err := r.InjectIPv4(dn, a, uint64(i+1)); err != nil {
+					t.Fatalf("cannot inject %s to intended, %v", a, err)
+				}
+			}
+			return r.RIB()
+		}(),
+		inInjectedRemoteRIB: func() *rib.RIB {
+			r := rib.NewFake(dn, rib.DisableRIBCheckFn())
+			if err := r.InjectIPv4(dn, "84.18.210.139/32", 1); err != nil {
+				t.Fatalf("cannot inject IPV4 prefix to intended, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inID: func() *atomic.Uint64 {
+			u := &atomic.Uint64{}
+			u.Store(41)
+			return u
+		}(),
+		wantOps: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id:              42,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_ADD,
+					Entry: &spb.AFTOperation_Ipv4{
+						Ipv4: &aftpb.Afts_Ipv4EntryKey{
+							Prefix: "142.250.72.174/32",
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+								NextHopGroup: &wpb.UintValue{Value: 2},
+							},
+						},
+					},
+				}},
+			},
+			Replace: &Ops{},
+			Delete:  &Ops{},
+		},
+	}, {
+		desc:                  "delete from target",
+		inIntendedServer:      newServer,
+		inTargetServer:        newServer,
+		inInjectedIntendedRIB: rib.New(dn, rib.DisableRIBCheckFn()),
+		inInjectedRemoteRIB: func() *rib.RIB {
+			r := rib.NewFake(dn, rib.DisableRIBCheckFn())
+			if err := r.InjectIPv4(dn, "84.18.210.139/32", 1); err != nil {
+				t.Fatalf("cannot inject IPV4 prefix to intended, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inID: func() *atomic.Uint64 {
+			u := &atomic.Uint64{}
+			u.Store(41)
+			return u
+		}(),
+		wantOps: &ReconcileOps{
+			Add:     &Ops{},
+			Replace: &Ops{},
+			Delete: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id:              42,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_DELETE,
+					Entry: &spb.AFTOperation_Ipv4{
+						Ipv4: &aftpb.Afts_Ipv4EntryKey{
+							Prefix: "84.18.210.139/32",
+							Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				}},
+			},
+		},
+	}, {
+		desc:                  "badly behaving target",
+		inIntendedServer:      newServer,
+		inTargetServer:        newBadServer,
+		inInjectedIntendedRIB: rib.New(dn, rib.DisableRIBCheckFn()),
+		inInjectedRemoteRIB:   rib.New(dn, rib.DisableRIBCheckFn()),
+		inID:                  &atomic.Uint64{},
+		wantErr:               true,
+	}, {
+		desc:                  "sleepy intended server",
+		inIntendedServer:      newHangingServer,
+		inTargetServer:        newServer,
+		inInjectedIntendedRIB: rib.New(dn, rib.DisableRIBCheckFn()),
+		inInjectedRemoteRIB:   rib.New(dn, rib.DisableRIBCheckFn()),
+		inID:                  &atomic.Uint64{},
+		wantErr:               true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			intendedAddr, intendedStop := tt.inIntendedServer(t, tt.inInjectedIntendedRIB)
+			defer intendedStop()
+
+			targetAddr, targetStop := tt.inTargetServer(t, tt.inInjectedRemoteRIB)
+			defer targetStop()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			intendedTarget, err := NewRemoteRIB(ctx, dn, intendedAddr)
+			if err != nil {
+				t.Fatalf("cannot create intended RIBTarget, %v", err)
+			}
+
+			targetTarget, err := NewRemoteRIB(ctx, dn, targetAddr)
+			if err != nil {
+				t.Fatalf("cannot create target RIBTarget, %v", err)
+			}
+
+			rr := New(intendedTarget, targetTarget)
+
+			got, err := rr.Reconcile(ctx, tt.inID)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("(reconciler.Reconcile()): cannot calculate difference, got unexpected err: %v", err)
+			}
+
+			if diff := cmp.Diff(got, tt.wantOps, protocmp.Transform()); diff != "" {
+				t.Fatalf("reconciler.Reconcile(): did not get expected ops, diff(-got,+want):\n%s", diff)
 			}
 		})
 	}

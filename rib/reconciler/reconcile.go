@@ -27,6 +27,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync/atomic"
 
 	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/gribigo/rib"
@@ -38,13 +39,6 @@ type R struct {
 	// intended and target are the mechanisms by which to access the intended
 	// RIB (source of truth) and the target it is to be reconciled with.
 	intended, target RIBTarget
-
-	// intended is a RIB containing the AFT entries that are intended to be
-	// programmed by the reconciler.
-	lastIntended *rib.RIB
-	// lastTarget is a cache of the last RIB entries that were returned from
-	// the target RIB.
-	lastTarget *rib.RIB
 }
 
 // RIBTarget is an interface that abstracts a local and remote RIB in the
@@ -63,6 +57,11 @@ type RIBTarget interface {
 // RIB type.
 type LocalRIB struct {
 	r *rib.RIB
+}
+
+// NewLocalRIB returns a new LocalRIB instance.
+func NewLocalRIB(r *rib.RIB) *LocalRIB {
+	return &LocalRIB{r: r}
 }
 
 // Get returns the contents of the local RIB.
@@ -86,39 +85,47 @@ func New(intended, target RIBTarget) *R {
 	}
 }
 
-// Reconcile performs a reconciliation operation between the intended and specified
-// remote RIB.
-func (r *R) Reconcile(ctx context.Context) error {
+// Reconcile calculates the required gRIBI actions to institute a reconciliation
+// operation between the intended and  remote RIB. The specified ID is used as the
+// base for the operation ID within gRIBI. Reconcile returns a set of operations
+// in the form of a ReconcileOps struct.
+//
+// Within the returned ReconcileOps:
+//   - The Add field indicates entries that are to be newly added to the remote RIB.
+//   - The Replace field indicates entries that are replacing entries within the remote RIB,
+//     the replaces will be implicit (i.e., expressed as gRIBI ADD operations) unless the
+//     ExplicitReplace option is provided.
+//   - The Delete field indicates entries that are to be deleted from the remote RIB.
+//
+// Within each of these fields, entries are broken down into "top-level" entries which are from
+// the IPv4, IPv6, or MPLS AFTs, and those that correspond to next-hop-group (NHG) or next-hop (NH)
+// entries. This allows the client receiving these entries to enqueue them in the correct order
+// to ensure that there are no forward references, and implement make-before-break.
+func (r *R) Reconcile(ctx context.Context, id *atomic.Uint64) (*ReconcileOps, error) {
 	// Get the current contents of intended and target.
 	iRIB, err := r.intended.Get(ctx)
 	if err != nil {
-		return fmt.Errorf("cannot reconcile RIBs, cannot get contents of intended, %v", err)
+		return nil, fmt.Errorf("cannot reconcile RIBs, cannot get contents of intended, %v", err)
 	}
 
 	tRIB, err := r.target.Get(ctx)
 	if err != nil {
-		return fmt.Errorf("cannot reconcile RIBs, cannot get contents of target, %v", err)
+		return nil, fmt.Errorf("cannot reconcile RIBs, cannot get contents of target, %v", err)
 	}
 
 	// Perform diff on their contents.
 	// TODO(robjs): Plumb through explicitReplace map.
-	diffs, err := diff(iRIB, tRIB, nil)
+	diffs, err := diff(iRIB, tRIB, nil, id)
 	if err != nil {
-		return fmt.Errorf("cannot reconcile RIBs, cannot calculate diff, %v", err)
+		return nil, fmt.Errorf("cannot reconcile RIBs, cannot calculate diff, %v", err)
 	}
-	_ = diffs
-	_, _ = r.lastIntended, r.lastTarget
-
-	// Enqueue the operations towards target that bring it in-line with intended.
-	// TODO(robjs): Implement enqueuing in client.
-	return fmt.Errorf("reconciliation unimplemented")
-
+	return diffs, nil
 }
 
-// ops stores a set of operations with their corresponding types. Operations
+// Ops stores a set of operations with their corresponding types. Operations
 // are stored as NH (nexthop), NHG (next-hop-group) and top-level (MPLS, IPv4,
-// IPv6). This allows a gRIBI client to sequence the ops suitably.
-type ops struct {
+// IPv6). This allows a gRIBI client to sequence the Ops suitably.
+type Ops struct {
 	// NH stores the next-hop operations in the operation set.
 	NH []*spb.AFTOperation
 	// NHG stores the next-hop-group operations in the operation set.
@@ -127,24 +134,24 @@ type ops struct {
 	TopLevel []*spb.AFTOperation
 }
 
-// reconcile ops stores the operations that are required for a specific reconciliation
+// ReconcileOps stores the operations that are required for a specific reconciliation
 // run.
-type reconcileOps struct {
+type ReconcileOps struct {
 	// Add stores the operations that are explicitly adding new entries.
-	Add *ops
+	Add *Ops
 	// Replace stores the operations that are implicit or explicit replaces of
 	// existing entries.
-	Replace *ops
+	Replace *Ops
 	// Delete stores the operations that are removing entries.
-	Delete *ops
+	Delete *Ops
 }
 
-// newReconcileOps returns a new reconcileOps struct with the fields initialised.
-func newReconcileOps() *reconcileOps {
-	return &reconcileOps{
-		Add:     &ops{},
-		Replace: &ops{},
-		Delete:  &ops{},
+// NewReconcileOps returns a new reconcileOps struct with the fields initialised.
+func NewReconcileOps() *ReconcileOps {
+	return &ReconcileOps{
+		Add:     &Ops{},
+		Replace: &Ops{},
+		Delete:  &Ops{},
 	}
 }
 
@@ -161,7 +168,7 @@ func newReconcileOps() *reconcileOps {
 //
 // If an entry within the explicitReplace map is set to true then explicit, rather
 // than implicit replaces are generated for that function.
-func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOps, error) {
+func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Uint64) (*ReconcileOps, error) {
 	if src == nil || dst == nil {
 		return nil, fmt.Errorf("invalid nil input RIBs, src: %v, dst: %v", src, dst)
 	}
@@ -185,9 +192,8 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 		return nil, fmt.Errorf("cannot copy destination RIB contents, err: %v", err)
 	}
 
-	ops := newReconcileOps()
+	ops := NewReconcileOps()
 
-	var id uint64
 	for srcNI, srcNIEntries := range srcContents {
 		dstNIEntries, ok := dstContents[srcNI]
 		if !ok {
@@ -205,8 +211,8 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 				if ok && explicitReplace[spb.AFTType_IPV4] {
 					opType = spb.AFTOperation_REPLACE
 				}
-				id++
-				op, err := v4Operation(opType, srcNI, pfx, id, srcE)
+				id.Add(1)
+				op, err := v4Operation(opType, srcNI, id, srcE)
 				if err != nil {
 					return nil, err
 				}
@@ -227,8 +233,8 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 				if ok && explicitReplace[spb.AFTType_MPLS] {
 					opType = spb.AFTOperation_REPLACE
 				}
-				id++
-				op, err := mplsOperation(opType, srcNI, lbl, id, srcE)
+				id.Add(1)
+				op, err := mplsOperation(opType, srcNI, id, srcE)
 				if err != nil {
 					return nil, err
 				}
@@ -249,8 +255,8 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 				if ok && explicitReplace[spb.AFTType_NEXTHOP_GROUP] {
 					opType = spb.AFTOperation_REPLACE
 				}
-				id++
-				op, err := nhgOperation(opType, srcNI, nhgID, id, srcE)
+				id.Add(1)
+				op, err := nhgOperation(opType, srcNI, id, srcE)
 				if err != nil {
 					return nil, err
 				}
@@ -271,8 +277,8 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 				if ok && explicitReplace[spb.AFTType_NEXTHOP] {
 					opType = spb.AFTOperation_REPLACE
 				}
-				id++
-				op, err := nhOperation(opType, srcNI, nhID, id, srcE)
+				id.Add(1)
+				op, err := nhOperation(opType, srcNI, id, srcE)
 				if err != nil {
 					return nil, err
 				}
@@ -290,8 +296,8 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 		// Delete operations.
 		for pfx, dstE := range dstNIEntries.GetAfts().Ipv4Entry {
 			if _, ok := srcNIEntries.GetAfts().Ipv4Entry[pfx]; !ok {
-				id++
-				op, err := v4Operation(spb.AFTOperation_DELETE, srcNI, pfx, id, dstE)
+				id.Add(1)
+				op, err := v4Operation(spb.AFTOperation_DELETE, srcNI, id, dstE)
 				if err != nil {
 					return nil, err
 				}
@@ -301,8 +307,8 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 
 		for lbl, dstE := range dstNIEntries.GetAfts().LabelEntry {
 			if _, ok := srcNIEntries.GetAfts().LabelEntry[lbl]; !ok {
-				id++
-				op, err := mplsOperation(spb.AFTOperation_DELETE, srcNI, lbl, id, dstE)
+				id.Add(1)
+				op, err := mplsOperation(spb.AFTOperation_DELETE, srcNI, id, dstE)
 				if err != nil {
 					return nil, err
 				}
@@ -312,8 +318,8 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 
 		for nhgID, dstE := range dstNIEntries.GetAfts().NextHopGroup {
 			if _, ok := srcNIEntries.GetAfts().NextHopGroup[nhgID]; !ok {
-				id++
-				op, err := nhgOperation(spb.AFTOperation_DELETE, srcNI, nhgID, id, dstE)
+				id.Add(1)
+				op, err := nhgOperation(spb.AFTOperation_DELETE, srcNI, id, dstE)
 				if err != nil {
 					return nil, err
 				}
@@ -323,8 +329,8 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 
 		for nhID, dstE := range dstNIEntries.GetAfts().NextHop {
 			if _, ok := srcNIEntries.GetAfts().NextHop[nhID]; !ok {
-				id++
-				op, err := nhOperation(spb.AFTOperation_DELETE, srcNI, nhID, id, dstE)
+				id.Add(1)
+				op, err := nhOperation(spb.AFTOperation_DELETE, srcNI, id, dstE)
 				if err != nil {
 					return nil, err
 				}
@@ -336,16 +342,16 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool) (*reconcileOp
 	return ops, nil
 }
 
-// v4Operation builds a gRIBI IPv4 operation with the specified method corresponding to the
-// prefix pfx in network instance ni, using the specified ID for the operation. The contents
+// v4Operation builds a gRIBI IPv4 operation with the specified method corresponding to a
+// prefix in the network instance ni, using the specified ID for the operation. The contents
 // of the operation are the entry e.
-func v4Operation(method spb.AFTOperation_Operation, ni, pfx string, id uint64, e *aft.Afts_Ipv4Entry) (*spb.AFTOperation, error) {
+func v4Operation(method spb.AFTOperation_Operation, ni string, id *atomic.Uint64, e *aft.Afts_Ipv4Entry) (*spb.AFTOperation, error) {
 	p, err := rib.ConcreteIPv4Proto(e)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create operation for prefix %s, %v", pfx, err)
+		return nil, fmt.Errorf("cannot create operation for prefix %s, %v", e.GetPrefix(), err)
 	}
 	return &spb.AFTOperation{
-		Id:              id,
+		Id:              id.Load(),
 		NetworkInstance: ni,
 		Op:              method,
 		Entry: &spb.AFTOperation_Ipv4{
@@ -354,16 +360,16 @@ func v4Operation(method spb.AFTOperation_Operation, ni, pfx string, id uint64, e
 	}, nil
 }
 
-// nhgOperation builds a gRIBI NHG operation with the specified method, corresponding to the
-// NHG ID nhgID, in network instance ni, using the specified ID for the operation. The
+// nhgOperation builds a gRIBI NHG operation with the specified method, corresponding to a
+// NHG in network instance ni, using the specified ID for the operation. The
 // contents of the operation are the entry e.
-func nhgOperation(method spb.AFTOperation_Operation, ni string, nhgID, id uint64, e *aft.Afts_NextHopGroup) (*spb.AFTOperation, error) {
+func nhgOperation(method spb.AFTOperation_Operation, ni string, id *atomic.Uint64, e *aft.Afts_NextHopGroup) (*spb.AFTOperation, error) {
 	p, err := rib.ConcreteNextHopGroupProto(e)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create operation for NHG %d, %v", nhgID, err)
+		return nil, fmt.Errorf("cannot create operation for NHG %d, %v", e.GetId(), err)
 	}
 	return &spb.AFTOperation{
-		Id:              id,
+		Id:              id.Load(),
 		NetworkInstance: ni,
 		Op:              method,
 		Entry: &spb.AFTOperation_NextHopGroup{
@@ -372,16 +378,16 @@ func nhgOperation(method spb.AFTOperation_Operation, ni string, nhgID, id uint64
 	}, nil
 }
 
-// nhOperation builds a gRIBI NH operation with the specified method, corresponding to the
-// NH ID nhID, in network instance ni, using the specified ID for the operation. The contents
+// nhOperation builds a gRIBI NH operation with the specified method, corresponding to a
+// NH in network instance ni, using the specified ID for the operation. The contents
 // of the operation are the entry e.
-func nhOperation(method spb.AFTOperation_Operation, ni string, nhID, id uint64, e *aft.Afts_NextHop) (*spb.AFTOperation, error) {
+func nhOperation(method spb.AFTOperation_Operation, ni string, id *atomic.Uint64, e *aft.Afts_NextHop) (*spb.AFTOperation, error) {
 	p, err := rib.ConcreteNextHopProto(e)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create operation for NH %d, %v", nhID, err)
+		return nil, fmt.Errorf("cannot create operation for NH %d, %v", e.GetIndex(), err)
 	}
 	return &spb.AFTOperation{
-		Id:              id,
+		Id:              id.Load(),
 		NetworkInstance: ni,
 		Op:              method,
 		Entry: &spb.AFTOperation_NextHop{
@@ -393,13 +399,13 @@ func nhOperation(method spb.AFTOperation_Operation, ni string, nhID, id uint64, 
 // mplsOperation builds a gRIBI LabelEntry operation with the specified method corresponding to
 // the MPLS label entry lbl. The operation is targeted at network instance ni, and uses the specified
 // ID. The contents of the operation are the entry e.
-func mplsOperation(method spb.AFTOperation_Operation, ni string, lbl aft.Afts_LabelEntry_Label_Union, id uint64, e *aft.Afts_LabelEntry) (*spb.AFTOperation, error) {
+func mplsOperation(method spb.AFTOperation_Operation, ni string, id *atomic.Uint64, e *aft.Afts_LabelEntry) (*spb.AFTOperation, error) {
 	p, err := rib.ConcreteMPLSProto(e)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create operation for label %d, %v", lbl, err)
+		return nil, fmt.Errorf("cannot create operation for label %d, %v", e.GetLabel(), err)
 	}
 	return &spb.AFTOperation{
-		Id:              id,
+		Id:              id.Load(),
 		NetworkInstance: ni,
 		Op:              method,
 		Entry: &spb.AFTOperation_Mpls{

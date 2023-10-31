@@ -38,6 +38,23 @@ func NewRemoteRIB(ctx context.Context, defName, addr string) (*RemoteRIB, error)
 	return r, nil
 }
 
+// NewRemoteRIBWithStub creates a new remote RIB using the specified default network
+// instance name, and the provided stub client. It returns an error if the
+// client cannot be created.
+func NewRemoteRIBWithStub(defName string, stub spb.GRIBIClient) (*RemoteRIB, error) {
+	c, err := client.New()
+	if err != nil {
+		return nil, fmt.Errorf("cannot create gRIBI client, %v", err)
+	}
+	if err := c.UseStub(stub); err != nil {
+		return nil, fmt.Errorf("cannot set gRIBI client within wrapper client, %v", err)
+	}
+	return &RemoteRIB{
+		c:           c,
+		defaultName: defName,
+	}, nil
+}
+
 // CleanUp closes the remote connection to the gRIBI server.
 func (r *RemoteRIB) CleanUp() {
 	r.c.Close()

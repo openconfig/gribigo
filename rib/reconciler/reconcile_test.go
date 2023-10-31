@@ -1333,3 +1333,262 @@ func TestReconcileRemote(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeOps(t *testing.T) {
+	tests := []struct {
+		desc       string
+		inOriginal *Ops
+		inInput    *Ops
+		want       *Ops
+	}{{
+		desc:       "merging to empty",
+		inOriginal: &Ops{},
+		inInput: &Ops{
+			TopLevel: []*spb.AFTOperation{{
+				Id: 1,
+			}},
+			NHG: []*spb.AFTOperation{{
+				Id: 2,
+			}},
+			NH: []*spb.AFTOperation{{
+				Id: 3,
+			}},
+		},
+		want: &Ops{
+			TopLevel: []*spb.AFTOperation{{
+				Id: 1,
+			}},
+			NHG: []*spb.AFTOperation{{
+				Id: 2,
+			}},
+			NH: []*spb.AFTOperation{{
+				Id: 3,
+			}},
+		},
+	}, {
+		desc: "merging to populated",
+		inOriginal: &Ops{
+			TopLevel: []*spb.AFTOperation{{
+				Id: 10,
+			}},
+			NHG: []*spb.AFTOperation{{
+				Id: 20,
+			}},
+			NH: []*spb.AFTOperation{{
+				Id: 30,
+			}},
+		},
+		inInput: &Ops{
+			TopLevel: []*spb.AFTOperation{{
+				Id: 1,
+			}},
+			NHG: []*spb.AFTOperation{{
+				Id: 2,
+			}},
+			NH: []*spb.AFTOperation{{
+				Id: 3,
+			}},
+		},
+		want: &Ops{
+			TopLevel: []*spb.AFTOperation{{
+				Id: 10,
+			}, {
+				Id: 1,
+			}},
+			NHG: []*spb.AFTOperation{{
+				Id: 20,
+			}, {
+				Id: 2,
+			}},
+			NH: []*spb.AFTOperation{{
+				Id: 30,
+			}, {
+				Id: 3,
+			}},
+		},
+	}, {
+		desc: "nil merged in",
+		inOriginal: &Ops{
+			TopLevel: []*spb.AFTOperation{{
+				Id: 10,
+			}},
+			NHG: []*spb.AFTOperation{{
+				Id: 20,
+			}},
+			NH: []*spb.AFTOperation{{
+				Id: 30,
+			}},
+		},
+		inInput: nil,
+		want: &Ops{
+			TopLevel: []*spb.AFTOperation{{
+				Id: 10,
+			}},
+			NHG: []*spb.AFTOperation{{
+				Id: 20,
+			}},
+			NH: []*spb.AFTOperation{{
+				Id: 30,
+			}},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			tt.inOriginal.Merge(tt.inInput)
+			if diff := cmp.Diff(tt.inOriginal, tt.want, protocmp.Transform()); diff != "" {
+				t.Fatalf("&Ops{}.Merge(): did not get expected result, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestMergeReconcileOps(t *testing.T) {
+	tests := []struct {
+		desc       string
+		inOriginal *ReconcileOps
+		inInput    *ReconcileOps
+		want       *ReconcileOps
+	}{{
+		desc:       "merging to empty",
+		inOriginal: NewReconcileOps(),
+		inInput: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+			},
+			Delete: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+			},
+			Replace: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+			},
+		},
+		want: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+			},
+			Delete: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+			},
+			Replace: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+			},
+		},
+	}, {
+		desc: "merging to populated",
+		inOriginal: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 10,
+				}},
+			},
+			Delete: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 101,
+				}},
+			},
+			Replace: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1001,
+				}},
+			},
+		},
+		inInput: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+			},
+			Delete: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+			},
+			Replace: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+			},
+		},
+		want: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 10,
+				}, {
+					Id: 1,
+				}},
+			},
+			Delete: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 101,
+				}, {
+					Id: 1,
+				}},
+			},
+			Replace: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1001,
+				}, {
+					Id: 1,
+				}},
+			},
+		},
+	}, {
+		desc: "merging nil in",
+		inOriginal: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 10,
+				}},
+			},
+			Delete: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 101,
+				}},
+			},
+			Replace: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1001,
+				}},
+			},
+		},
+		want: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 10,
+				}},
+			},
+			Delete: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 101,
+				}},
+			},
+			Replace: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id: 1001,
+				}},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			tt.inOriginal.Merge(tt.inInput)
+			if diff := cmp.Diff(tt.inOriginal, tt.want, protocmp.Transform()); diff != "" {
+				t.Fatalf("&ReconcileOps.Merge(): did not get expected result, diff(-got,want):\n%s", diff)
+			}
+		})
+	}
+}

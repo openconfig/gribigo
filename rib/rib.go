@@ -354,6 +354,11 @@ type OpResult struct {
 	Error string
 }
 
+// String returns the OpResult as a human readable string.
+func (o *OpResult) String() string {
+	return fmt.Sprintf("ID: %d, Type: %s, Error: %v")
+}
+
 // AddEntry adds the entry described in op to the network instance with name ni. It returns
 // two slices of OpResults:
 //   - the first ("oks") describes the set of entries that were installed successfully based on

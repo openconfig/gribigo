@@ -1599,6 +1599,9 @@ func TestReconcileOpsIsEmpty(t *testing.T) {
 		in   *ReconcileOps
 		want bool
 	}{{
+		desc: "nil",
+		want: true,
+	}, {
 		desc: "empty",
 		in:   NewReconcileOps(),
 		want: true,
@@ -1657,6 +1660,9 @@ func TestOpsIsEmpty(t *testing.T) {
 	}{{
 		desc: "empty",
 		in:   &Ops{},
+		want: true,
+	}, {
+		desc: "nil",
 		want: true,
 	}, {
 		desc: "not empty: top-level",

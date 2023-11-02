@@ -1592,3 +1592,97 @@ func TestMergeReconcileOps(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileOpsIsEmpty(t *testing.T) {
+	tests := []struct {
+		desc string
+		in   *ReconcileOps
+		want bool
+	}{{
+		desc: "empty",
+		in:   NewReconcileOps(),
+		want: true,
+	}, {
+		desc: "not empty: add",
+		in: &ReconcileOps{
+			Add: &Ops{
+				NH:       []*spb.AFTOperation{{}},
+				NHG:      []*spb.AFTOperation{{}},
+				TopLevel: []*spb.AFTOperation{{}},
+			},
+			Delete:  &Ops{},
+			Replace: &Ops{},
+		},
+		want: false,
+	}, {
+		desc: "not empty: delete",
+		in: &ReconcileOps{
+			Add: &Ops{},
+			Delete: &Ops{
+				NH:       []*spb.AFTOperation{{}},
+				NHG:      []*spb.AFTOperation{{}},
+				TopLevel: []*spb.AFTOperation{{}},
+			},
+			Replace: &Ops{},
+		},
+		want: false,
+	}, {
+		desc: "not empty: replace",
+		in: &ReconcileOps{
+			Add:    &Ops{},
+			Delete: &Ops{},
+			Replace: &Ops{
+				NH:       []*spb.AFTOperation{{}},
+				NHG:      []*spb.AFTOperation{{}},
+				TopLevel: []*spb.AFTOperation{{}},
+			},
+		},
+		want: false,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if got := tt.in.IsEmpty(); got != tt.want {
+				t.Fatalf("(%v).IsEmpty(): did not get expected result, got: %v, want: %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOpsIsEmpty(t *testing.T) {
+	tests := []struct {
+		desc string
+		in   *Ops
+		want bool
+	}{{
+		desc: "empty",
+		in:   &Ops{},
+		want: true,
+	}, {
+		desc: "not empty: top-level",
+		in: &Ops{
+			TopLevel: []*spb.AFTOperation{{}},
+		},
+		want: false,
+	}, {
+		desc: "not empty: nhg",
+		in: &Ops{
+			NHG: []*spb.AFTOperation{{}},
+		},
+		want: false,
+	}, {
+		desc: "not empty: nh",
+		in: &Ops{
+			NH: []*spb.AFTOperation{{}},
+		},
+		want: false,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if got := tt.in.IsEmpty(); got != tt.want {
+				t.Fatalf("(%v).IsEmpty(): did not get expected result, got: %v, want: %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}

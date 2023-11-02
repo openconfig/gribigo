@@ -391,7 +391,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	informDone := func(who string) {
 		select {
 		case c.doneCh <- struct{}{}:
-			log.Infof("writing to done channel, requsted by %s", who)
+			log.Infof("writing to done channel, requested by %s", who)
 		default:
 			log.Infof("dropped message informing caller the client is done.")
 		}

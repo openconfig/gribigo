@@ -33,6 +33,7 @@ import (
 	"github.com/openconfig/ygot/ytypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
@@ -356,7 +357,7 @@ type OpResult struct {
 
 // String returns the OpResult as a human readable string.
 func (o *OpResult) String() string {
-	return fmt.Sprintf("ID: %d, Type: %s, Error: %v")
+	return fmt.Sprintf("ID: %d, Type: %s, Error: %v", o.ID, prototext.Format(o.Op), o.Error)
 }
 
 // AddEntry adds the entry described in op to the network instance with name ni. It returns

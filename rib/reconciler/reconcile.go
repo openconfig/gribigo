@@ -144,6 +144,11 @@ func (o *Ops) Merge(in *Ops) {
 	o.TopLevel = append(o.TopLevel, in.TopLevel...)
 }
 
+// IsEmpty determines whether the specified Ops contains any operations.
+func (o *Ops) IsEmpty() bool {
+	return len(o.NH) == 0 && len(o.NHG) == 0 && len(o.TopLevel) == 0
+}
+
 // ReconcileOps stores the operations that are required for a specific reconciliation
 // run.
 type ReconcileOps struct {
@@ -164,6 +169,11 @@ func (r *ReconcileOps) Merge(in *ReconcileOps) {
 	r.Add.Merge(in.Add)
 	r.Replace.Merge(in.Replace)
 	r.Delete.Merge(in.Delete)
+}
+
+// IsEmpty determines whether the specified ReconcileOps contains any operations.
+func (r *ReconcileOps) IsEmpty() bool {
+	return r.Add.IsEmpty() && r.Delete.IsEmpty() && r.Replace.IsEmpty()
 }
 
 // NewReconcileOps returns a new reconcileOps struct with the fields initialised.

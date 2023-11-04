@@ -49,6 +49,7 @@ const (
 	nhg
 	nh
 	mpls
+	ipv6
 )
 
 func TestAdd(t *testing.T) {
@@ -504,6 +505,94 @@ func TestAdd(t *testing.T) {
 		inExplicitReplace: true,
 		wantErr:           true,
 	}, {
+		desc:        "IPv6 - valid entry",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inType:      ipv6,
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+		wantInstalled: true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv6Entry: map[string]*aft.Afts_Ipv6Entry{
+					"2001:db8::/32": {
+						Prefix: ygot.String("2001:db8::/32"),
+					},
+				},
+			},
+		},
+	}, {
+		desc:        "IPv6 - invalid entry",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inType:      ipv6,
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+		wantErr: true,
+	}, {
+		desc: "IPv6 - implicit replace",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			r.r.GetOrCreateAfts().GetOrCreateNextHop(1)
+			r.r.GetOrCreateAfts().GetOrCreateNextHopGroup(42)
+			r.r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::/32").NextHopGroup = ygot.Uint64(42)
+			return r
+		}(),
+		inType: ipv6,
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+		wantInstalled: true,
+		wantReplace:   true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv6Entry: map[string]*aft.Afts_Ipv6Entry{
+					"2001:db8::/32": {
+						Prefix: ygot.String("2001:db8::/32"),
+					},
+				},
+			},
+		},
+	}, {
+		desc: "IPv6 - explicit replace",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			r.r.GetOrCreateAfts().GetOrCreateNextHop(1)
+			r.r.GetOrCreateAfts().GetOrCreateNextHopGroup(42)
+			r.r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::/32").NextHopGroup = ygot.Uint64(42)
+			return r
+		}(),
+		inType:            ipv6,
+		inExplicitReplace: true,
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+		wantInstalled: true,
+		wantReplace:   true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv6Entry: map[string]*aft.Afts_Ipv6Entry{
+					"2001:db8::/32": {
+						Prefix: ygot.String("2001:db8::/32"),
+					},
+				},
+			},
+		},
+	}, {
+		desc:              "IPv6 - explicit replace - does not exist",
+		inRIBHolder:       NewRIBHolder("DEFAULT"),
+		inType:            ipv6,
+		inExplicitReplace: true,
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+		wantErr: true,
+	}, {
 		desc: "nh with label stack",
 		inRIBHolder: func() *RIBHolder {
 			r := NewRIBHolder("DEFAULT")
@@ -594,9 +683,10 @@ func TestAdd(t *testing.T) {
 				gotInstalled, gotImplicit, err = r.AddNextHopGroup(tt.inEntry.(*aftpb.Afts_NextHopGroupKey), tt.inExplicitReplace)
 			case nh:
 				gotInstalled, gotImplicit, err = r.AddNextHop(tt.inEntry.(*aftpb.Afts_NextHopKey), tt.inExplicitReplace)
-
 			case mpls:
 				gotInstalled, gotImplicit, err = r.AddMPLS(tt.inEntry.(*aftpb.Afts_LabelEntryKey), tt.inExplicitReplace)
+			case ipv6:
+				gotInstalled, gotImplicit, err = r.AddIPv6(tt.inEntry.(*aftpb.Afts_Ipv6EntryKey), tt.inExplicitReplace)
 			default:
 				t.Fatalf("unsupported test type in Add, %v", tt.inType)
 			}
@@ -630,6 +720,20 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		nhgni    string
 	}
 
+	type mplsentry struct {
+		label    uint32
+		metadata []byte
+		nhg      uint64
+		nhgni    string
+	}
+
+	type ipv6entry struct {
+		prefix   string
+		metadata []byte
+		nhg      uint64
+		nhgni    string
+	}
+
 	type nh struct {
 		id uint64
 		ip string
@@ -644,6 +748,8 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		v4      *ipv4entry
 		group   *nhg
 		nexthop *nh
+		mpls    *mplsentry
+		v6      *ipv6entry
 	}
 
 	ribEntries := func(e []*entry) *aft.RIB {
@@ -660,6 +766,28 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 				}
 				if en.v4.nhgni != "" {
 					p.NextHopGroupNetworkInstance = ygot.String(en.v4.nhgni)
+				}
+			case en.v6 != nil:
+				p := a.GetOrCreateAfts().GetOrCreateIpv6Entry(en.v6.prefix)
+				if en.v6.metadata != nil {
+					p.EntryMetadata = en.v6.metadata
+				}
+				if en.v6.nhg != 0 {
+					p.NextHopGroup = ygot.Uint64(en.v6.nhg)
+				}
+				if en.v6.nhgni != "" {
+					p.NextHopGroupNetworkInstance = ygot.String(en.v6.nhgni)
+				}
+			case en.mpls != nil:
+				p := a.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(en.mpls.label))
+				if en.mpls.metadata != nil {
+					p.EntryMetadata = en.mpls.metadata
+				}
+				if en.mpls.nhg != 0 {
+					p.NextHopGroup = ygot.Uint64(en.mpls.nhg)
+				}
+				if en.mpls.nhgni != "" {
+					p.NextHopGroupNetworkInstance = ygot.String(en.mpls.nhgni)
 				}
 			case en.group != nil:
 				n := a.GetOrCreateAfts().GetOrCreateNextHopGroup(en.group.id)
@@ -753,6 +881,143 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		wantOrig: (*aft.Afts_Ipv4Entry)(nil),
 		wantOK:   true,
 	}, {
+		desc: "delete ipv6 entry, no payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{
+				{v6: &ipv6entry{prefix: "2001:db8::/32"}},
+			}),
+		},
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix: "2001:db8::/32",
+		},
+		wantOK:   true,
+		wantOrig: &aft.Afts_Ipv6Entry{Prefix: ygot.String("2001:db8::/32")},
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{}),
+		},
+	}, {
+		desc: "delete ipv6 entry, matching payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{
+				{v6: &ipv6entry{prefix: "2001:db8::/32", metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}}},
+			}),
+		},
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix: "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+				EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+			},
+		},
+		wantOK: true,
+		wantOrig: &aft.Afts_Ipv6Entry{
+			Prefix:        ygot.String("2001:db8::/32"),
+			EntryMetadata: aft.Binary{0, 1, 2, 3, 4, 5, 6, 7},
+		},
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{}),
+		},
+	}, {
+		desc: "delete ipv6 entry, mismatched payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				v6: &ipv6entry{prefix: "2001:db8::/32", metadata: []byte{1, 2, 3, 4}},
+			}}),
+		},
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix: "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+				EntryMetadata: &wpb.BytesValue{Value: []byte{2, 3, 4, 5}},
+			},
+		},
+		wantOK: true,
+		wantOrig: &aft.Afts_Ipv6Entry{
+			Prefix:        ygot.String("2001:db8::/32"),
+			EntryMetadata: aft.Binary{1, 2, 3, 4},
+		},
+		wantPostRIB: &RIBHolder{},
+	}, {
+		desc:  "delete ipv6 entry, no such entry",
+		inRIB: NewRIBHolder("foo"),
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix: "2001:db8::/32",
+		},
+		wantOrig: (*aft.Afts_Ipv6Entry)(nil),
+		wantOK:   true,
+	}, {
+		// MPLS
+		desc: "delete mpls entry, no payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{
+				{mpls: &mplsentry{label: 42}},
+			}),
+		},
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+		wantOK:   true,
+		wantOrig: &aft.Afts_LabelEntry{Label: aft.UnionUint32(42)},
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{}),
+		},
+	}, {
+		desc: "delete mpls entry, matching payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{
+				{mpls: &mplsentry{label: 42, metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}}},
+			}),
+		},
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{
+				EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+			},
+		},
+		wantOK: true,
+		wantOrig: &aft.Afts_LabelEntry{
+			Label:         aft.UnionUint32(42),
+			EntryMetadata: aft.Binary{0, 1, 2, 3, 4, 5, 6, 7},
+		},
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{}),
+		},
+	}, {
+		desc: "delete mpls entry, mismatched payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				mpls: &mplsentry{label: 42, metadata: []byte{1, 2, 3, 4}},
+			}}),
+		},
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{
+				EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+			},
+		},
+		wantOK: true,
+		wantOrig: &aft.Afts_LabelEntry{
+			Label:         aft.UnionUint32(42),
+			EntryMetadata: aft.Binary{1, 2, 3, 4},
+		},
+		wantPostRIB: &RIBHolder{},
+	}, {
+		desc:  "delete mpls entry, no such entry",
+		inRIB: NewRIBHolder("foo"),
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+		wantOrig: (*aft.Afts_LabelEntry)(nil),
+		wantOK:   true,
+	}, {
 		desc: "delete nhg",
 		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{{
@@ -833,6 +1098,10 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 				ok, gotOrig, err = tt.inRIB.DeleteNextHopGroup(v)
 			case *aftpb.Afts_NextHopKey:
 				ok, gotOrig, err = tt.inRIB.DeleteNextHop(v)
+			case *aftpb.Afts_Ipv6EntryKey:
+				ok, gotOrig, err = tt.inRIB.DeleteIPv6(v)
+			case *aftpb.Afts_LabelEntryKey:
+				ok, gotOrig, err = tt.inRIB.DeleteLabelEntry(v)
 			default:
 				t.Fatalf("unknown input entry type, %T", err)
 			}

@@ -71,6 +71,8 @@ const (
 	NextHopGroup
 	// MPLS specifies the label-entry/MPLS AFT.
 	MPLS
+	//  IPv6 speciifes the IPv6 AFT.
+	IPv6
 )
 
 func (a AFT) String() string {
@@ -80,6 +82,7 @@ func (a AFT) String() string {
 		NextHop:      "NextHop",
 		NextHopGroup: "NextHopGroup",
 		MPLS:         "MPLS",
+		IPv6:         "IPv6",
 	}[a]
 }
 
@@ -88,6 +91,7 @@ func (a AFT) String() string {
 var aftMap = map[AFT]spb.AFTType{
 	All:          spb.AFTType_ALL,
 	IPv4:         spb.AFTType_IPV4,
+	IPv6:         spb.AFTType_IPV6,
 	NextHop:      spb.AFTType_NEXTHOP,
 	NextHopGroup: spb.AFTType_NEXTHOP_GROUP,
 }

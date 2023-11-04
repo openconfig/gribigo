@@ -415,10 +415,10 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 		err                 error
 		// Used to store information about the transaction that was
 		// completed in case it completes successfully.
-		nhgNetworkInstance, v4Prefix string
-		mplsLabel                    uint64
-		refdNextHops                 []uint64
-		nhgID, refdNHGID             uint64
+		nhgNetworkInstance, v4Prefix, v6Prefix string
+		mplsLabel                              uint64
+		refdNextHops                           []uint64
+		nhgID, refdNHGID                       uint64
 	)
 
 	switch t := op.Entry.(type) {
@@ -430,6 +430,13 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 
 		log.V(2).Infof("[op %d] attempting to add IPv4 prefix %s", op.GetId(), t.Ipv4.GetPrefix())
 		installed, replaced, err = niR.AddIPv4(t.Ipv4, explicitReplace)
+	case *spb.AFTOperation_Ipv6:
+		nhgNetworkInstance = t.Ipv6.GetIpv6Entry().GetNextHopGroupNetworkInstance().GetValue()
+		refdNHGID = t.Ipv6.GetIpv6Entry().GetNextHopGroup().GetValue()
+		v6Prefix = t.Ipv6.GetPrefix()
+
+		log.V(2).Info("[op %d] attempting to add IPv6 prefix %s", op.GetId(), t.Ipv6.GetPrefix())
+		installed, replaced, err = niR.AddIPv6(t.Ipv6, explicitReplace)
 	case *spb.AFTOperation_NextHop:
 		log.V(2).Infof("[op %d] attempting to add NH Index %d", op.GetId(), t.NextHop.GetIndex())
 		installed, replaced, err = niR.AddNextHop(t.NextHop, explicitReplace)
@@ -465,7 +472,7 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 		// replace. If it was, then we don't update the references since the
 		// reference was already counted.
 		switch {
-		case (v4Prefix != "" || mplsLabel != 0) && !replaced:
+		case (v4Prefix != "" || mplsLabel != 0 || v6Prefix != "") && !replaced:
 			referencingRIB := niR
 			if nhgNetworkInstance != "" {
 				rr, ok := r.NetworkInstanceRIB(nhgNetworkInstance)
@@ -507,6 +514,10 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 			call = true
 			aft = constants.MPLS
 			key = mplsLabel
+		case v6Prefix != "":
+			call = true
+			aft = constants.IPv6
+			key = v6Prefix
 		}
 		if call {
 			if err := r.callResolvedEntryHook(constants.Add, ni, aft, key); err != nil {
@@ -588,6 +599,7 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 		removed      bool
 		err          error
 		originalv4   *aft.Afts_Ipv4Entry
+		originalv6   *aft.Afts_Ipv6Entry
 		originalNHG  *aft.Afts_NextHopGroup
 		originalMPLS *aft.Afts_LabelEntry
 	)
@@ -599,6 +611,9 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 	case *spb.AFTOperation_Ipv4:
 		log.V(2).Infof("deleting IPv4 prefix %s", t.Ipv4.GetPrefix())
 		removed, originalv4, err = niR.DeleteIPv4(t.Ipv4)
+	case *spb.AFTOperation_Ipv6:
+		log.V(2).Infof("deleting IPv6 prefix %s", t.Ipv6.GetPrefix())
+		removed, originalv6, err = niR.DeleteIPv6(t.Ipv6)
 	case *spb.AFTOperation_NextHop:
 		log.V(2).Infof("deleting NH Index %d", t.NextHop.GetIndex())
 		removed, _, err = niR.DeleteNextHop(t.NextHop)
@@ -649,6 +664,15 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 			callHook = true
 			aft = constants.IPv4
 			key = originalv4.GetPrefix()
+		case originalv6 != nil:
+			referencingRIB, err := getNHGRIB(niR, originalv6.GetNextHopGroupNetworkInstance())
+			if err != nil {
+				return nil, nil, err
+			}
+			referencingRIB.decNHGRefCount(originalv6.GetNextHopGroup())
+			callHook = true
+			aft = constants.IPv6
+			key = originalv6.GetPrefix()
 		case originalNHG != nil:
 			for id := range originalNHG.NextHop {
 				niR.decNHRefCount(id)
@@ -1208,6 +1232,148 @@ func (r *RIBHolder) locklessDeleteIPv4(prefix string) error {
 	}
 
 	delete(r.r.Afts.Ipv4Entry, prefix)
+	if r.postChangeHook != nil {
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
+	}
+	return nil
+}
+
+// AddIPv6 adds the IPv6 entry specified by e to the RIB, explicitReplace indicates whether
+// the "add" operation that is being performed is actually an explicit replace of a specific
+// prefix such that an error can be returned.
+func (r *RIBHolder) AddIPv6(e *aftpb.Afts_Ipv6EntryKey, explicitReplace bool) (bool, bool, error) {
+	if r.r == nil {
+		return false, false, errors.New("invalid RIB structure, nil")
+	}
+
+	if e == nil {
+		return false, false, errors.New("nil IPv6 Entry provided")
+	}
+
+	nr, err := candidateRIB(&aftpb.Afts{
+		Ipv6Entry: []*aftpb.Afts_Ipv6EntryKey{e},
+	})
+	if err != nil {
+		return false, false, fmt.Errorf("invalid IPv6Entry, %v", err)
+	}
+
+	if explicitReplace && !r.ipv6Exists(e.GetPrefix()) {
+		return false, false, fmt.Errorf("cannot replace IPv6 Entry %s, does not exist", e.GetPrefix())
+	}
+
+	if r.checkFn != nil {
+		ok, err := r.checkFn(constants.Add, nr)
+		if err != nil {
+			return false, false, err
+		}
+		if !ok {
+			return false, false, nil
+		}
+	}
+
+	replaced, err := r.doAddIPv6(e.GetPrefix(), nr)
+	if err != nil {
+		return false, false, err
+	}
+
+	if r.postChangeHook != nil {
+		for _, ip4 := range nr.Afts.Ipv6Entry {
+			r.postChangeHook(constants.Add, unixTS(), r.name, ip4)
+		}
+	}
+
+	return true, replaced, nil
+}
+
+// ipv6Exists determines whether the specified prefix exists within the RIB.
+func (r *RIBHolder) ipv6Exists(prefix string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.r.GetAfts().Ipv6Entry[prefix]
+	return ok
+}
+
+// doAddIPv6 implements the addition of the prefix pfx to the RIB using the supplied
+// newRIB as the the entries that should be merged into this RIB.
+func (r *RIBHolder) doAddIPv6(pfx string, newRIB *aft.RIB) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if nhg, nh := len(newRIB.Afts.NextHopGroup), len(newRIB.Afts.NextHop); nhg != 0 || nh != 0 {
+		return false, fmt.Errorf("candidate RIB specifies entries other than NextHopGroups, got: %d nhg, %d nh", nhg, nh)
+	}
+
+	_, implicit := r.r.GetAfts().Ipv6Entry[pfx]
+
+	delete(r.r.GetAfts().Ipv6Entry, pfx)
+
+	// TODO(robjs): consider what happens if this fails -- we may leave the RIB in
+	// an inconsistent state.
+	if err := ygot.MergeStructInto(r.r, newRIB); err != nil {
+		return false, fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
+	}
+	return implicit, nil
+}
+
+// DeleteIPv6 deletes the entry specified by e from the RIB, returning the entry that was removed.
+func (r *RIBHolder) DeleteIPv6(e *aftpb.Afts_Ipv6EntryKey) (bool, *aft.Afts_Ipv6Entry, error) {
+	if e == nil {
+		return false, nil, errors.New("nil entry provided")
+	}
+
+	if r.r == nil {
+		return false, nil, errors.New("invalid RIB structure, nil")
+	}
+
+	de := r.retrieveIPv6(e.GetPrefix())
+
+	rr := &aft.RIB{}
+	rr.GetOrCreateAfts().GetOrCreateIpv6Entry(e.GetPrefix())
+	if r.checkFn != nil {
+		ok, err := r.checkFn(constants.Delete, rr)
+		switch {
+		case err != nil:
+			// the check told us this was fatal for this entry -> we should return.
+			return false, nil, err
+		case !ok:
+			// otherwise, we just didn't do this operation.
+			return false, nil, nil
+		}
+	}
+
+	r.doDeleteIPv6(e.GetPrefix())
+
+	if r.postChangeHook != nil {
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
+	}
+
+	return true, de, nil
+}
+
+// retrieveIPv6 retrieves the contents of the entry for prefix from the RIB, holding
+// the shortest possible lock.
+func (r *RIBHolder) retrieveIPv6(prefix string) *aft.Afts_Ipv6Entry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.r.Afts.Ipv6Entry[prefix]
+}
+
+// doDeleteIPv6 deletes the prefix pfx from the RIB, holding the shortest possible lock.
+func (r *RIBHolder) doDeleteIPv6(pfx string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.r.Afts.Ipv6Entry, pfx)
+}
+
+// locklessDeleteIPv6 deletes the entry for prefix from the RIB, without holding the lock
+// caution must be exercised and the lock MUST be held to call this function.
+func (r *RIBHolder) locklessDeleteIPv6(prefix string) error {
+	de := r.r.Afts.Ipv6Entry[prefix]
+	if de == nil {
+		return fmt.Errorf("cannot find prefix %s", prefix)
+	}
+
+	delete(r.r.Afts.Ipv6Entry, prefix)
 	if r.postChangeHook != nil {
 		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
 	}
@@ -2026,6 +2192,12 @@ func (r *RIBHolder) Flush() error {
 
 	for p := range r.r.Afts.Ipv4Entry {
 		if err := r.locklessDeleteIPv4(p); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	for p := range r.r.Afts.Ipv6Entry {
+		if err := r.locklessDeleteIPv6(p); err != nil {
 			errs = append(errs, err)
 		}
 	}

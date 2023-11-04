@@ -1204,6 +1204,50 @@ func TestConcreteIPv4Proto(t *testing.T) {
 	}
 }
 
+func TestConcreteIPv6Proto(t *testing.T) {
+	tests := []struct {
+		desc    string
+		inEntry *aft.Afts_Ipv6Entry
+		want    *aftpb.Afts_Ipv6EntryKey
+		wantErr bool
+	}{{
+		desc: "prefix-only",
+		inEntry: &aft.Afts_Ipv6Entry{
+			Prefix: ygot.String("2001:4c20:cafe::/48"),
+		},
+		want: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "2001:4c20:cafe::/48",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+	}, {
+		desc: "with metadata",
+		inEntry: &aft.Afts_Ipv6Entry{
+			Prefix:        ygot.String("2001:4c20:beef::/48"),
+			EntryMetadata: []byte{1, 2, 3, 4},
+		},
+		want: &aftpb.Afts_Ipv6EntryKey{
+			Prefix: "2001:4c20:beef::/48",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+				EntryMetadata: &wpb.BytesValue{
+					Value: []byte{1, 2, 3, 4},
+				},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := ConcreteIPv6Proto(tt.inEntry)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(got, tt.want, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestConcreteMPLSProto(t *testing.T) {
 	tests := []struct {
 		desc    string

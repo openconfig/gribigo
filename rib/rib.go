@@ -1930,6 +1930,27 @@ func ConcreteIPv4Proto(e *aft.Afts_Ipv4Entry) (*aftpb.Afts_Ipv4EntryKey, error) 
 	}, nil
 }
 
+// ConcreteIPv46roto takes the input Ipv6Entry GoStruct and returns it as a gRIBI
+// Ipv6EntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
+func ConcreteIPv6Proto(e *aft.Afts_Ipv6Entry) (*aftpb.Afts_Ipv6EntryKey, error) {
+	ip6proto := &aftpb.Afts_Ipv6Entry{}
+	if err := protoFromGoStruct(e, &gpb.Path{
+		Elem: []*gpb.PathElem{{
+			Name: "afts",
+		}, {
+			Name: "ipv6-unicast",
+		}, {
+			Name: "ipv6-entry",
+		}},
+	}, ip6proto); err != nil {
+		return nil, fmt.Errorf("cannot marshal IPv6 prefix %s, %v", e.GetPrefix(), err)
+	}
+	return &aftpb.Afts_Ipv6EntryKey{
+		Prefix:    *e.Prefix,
+		Ipv6Entry: ip6proto,
+	}, nil
+}
+
 // ConcreteMPLSProto takes the input LabelEntry GoStruct and returns it as a gRIBI
 // LabelEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func ConcreteMPLSProto(e *aft.Afts_LabelEntry) (*aftpb.Afts_LabelEntryKey, error) {

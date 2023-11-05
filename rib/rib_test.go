@@ -5242,6 +5242,43 @@ func TestFlush(t *testing.T) {
 
 			return r
 		}(),
+	}, {
+		desc: "ipv6",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			r.checkFn = nil
+
+			_, _, err := r.AddIPv6(&aftpb.Afts_Ipv6EntryKey{
+				Prefix: "2001:db8::/32",
+				Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+					NextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add ipv6 entry, %v", err)
+			}
+
+			return r
+		}(),
+	}, {
+		desc: "mpls",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			r.checkFn = nil
+
+			_, _, err := r.AddMPLS(&aftpb.Afts_LabelEntryKey{
+				Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+					LabelUint64: 42,
+				},
+				LabelEntry: &aftpb.Afts_LabelEntry{
+					NextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add ipv6 entry, %v", err)
+			}
+			return r
+		}(),
 	}}
 
 	for _, tt := range tests {
@@ -5254,6 +5291,14 @@ func TestFlush(t *testing.T) {
 
 		if l := len(tt.inRIB.r.Afts.Ipv4Entry); l != 0 {
 			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+		}
+
+		if l := len(tt.inRIB.r.Afts.Ipv6Entry); l != 0 {
+			t.Fatalf("did not remove all IPv6 entries, got: %d, want: 0", l)
+		}
+
+		if l := len(tt.inRIB.r.Afts.LabelEntry); l != 0 {
+			t.Fatalf("did not remove all MPLS entries, got: %d, want: 0", l)
 		}
 
 		if l := len(tt.inRIB.r.Afts.NextHopGroup); l != 0 {

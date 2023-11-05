@@ -622,7 +622,7 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 		removed, originalNHG, err = niR.DeleteNextHopGroup(t.NextHopGroup)
 	case *spb.AFTOperation_Mpls:
 		log.V(2).Infof("deleting MPLS entry %s", t.Mpls.GetLabel())
-		removed, originalMPLS, err = niR.DeleteLabelEntry(t.Mpls)
+		removed, originalMPLS, err = niR.DeleteMPLS(t.Mpls)
 	default:
 		return nil, nil, status.Newf(codes.Unimplemented, "unsupported AFT operation type %T", t).Err()
 	}
@@ -1434,8 +1434,8 @@ func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (
 	// being called based on a single entry, but we loop since we don't
 	// know the key.
 	if r.postChangeHook != nil {
-		for _, ip4 := range nr.Afts.Ipv4Entry {
-			r.postChangeHook(constants.Add, unixTS(), r.name, ip4)
+		for _, mpls := range nr.Afts.LabelEntry {
+			r.postChangeHook(constants.Add, unixTS(), r.name, mpls)
 		}
 	}
 
@@ -1480,12 +1480,12 @@ func (r *RIBHolder) doAddMPLS(label uint32, newRIB *aft.RIB) (bool, error) {
 	return implicit, nil
 }
 
-// DeleteLabelEntry removes the MPLS label entry e from the RIB. It returns a
+// DeleteMPLS removes the MPLS label entry e from the RIB. It returns a
 // boolean indicating whether the entry has been removed, a copy of the entry
 // that was removed, and an error if the message cannot be parsed. Per the gRIBI
 // specification the payload of the entry is not compared the existing entry
 // before deleting it.
-func (r *RIBHolder) DeleteLabelEntry(e *aftpb.Afts_LabelEntryKey) (bool, *aft.Afts_LabelEntry, error) {
+func (r *RIBHolder) DeleteMPLS(e *aftpb.Afts_LabelEntryKey) (bool, *aft.Afts_LabelEntry, error) {
 	if e == nil {
 		return false, nil, errors.New("nil Label entry provided")
 	}

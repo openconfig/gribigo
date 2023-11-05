@@ -311,6 +311,8 @@ const (
 	NextHopGroup
 	// NextHop references the NextHop AFT.
 	NextHop
+	// IPv6 references the IPv6Entry AFT.
+	IPv6
 )
 
 // aftMap provides mapping between the AFT enumerated type within the fluent
@@ -320,6 +322,7 @@ var aftMap = map[AFT]spb.AFTType{
 	IPv4:         spb.AFTType_IPV4,
 	NextHopGroup: spb.AFTType_NEXTHOP_GROUP,
 	NextHop:      spb.AFTType_NEXTHOP,
+	IPv6:         spb.AFTType_IPV6,
 }
 
 // WithAFT specifies the AFT for which the Get request is made. The AllAFTs
@@ -599,6 +602,94 @@ func (i *ipv4Entry) EntryProto() (*spb.AFTEntry, error) {
 		NetworkInstance: i.ni,
 		Entry: &spb.AFTEntry_Ipv4{
 			Ipv4: proto.Clone(i.pb).(*aftpb.Afts_Ipv4EntryKey),
+		},
+	}, nil
+}
+
+// ipv6Entry is the internal representation of a gRIBI IPv6Entry.
+type ipv6Entry struct {
+	// pb is the gRIBI IPv4Entry that is being composed.
+	pb *aftpb.Afts_Ipv6EntryKey
+	// ni is the network instance to which the IPv4Entry is applied.
+	ni string
+	// electionID is an explicit election ID to be used for an
+	// operation using the entry.
+	electionID *spb.Uint128
+}
+
+// IPv6Entry returns a new gRIBI IPv6Entry builder.
+func IPv6Entry() *ipv6Entry {
+	return &ipv6Entry{
+		pb: &aftpb.Afts_Ipv6EntryKey{
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+	}
+}
+
+// WithPrefix sets the prefix of the IPv6Entry to the specified value, which
+// must be a valid IPv6 prefix in the form prefix/mask.
+func (i *ipv6Entry) WithPrefix(p string) *ipv6Entry {
+	i.pb.Prefix = p
+	return i
+}
+
+// WithNetworkInstance specifies the network instance to which the IPv6Entry
+// is being applied.
+func (i *ipv6Entry) WithNetworkInstance(n string) *ipv6Entry {
+	i.ni = n
+	return i
+}
+
+// WithNextHopGroup specifies the next-hop group that the IPv6Entry points to.
+func (i *ipv6Entry) WithNextHopGroup(u uint64) *ipv6Entry {
+	i.pb.Ipv6Entry.NextHopGroup = &wpb.UintValue{Value: u}
+	return i
+}
+
+// WithNextHopGroupNetworkInstance specifies the network-instance within which
+// the next-hop-group for the IPv6 entry should be resolved.
+func (i *ipv6Entry) WithNextHopGroupNetworkInstance(n string) *ipv6Entry {
+	i.pb.Ipv6Entry.NextHopGroupNetworkInstance = &wpb.StringValue{Value: n}
+	return i
+}
+
+// WithMetadata specifies a byte slice that is stored as metadata alongside
+// the IPV6 entry on the gRIBI server.
+func (i *ipv6Entry) WithMetadata(b []byte) *ipv6Entry {
+	i.pb.Ipv6Entry.EntryMetadata = &wpb.BytesValue{Value: b}
+	return i
+}
+
+// WithElectionID specifies an explicit election ID to be used for the Entry.
+// The election ID is made up of the concatenation of the low and high uint64
+// values provided.
+func (i *ipv6Entry) WithElectionID(low, high uint64) *ipv6Entry {
+	i.electionID = &spb.Uint128{
+		Low:  low,
+		High: high,
+	}
+	return i
+}
+
+// OpProto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
+// is explicitly not populated such that they can be populated by
+// the function (e.g., AddEntry) to which they are an argument.
+func (i *ipv6Entry) OpProto() (*spb.AFTOperation, error) {
+	return &spb.AFTOperation{
+		NetworkInstance: i.ni,
+		Entry: &spb.AFTOperation_Ipv6{
+			Ipv6: proto.Clone(i.pb).(*aftpb.Afts_Ipv6EntryKey),
+		},
+		ElectionId: i.electionID,
+	}, nil
+}
+
+// EntryProto implements the GRIBIEntry interface, building a gRIBI AFTEntry.
+func (i *ipv6Entry) EntryProto() (*spb.AFTEntry, error) {
+	return &spb.AFTEntry{
+		NetworkInstance: i.ni,
+		Entry: &spb.AFTEntry_Ipv6{
+			Ipv6: proto.Clone(i.pb).(*aftpb.Afts_Ipv6EntryKey),
 		},
 	}, nil
 }

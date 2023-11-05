@@ -208,8 +208,6 @@ github.com/openconfig/ygnmi v0.8.7/go.mod h1:7up6qc9l9G4+Cfo37gzO0D7+2g4yqyW+xzh
 github.com/openconfig/ygot v0.6.0/go.mod h1:o30svNf7O0xK+R35tlx95odkDmZWS9JyWWQSmIhqwAs=
 github.com/openconfig/ygot v0.10.4/go.mod h1:oCQNdXnv7dWc8scTDgoFkauv1wwplJn5HspHcjlxSAQ=
 github.com/openconfig/ygot v0.13.2/go.mod h1:kJN0yCXIH07dOXvNBEFm3XxXdnDD5NI6K99tnD5x49c=
-github.com/openconfig/ygot v0.29.14-0.20231104170448-947750b6679c h1:b0ISmmh+7rlR4vjy5vHlUYZiGU51L5waeW5oYcalstw=
-github.com/openconfig/ygot v0.29.14-0.20231104170448-947750b6679c/go.mod h1:g0o3F+0ap1IExvFctDDU+PwSd20EXGpDDeAGo+vayqw=
 github.com/openconfig/ygot v0.29.14-0.20231104225320-3ff6621e6f61 h1:DocMzb9Qa8uD5EWDZiBCQdaU2PJQG/N1ZlAVVdy6XUs=
 github.com/openconfig/ygot v0.29.14-0.20231104225320-3ff6621e6f61/go.mod h1:g0o3F+0ap1IExvFctDDU+PwSd20EXGpDDeAGo+vayqw=
 github.com/p4lang/p4runtime v1.4.0-rc.5.0.20220728214547-13f0d02a521e h1:AfZKoikDXbZ7zWvO/lvCRzLo7i6lM+gNleYVMxPiWyQ=

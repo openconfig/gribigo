@@ -1334,6 +1334,96 @@ func TestModifyEntry(t *testing.T) {
 			}},
 		},
 	}, {
+		desc:  "ADD v6: rib ACK",
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
+		inNI:  defName,
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Op:         spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8::/32",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_RIB_PROGRAMMED,
+			}},
+		},
+	}, {
+		desc:  "ADD v6: fib ACK",
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
+		inNI:  defName,
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Op:         spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8:cafe::/48",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		inFIBACK: true,
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_FIB_PROGRAMMED,
+			}},
+		},
+	}, {
+		desc:  "ADD MPLS: rib ACK",
+		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
+		inNI:  defName,
+		inOp: &spb.AFTOperation{
+			ElectionId: &spb.Uint128{High: 4, Low: 2},
+			Id:         2,
+			Op:         spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+						LabelUint64: 42,
+					},
+					LabelEntry: &aftpb.Afts_LabelEntry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inElection: &electionDetails{
+			master:       "this-client",
+			ID:           &spb.Uint128{High: 4, Low: 2},
+			client:       "this-client",
+			clientLatest: &spb.Uint128{High: 4, Low: 2},
+		},
+		wantResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{{
+				Id:     2,
+				Status: spb.AFTResult_RIB_PROGRAMMED,
+			}},
+		},
+	}, {
 		desc:  "ADD NHG",
 		inRIB: rib.New(defName, rib.DisableRIBCheckFn()),
 		inNI:  defName,
@@ -1626,12 +1716,16 @@ func TestDoGet(t *testing.T) {
 			Op:              spb.AFTOperation_ADD,
 			Entry: &spb.AFTOperation_NextHop{
 				NextHop: &aftpb.Afts_NextHopKey{
-					Index:   1,
-					NextHop: &aftpb.Afts_NextHop{},
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						PushedMplsLabelStack: []*aftpb.Afts_NextHop_PushedMplsLabelStackUnion{{
+							PushedMplsLabelStackUint64: 42,
+						}},
+					},
 				},
 			},
 		}); err != nil {
-			panic(fmt.Sprintf("cannot build testcase, %v", err))
+			t.Fatalf("cannot build test case, NH, err: %v", err)
 		}
 
 		if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
@@ -1645,7 +1739,7 @@ func TestDoGet(t *testing.T) {
 				},
 			},
 		}); err != nil {
-			panic(fmt.Sprintf("cannot build testcase, %v", err))
+			t.Fatalf("cannot build test case, NHG, err: %v", err)
 		}
 
 		if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
@@ -1659,7 +1753,39 @@ func TestDoGet(t *testing.T) {
 				},
 			},
 		}); err != nil {
-			panic(fmt.Sprintf("cannot build testcase, %v", err))
+			t.Fatalf("cannot build test case, IPv4, err: %v", err)
+		}
+
+		if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
+			Id:              2,
+			NetworkInstance: DefaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8::/32",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("cannot build test case, IPv6, err: %v", err)
+		}
+
+		if _, _, err := s.masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
+			Id:              2,
+			NetworkInstance: DefaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+						LabelUint64: 42,
+					},
+					LabelEntry: &aftpb.Afts_LabelEntry{},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("cannot build test case, MPLS, err: %v", err)
 		}
 
 		return s
@@ -1780,8 +1906,12 @@ func TestDoGet(t *testing.T) {
 				NetworkInstance: DefaultNetworkInstanceName,
 				Entry: &spb.AFTEntry_NextHop{
 					NextHop: &aftpb.Afts_NextHopKey{
-						Index:   1,
-						NextHop: &aftpb.Afts_NextHop{},
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHop{
+							PushedMplsLabelStack: []*aftpb.Afts_NextHop_PushedMplsLabelStackUnion{{
+								PushedMplsLabelStackUint64: 42,
+							}},
+						},
 					},
 				},
 			}},
@@ -1795,6 +1925,30 @@ func TestDoGet(t *testing.T) {
 					},
 				},
 			}},
+		}, {
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:db8::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			}},
+		}, {
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{},
+					},
+				},
+			}},
 		}},
 	}, {
 		desc: "unsupported AFT",
@@ -1802,7 +1956,7 @@ func TestDoGet(t *testing.T) {
 			NetworkInstance: &spb.GetRequest_Name{
 				Name: DefaultNetworkInstanceName,
 			},
-			Aft: spb.AFTType_IPV6,
+			Aft: spb.AFTType_MAC,
 		},
 		wantErr: true,
 	}, {

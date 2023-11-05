@@ -1751,17 +1751,6 @@ func TestCanResolve(t *testing.T) {
 		want:             false,
 		wantErrSubstring: "invalid nil candidate",
 	}, {
-		desc:  "ipv6 entry - invalid",
-		inRIB: New(defName),
-		inNI:  defName,
-		inCand: func() *aft.RIB {
-			r := &aft.RIB{}
-			r.GetOrCreateAfts().GetOrCreateIpv6Entry("ff00::1/128")
-			return r
-		}(),
-		wantErrSubstring: "IPv6 entries are unsupported",
-	}, {
-
 		desc:  "Ethernet - invalid",
 		inRIB: New(defName),
 		inNI:  defName,
@@ -2038,6 +2027,95 @@ func TestCanResolve(t *testing.T) {
 			return r
 		}(),
 		want: true,
+	}, {
+		desc:  "zero index nhg in IPv6 entry - invalid",
+		inRIB: New(defName),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::1/128")
+			i.NextHopGroup = ygot.Uint64(0)
+			return r
+		}(),
+		wantErrSubstring: "invalid zero-index NHG in IPv6Entry",
+	}, {
+		desc:  "resolve ipv6 entry in nil NI - invalid",
+		inRIB: New(defName),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::1/128")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String("404")
+			return r
+		}(),
+		wantErrSubstring: "invalid unknown network-instance for entry",
+	}, {
+		desc: "resolve ipv6 entry in default NI - implicit name",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB[defName].r = &aft.RIB{}
+			cc := r.niRIB[defName].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::1/128")
+			i.NextHopGroup = ygot.Uint64(1)
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "resolve ipv6 entry in default NI - explicit name",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB[defName].r = &aft.RIB{}
+			cc := r.niRIB[defName].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8:1::/48")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String(defName)
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "resolve ipv6 entry in non-default NI",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB["vrf-42"] = NewRIBHolder("vrf-42")
+			r.niRIB["vrf-42"].r = &aft.RIB{}
+			cc := r.niRIB["vrf-42"].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::/32")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String("vrf-42")
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "resolve ipv6 entry in non-default NI - not found",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB["vrf-42"] = NewRIBHolder("vrf-42")
+			r.niRIB["vrf-42"].r = &aft.RIB{}
+			r.niRIB["vrf-42"].r.GetOrCreateAfts()
+			// explicitly don't create NHG
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::/32")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String("vrf-42")
+			return r
+		}(),
 	}}
 
 	for _, tt := range tests {

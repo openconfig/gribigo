@@ -4,14 +4,14 @@ go 1.20
 
 require (
 	github.com/golang/glog v1.1.2
-	github.com/google/go-cmp v0.5.9
+	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.3.0
 	github.com/openconfig/gnmi v0.10.0
-	github.com/openconfig/goyang v1.4.1
+	github.com/openconfig/goyang v1.4.3
 	github.com/openconfig/gribi v1.0.0
 	github.com/openconfig/lemming v0.3.2-0.20230914210403-c6484d12af0a
 	github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07
-	github.com/openconfig/ygot v0.29.12
+	github.com/openconfig/ygot v0.29.14-0.20231104225320-3ff6621e6f61
 	go.uber.org/atomic v1.10.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230822172742-b8732ec3820d
 	google.golang.org/grpc v1.58.0-dev

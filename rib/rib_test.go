@@ -4267,6 +4267,36 @@ func TestResolvedEntryHook(t *testing.T) {
 			return nil
 		},
 	}, {
+		desc:  "add ipv6 entry",
+		inRIB: baseRIB(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8:cafe:beef::/64",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inHook: func(ribs map[string]*aft.RIB, op constants.OpType, netinst string, aft constants.AFT, key any, _ ...ResolvedDetails) {
+			gotCh <- fmt.Sprintf("%s->%s:%s", netinst, aft, key)
+		},
+		checkFn: func() error {
+			got := <-gotCh
+			switch t := got.(type) {
+			case error:
+				return fmt.Errorf("got error, %v", t)
+			case string:
+				if got, want := t, fmt.Sprintf("%s->IPv6:2001:db8:cafe:beef::/64", defName); got != want {
+					return fmt.Errorf("did not get expected result, got: %v, want: %v", got, want)
+				}
+			}
+			return nil
+		},
+	}, {
 		desc:  "check that hook was called for an mpls entry",
 		inRIB: baseRIB(),
 		inOperation: &spb.AFTOperation{
@@ -4361,6 +4391,38 @@ func TestResolvedEntryHook(t *testing.T) {
 		},
 		inHook:  stringHook,
 		checkFn: stringChecker("Delete MPLS:DEFAULT->42"),
+	}, {
+		desc: "delete ipv6 entry",
+		inRIB: func() *RIB {
+			r := baseRIB()
+			_, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:db8:42::/48",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				}})
+			if err != nil {
+				t.Fatalf("cannot build complete RIB, error: %v", err)
+			}
+			return r
+		}(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_DELETE,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8:42::/48",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inHook:  stringHook,
+		checkFn: stringChecker("Delete IPv6:DEFAULT->2001:db8:42::/48"),
 	}, {
 		desc: "replace ipv4 entry",
 		inRIB: func() *RIB {
@@ -4490,6 +4552,70 @@ func TestResolvedEntryHook(t *testing.T) {
 		},
 		inHook:  stringHook,
 		checkFn: stringChecker("Add MPLS:DEFAULT->42"),
+	}, {
+
+		desc: "replace ipv6 entry",
+		inRIB: func() *RIB {
+			r := baseRIB()
+
+			ops := []*spb.AFTOperation{{
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 2,
+						NextHop: &aftpb.Afts_NextHop{
+							IpAddress: &wpb.StringValue{Value: "2.2.2.2"},
+						},
+					},
+				},
+			}, {
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 2,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index: 2,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+									Weight: &wpb.UintValue{Value: 32},
+								},
+							}},
+						},
+					},
+				},
+			}, {
+				Op: spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:cafe::/48",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			}}
+			for i, op := range ops {
+				op.Id = uint64(i)
+				op.Op = spb.AFTOperation_ADD
+
+				if _, _, err := r.AddEntry(defName, op); err != nil {
+					t.Fatalf("cannot add entry %s, %v", prototext.Format(op), err)
+				}
+			}
+			return r
+		}(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_REPLACE,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:cafe::/48",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup: &wpb.UintValue{Value: 2},
+					},
+				},
+			},
+		},
+		inHook:  stringHook,
+		checkFn: stringChecker("Add IPv6:DEFAULT->2001:cafe::/48"),
 	}}
 
 	for _, tt := range tests {
@@ -4561,6 +4687,60 @@ func TestCanDelete(t *testing.T) {
 		inDelCandidate: func() *aft.RIB {
 			r := &aft.RIB{}
 			r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "can delete IPv6 - always OK",
+		inRIB: func() *RIB {
+			r := New(defName)
+
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix:    "2001:cafe::/127",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+					},
+				},
+			}); err != nil {
+				t.Fatalf("cannot build testcase, got err: %v", err)
+			}
+
+			return r
+		}(),
+		inNetInst: defName,
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:cafe::/127")
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "can delete MPLS - always OK",
+		inRIB: func() *RIB {
+			r := New(defName)
+
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{},
+					},
+				},
+			}); err != nil {
+				t.Fatalf("cannot build testcase, got err: %v", err)
+			}
+
+			return r
+		}(),
+		inNetInst: defName,
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
 			return r
 		}(),
 		want: true,

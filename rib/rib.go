@@ -879,13 +879,8 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 	}
 
 	// IPv4 entries can always be removed, since we allow recursion to happen
-	// inside and outside of gRIBI.
-	if len(caft.Ipv4Entry) != 0 {
-		return true, nil
-	}
-
-	// Similarly to IPv4 entries, we can always remove label entries.
-	if len(caft.LabelEntry) != 0 {
+	// inside and outside of gRIBI - this is true for MPLS and IPv6.
+	if len(caft.Ipv4Entry) != 0 || len(caft.LabelEntry) != 0 || len(caft.Ipv6Entry) != 0 {
 		return true, nil
 	}
 

@@ -1039,10 +1039,10 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 
 	filter := map[spb.AFTType]bool{}
 	switch v := req.Aft; v {
-	case spb.AFTType_ALL, spb.AFTType_IPV4, spb.AFTType_NEXTHOP, spb.AFTType_NEXTHOP_GROUP:
+	case spb.AFTType_ALL, spb.AFTType_IPV4, spb.AFTType_NEXTHOP, spb.AFTType_NEXTHOP_GROUP, spb.AFTType_MPLS, spb.AFTType_IPV6:
 		filter[v] = true
 	default:
-		errCh <- status.Errorf(codes.Unimplemented, "AFTs other than IPv4, IPv6, NHG and NH are unimplemented, requested: %s", v)
+		errCh <- status.Errorf(codes.Unimplemented, "AFTs other than IPv4, MPLS, IPv6, NHG and NH are unimplemented, requested: %s", v)
 	}
 
 	for _, ni := range netInstances {

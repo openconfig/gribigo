@@ -2089,6 +2089,7 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 			spb.AFTType_MPLS:          true,
 			spb.AFTType_NEXTHOP:       true,
 			spb.AFTType_NEXTHOP_GROUP: true,
+			spb.AFTType_IPV6:          true,
 		}
 	}
 
@@ -2107,6 +2108,28 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 						NetworkInstance: r.name,
 						Entry: &spb.AFTEntry_Ipv4{
 							Ipv4: p,
+						},
+					}},
+				}
+			}
+		}
+	}
+
+	if filter[spb.AFTType_IPV6] {
+		for pfx, e := range r.r.Afts.Ipv6Entry {
+			select {
+			case <-stopCh:
+				return nil
+			default:
+				p, err := ConcreteIPv6Proto(e)
+				if err != nil {
+					return status.Errorf(codes.Internal, "cannot marshal IPv6Entry for %s into GetResponse, %v", pfx, err)
+				}
+				msgCh <- &spb.GetResponse{
+					Entry: []*spb.AFTEntry{{
+						NetworkInstance: r.name,
+						Entry: &spb.AFTEntry_Ipv6{
+							Ipv6: p,
 						},
 					}},
 				}

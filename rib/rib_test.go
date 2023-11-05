@@ -1101,7 +1101,7 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 			case *aftpb.Afts_Ipv6EntryKey:
 				ok, gotOrig, err = tt.inRIB.DeleteIPv6(v)
 			case *aftpb.Afts_LabelEntryKey:
-				ok, gotOrig, err = tt.inRIB.DeleteLabelEntry(v)
+				ok, gotOrig, err = tt.inRIB.DeleteMPLS(v)
 			default:
 				t.Fatalf("unknown input entry type, %T", err)
 			}
@@ -1327,11 +1327,13 @@ func mustTypedValue(i interface{}) *gpb.TypedValue {
 
 func TestHooks(t *testing.T) {
 	type op struct {
-		Do  constants.OpType
-		TS  int64
-		NH  uint64
-		NHG uint64
-		IP4 string
+		Do   constants.OpType
+		TS   int64
+		NH   uint64
+		NHG  uint64
+		IP4  string
+		MPLS uint32
+		IP6  string
 	}
 
 	tests := []struct {
@@ -1359,6 +1361,28 @@ func TestHooks(t *testing.T) {
 			&op{Do: constants.Add, TS: 2, NH: 84},
 		},
 	}, {
+		desc: "store add IPv6 and MPLS hooks",
+		inOps: []*op{{
+			Do:  constants.Add,
+			IP6: "2001:DB8::/32",
+		}, {
+			Do:  constants.Add,
+			NHG: 42,
+		}, {
+			Do: constants.Add,
+			NH: 84,
+		}, {
+			Do:   constants.Add,
+			MPLS: 42,
+		}},
+		storeFn: true,
+		want: []interface{}{
+			&op{Do: constants.Add, TS: 0, IP6: "2001:DB8::/32"},
+			&op{Do: constants.Add, TS: 1, NHG: 42},
+			&op{Do: constants.Add, TS: 2, NH: 84},
+			&op{Do: constants.Add, TS: 3, MPLS: 42},
+		},
+	}, {
 		desc: "store delete hooks",
 		inOps: []*op{{
 			Do:  constants.Delete,
@@ -1366,11 +1390,23 @@ func TestHooks(t *testing.T) {
 		}, {
 			Do:  constants.Delete,
 			IP4: "1.1.1.1/32",
+		}, {
+			Do:   constants.Delete,
+			MPLS: 42,
+		}, {
+			Do: constants.Delete,
+			NH: 10,
+		}, {
+			Do:  constants.Delete,
+			NHG: 20,
 		}},
 		storeFn: true,
 		want: []interface{}{
 			&op{Do: constants.Delete, TS: 0, IP4: "8.8.8.8/32"},
 			&op{Do: constants.Delete, TS: 1, IP4: "1.1.1.1/32"},
+			&op{Do: constants.Delete, TS: 2, MPLS: 42},
+			&op{Do: constants.Delete, TS: 3, NH: 10},
+			&op{Do: constants.Delete, TS: 4, NHG: 20},
 		},
 	}, {
 		desc: "store add and delete",
@@ -1429,13 +1465,21 @@ func TestHooks(t *testing.T) {
 				return int64(len(got))
 			}
 			store := func(o constants.OpType, _ int64, _ string, gs ygot.ValidatedGoStruct) {
-				switch t := gs.(type) {
+				switch et := gs.(type) {
 				case *aft.Afts_Ipv4Entry:
-					got = append(got, &op{Do: o, TS: tsFn(), IP4: t.GetPrefix()})
+					got = append(got, &op{Do: o, TS: tsFn(), IP4: et.GetPrefix()})
 				case *aft.Afts_NextHopGroup:
-					got = append(got, &op{Do: o, TS: tsFn(), NHG: t.GetId()})
+					got = append(got, &op{Do: o, TS: tsFn(), NHG: et.GetId()})
 				case *aft.Afts_NextHop:
-					got = append(got, &op{Do: o, TS: tsFn(), NH: t.GetIndex()})
+					got = append(got, &op{Do: o, TS: tsFn(), NH: et.GetIndex()})
+				case *aft.Afts_Ipv6Entry:
+					got = append(got, &op{Do: o, TS: tsFn(), IP6: et.GetPrefix()})
+				case *aft.Afts_LabelEntry:
+					lv, ok := et.GetLabel().(aft.UnionUint32)
+					if !ok {
+						t.Fatalf("invalid label type: %v %T", et.GetLabel(), et.GetLabel())
+					}
+					got = append(got, &op{Do: o, TS: tsFn(), MPLS: uint32(lv)})
 				}
 			}
 
@@ -1520,6 +1564,28 @@ func TestHooks(t *testing.T) {
 							t.Fatalf("cannot pre-add IPv4 entry %s: %v", o.IP4, err)
 						}
 					}
+				case o.IP6 != "":
+					switch o.Do {
+					case constants.Replace, constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].AddIPv6(&aftpb.Afts_Ipv6EntryKey{
+							Prefix:    o.IP6,
+							Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+						}, false); err != nil {
+							t.Fatalf("cannot pre-add IPv6 entry %s: %v", o.IP4, err)
+						}
+					}
+				case o.MPLS != 0:
+					switch o.Do {
+					case constants.Replace, constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].AddMPLS(&aftpb.Afts_LabelEntryKey{
+							Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+								LabelUint64: uint64(o.MPLS),
+							},
+							LabelEntry: &aftpb.Afts_LabelEntry{},
+						}, false); err != nil {
+							t.Fatalf("cannot pre-add IPv6 entry %s: %v", o.IP4, err)
+						}
+					}
 				case o.NHG != 0:
 					switch o.Do {
 					case constants.Replace, constants.Delete:
@@ -1571,6 +1637,46 @@ func TestHooks(t *testing.T) {
 							t.Fatalf("cannote delete IPv4 entry %s: %v", o.IP4, err)
 						}
 					}
+				case o.IP6 != "":
+					switch o.Do {
+					case constants.Add:
+						if _, _, err := r.niRIB[r.defaultName].AddIPv6(&aftpb.Afts_Ipv6EntryKey{
+							Prefix: o.IP6,
+							Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						}, false); err != nil {
+							t.Fatalf("cannot add IPv6 entry %s: %v", o.IP4, err)
+						}
+					case constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].DeleteIPv6(&aftpb.Afts_Ipv6EntryKey{
+							Prefix: o.IP6,
+						}); err != nil {
+							t.Fatalf("cannote delete IPv6 entry %s: %v", o.IP6, err)
+						}
+					}
+				case o.MPLS != 0:
+					switch o.Do {
+					case constants.Add:
+						if _, _, err := r.niRIB[r.defaultName].AddMPLS(&aftpb.Afts_LabelEntryKey{
+							Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+								LabelUint64: uint64(o.MPLS),
+							},
+							LabelEntry: &aftpb.Afts_LabelEntry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						}, false); err != nil {
+							t.Fatalf("cannot add MPLS entry %s: %v", o.IP4, err)
+						}
+					case constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].DeleteMPLS(&aftpb.Afts_LabelEntryKey{
+							Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+								LabelUint64: uint64(o.MPLS),
+							},
+						}); err != nil {
+							t.Fatalf("cannote delete MPLS entry %d: %v", o.MPLS, err)
+						}
+					}
 				case o.NHG != 0:
 					switch o.Do {
 					case constants.Add:
@@ -1579,6 +1685,12 @@ func TestHooks(t *testing.T) {
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
 						}, false); err != nil {
 							t.Fatalf("cannot add NHG entry %d, %v", o.NHG, err)
+						}
+					case constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].DeleteNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+							Id: o.NHG,
+						}); err != nil {
+							t.Fatalf("cannote delete NHG entry %d: %v", o.NHG, err)
 						}
 					}
 				case o.NH != 0:
@@ -1589,6 +1701,12 @@ func TestHooks(t *testing.T) {
 							NextHop: &aftpb.Afts_NextHop{},
 						}, false); err != nil {
 							t.Fatalf("cannot add NH entry %d, %v", o.NH, err)
+						}
+					case constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].DeleteNextHop(&aftpb.Afts_NextHopKey{
+							Index: o.NH,
+						}); err != nil {
+							t.Fatalf("cannote delete NH entry %d: %v", o.NH, err)
 						}
 					}
 				}

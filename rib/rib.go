@@ -827,6 +827,13 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 
 	}
 
+	for _, i := range caft.Ipv6Entry {
+		if i.GetNextHopGroup() == 0 {
+			return false, fmt.Errorf("invalid zero-index NHG in IPv6Entry %s, NI %s", i.GetPrefix(), netInst)
+		}
+		return nhgResolvable(niRIB, i.GetNextHopGroupNetworkInstance(), i.GetNextHopGroup())
+	}
+
 	for _, i := range caft.LabelEntry {
 		if i.GetNextHopGroup() == 0 {
 			return false, fmt.Errorf("invalid zero index NHG in LabelEntry %v, NI %s", i.GetLabel(), netInst)
@@ -911,15 +918,13 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 // by the RIB implementation. It returns an error if it cannot.
 func checkCandidate(caft *aft.Afts) error {
 	switch {
-	case len(caft.Ipv6Entry) != 0:
-		return fmt.Errorf("IPv6 entries are unsupported, got: %v", caft.Ipv6Entry)
 	case len(caft.MacEntry) != 0:
 		return fmt.Errorf("ethernet MAC entries are unsupported, got: %v", caft.MacEntry)
 	case len(caft.PolicyForwardingEntry) != 0:
 		return fmt.Errorf("PBR entries are unsupported, got: %v", caft.PolicyForwardingEntry)
-	case (len(caft.LabelEntry) + len(caft.Ipv4Entry) + len(caft.NextHopGroup) + len(caft.NextHop)) == 0:
+	case (len(caft.Ipv6Entry) + len(caft.LabelEntry) + len(caft.Ipv4Entry) + len(caft.NextHopGroup) + len(caft.NextHop)) == 0:
 		return errors.New("no entries in specified candidate")
-	case (len(caft.LabelEntry) + len(caft.Ipv4Entry) + len(caft.NextHopGroup) + len(caft.NextHop)) > 1:
+	case (len(caft.Ipv6Entry) + len(caft.LabelEntry) + len(caft.Ipv4Entry) + len(caft.NextHopGroup) + len(caft.NextHop)) > 1:
 		return fmt.Errorf("multiple entries are unsupported, got mpls: %v, ipv4: %v, next-hop-group: %v, next-hop: %v", caft.LabelEntry, caft.Ipv4Entry, caft.NextHopGroup, caft.NextHop)
 	}
 	return nil

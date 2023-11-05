@@ -1543,6 +1543,22 @@ func (r *RIBHolder) doDeleteMPLS(label uint32) {
 	delete(r.r.Afts.LabelEntry, aft.UnionUint32(label))
 }
 
+// locklessDeleteMPLS removes the label forwarding entry with the specified label
+// from the RIB, without holding the lock on the AFT. The calling routine
+// MUST ensure that it holds the lock to ensure thread-safe operation.
+func (r *RIBHolder) locklessDeleteMPLS(label aft.Afts_LabelEntry_Label_Union) error {
+	de := r.r.Afts.LabelEntry[label]
+	if de == nil {
+		return fmt.Errorf("cannot find label %d", label)
+	}
+
+	delete(r.r.Afts.LabelEntry, label)
+	if r.postChangeHook != nil {
+		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
+	}
+	return nil
+}
+
 // DeleteNextHopGroup removes the NextHopGroup entry e from the RIB. It returns a boolean
 // indicating whether the entry has been removed, a copy of the next-hop-group that was
 // removed and an error if the message cannot be parsed. Per the gRIBI specification, the
@@ -2242,6 +2258,12 @@ func (r *RIBHolder) Flush() error {
 
 	for p := range r.r.Afts.Ipv6Entry {
 		if err := r.locklessDeleteIPv6(p); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	for label := range r.r.Afts.LabelEntry {
+		if err := r.locklessDeleteMPLS(label); err != nil {
 			errs = append(errs, err)
 		}
 	}

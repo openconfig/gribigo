@@ -2552,7 +2552,6 @@ func TestRIBAddEntry(t *testing.T) {
 			if err != nil || len(fails) != 0 {
 				t.Fatalf("cannot build test case, cannot add NHG, got: %v or failed ops %d", err, len(fails))
 			}
-
 			return r
 		}(),
 		inNI: defName,
@@ -2817,6 +2816,194 @@ func TestRIBAddEntry(t *testing.T) {
 
 			return nil
 		},
+	}, {
+		desc: "resolvable MPLS entry",
+		inRIB: func() *RIB {
+			r := New(defName)
+			// op#1: NHG ID 1 pending on NH index = 1 showing up
+			r.pendingEntries[1] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 1,
+					Entry: &spb.AFTOperation_NextHopGroup{
+						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+							Id: 1,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{
+								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+									Index:   1,
+									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+								}},
+							},
+						},
+					},
+				},
+			}
+
+			// op#2: MPLS entry pending on NNG index 1 showing up (q'd above)
+			r.pendingEntries[2] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 2,
+					Entry: &spb.AFTOperation_Mpls{
+						Mpls: &aftpb.Afts_LabelEntryKey{
+							Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+								LabelUint64: 42,
+							},
+							LabelEntry: &aftpb.Afts_LabelEntry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				},
+			}
+			return r
+		}(),
+		inNI: defName,
+		// op#3 -> NH = 1 shows up, makes NHG 1 and label 42 resolvable.
+		inOp: &spb.AFTOperation{
+			Id: 3,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 1,
+			Op: &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index:   1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+							}},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 2,
+			Op: &spb.AFTOperation{
+				Id: 2,
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 3,
+			Op: &spb.AFTOperation{
+				Id: 3,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "resolvable IPv6 entry",
+		inRIB: func() *RIB {
+			r := New(defName)
+			// op#1: NHG ID 1 pending on NH index = 1 showing up
+			r.pendingEntries[1] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 1,
+					Entry: &spb.AFTOperation_NextHopGroup{
+						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+							Id: 1,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{
+								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+									Index:   1,
+									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+								}},
+							},
+						},
+					},
+				},
+			}
+
+			// op#2: IPv6 entry pending on NNG index 1 showing up (q'd above)
+			r.pendingEntries[2] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 2,
+					Entry: &spb.AFTOperation_Ipv6{
+						Ipv6: &aftpb.Afts_Ipv6EntryKey{
+							Prefix: "2001:db8::/32",
+							Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				},
+			}
+			return r
+		}(),
+		inNI: defName,
+		// op#3 -> NH = 1 shows up, makes NHG 1 and label 42 resolvable.
+		inOp: &spb.AFTOperation{
+			Id: 3,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 1,
+			Op: &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index:   1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+							}},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 2,
+			Op: &spb.AFTOperation{
+				Id: 2,
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:db8::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 3,
+			Op: &spb.AFTOperation{
+				Id: 3,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
 	}}
 
 	for _, tt := range tests {
@@ -3073,6 +3260,45 @@ func TestDeleteEntry(t *testing.T) {
 					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
 						Id:           1,
 						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "delete IPv6 - success",
+		inRIB: func() *RIB {
+			r := New(defName, DisableRIBCheckFn())
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix:    "2001:db8::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+					},
+				},
+			}); err != nil {
+				t.Fatalf("cannot set up test case, %v", err)
+			}
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix:    "2001:db8::/32",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix:    "2001:db8::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
 					},
 				},
 			},
@@ -3536,6 +3762,12 @@ func TestGetRIB(t *testing.T) {
 			t.Fatalf("cannot build RIB, %v", err)
 		}
 
+		cr = &aft.RIB{}
+		cr.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:4c20::/32").NextHopGroup = ygot.Uint64(42)
+		if _, err := r.doAddIPv6("2001:4c20::/32", cr); err != nil {
+			t.Fatalf("cannot build RIB, %v", err)
+		}
+
 		return r
 	}()
 
@@ -3608,6 +3840,34 @@ func TestGetRIB(t *testing.T) {
 							LabelUint64: 42,
 						},
 						LabelEntry: &aftpb.Afts_LabelEntry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc: "ipv6 entry",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("VRF42")
+
+			cr := &aft.RIB{}
+			cr.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:4c20::/32").NextHopGroup = ygot.Uint64(42)
+			if _, err := r.doAddIPv6("2001:4c20::/32", cr); err != nil {
+				t.Fatalf("cannot build RIB, %v", err)
+			}
+			return r
+		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF42",
+				Entry: &spb.AFTEntry_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:4c20::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
 							NextHopGroup: &wpb.UintValue{Value: 42},
 						},
 					},
@@ -3752,6 +4012,46 @@ func TestGetRIB(t *testing.T) {
 						Index: 1,
 						NextHop: &aftpb.Afts_NextHop{
 							IpAddress: &wpb.StringValue{Value: "1.1.1.1/32"},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to ipv6",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_IPV6: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:4c20::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to mpls",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_MPLS: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
 						},
 					},
 				},

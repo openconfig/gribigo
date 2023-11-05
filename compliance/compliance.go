@@ -111,6 +111,8 @@ type Test struct {
 	RequiresNonDefaultNINHG bool
 	// RequiresMPLS marks a test that requires MPLS support in the gRIBI server.
 	RequiresMPLS bool
+	// RequiresIPv6 marks a test that requires IPv6 support in the gRIBI server.
+	RequiresIPv6 bool
 }
 
 // TestSpec is a description of a test.
@@ -502,6 +504,25 @@ var (
 			Fn:           makeTestWithACK(AddMPLSEntryWithLabelStack, fluent.InstalledInRIB),
 			ShortName:    "MPLS add entry with NH label stack",
 			RequiresMPLS: true,
+		},
+	}, {
+		In: Test{
+			Fn:           makeTestWithACK(AddIPv6Entry, fluent.InstalledInRIB),
+			ShortName:    "Add IPv6 entry that can be programmed on the server - with RIB ACK",
+			RequiresIPv6: true,
+		},
+	}, {
+		In: Test{
+			Fn:             makeTestWithACK(AddIPv6Entry, fluent.InstalledInFIB),
+			ShortName:      "Add IPv6 entry that can be programmed on the server - with FIB ACK",
+			RequiresFIBACK: true,
+			RequiresIPv6:   true,
+		},
+	}, {
+		In: Test{
+			Fn:           AddIPv6Metadata,
+			ShortName:    "Add IPv6 entry with metadata",
+			RequiresIPv6: true,
 		},
 	}}
 )
@@ -1781,6 +1802,92 @@ func AddDeleteAdd(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 			WithIPv4Operation("2.0.0.0/8").
 			WithOperationType(constants.Add).
 			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// AddIPv6Entry adds a fully referenced IPv4Entry and checks whether the specified ACK
+// type (wantACK) is returned.
+func AddIPv6Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.IPv6Entry().WithPrefix("2001:db8::/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(42))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, wantACK, false)
+
+	// Check the three entries in order.
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(1).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(2).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(3).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+	)
+}
+
+// AddIPv6Metadata adds an IPv6 Entry (and its dependencies) with metadata alongside the
+// entry.
+func AddIPv6Metadata(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(defaultNetworkInstanceName).WithIPAddress("192.0.2.3"))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.IPv6Entry().
+				WithPrefix("2001:db8::1/128").
+				WithNetworkInstance(defaultNetworkInstanceName).
+				WithNextHopGroup(1).
+				WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
+			)
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, fluent.InstalledInRIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv6Operation("2001:db8::1/128").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInRIB).
 			AsResult(),
 		chk.IgnoreOperationID())
 }

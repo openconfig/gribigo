@@ -1158,6 +1158,17 @@ func (o *opResult) WithIPv4Operation(p string) *opResult {
 	return o
 }
 
+// WithIPv6Operation indicates that the result corresponds to
+// an operation impacting the IPv6 prefix p which is of the form
+// prefix/mask.
+func (o *opResult) WithIPv6Operation(p string) *opResult {
+	if o.r.Details == nil {
+		o.r.Details = &client.OpDetailsResults{}
+	}
+	o.r.Details.IPv6Prefix = p
+	return o
+}
+
 // WithNextHopGroupOperation indicates that the result correspodns to
 // an operation impacting the next-hop-group with index i.
 func (o *opResult) WithNextHopGroupOperation(i uint64) *opResult {

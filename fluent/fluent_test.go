@@ -385,13 +385,14 @@ func TestEntry(t *testing.T) {
 		},
 	}, {
 		desc: "mpls entry",
-		in:   LabelEntry().WithNetworkInstance("DEFAULT").WithLabel(42).WithNextHopGroupNetworkInstance("DEFAULT").WithPoppedLabelStack(10, 20),
+		in:   LabelEntry().WithNetworkInstance("DEFAULT").WithLabel(42).WithNextHopGroup(1).WithNextHopGroupNetworkInstance("DEFAULT").WithPoppedLabelStack(10, 20),
 		wantOpProto: &spb.AFTOperation{
 			NetworkInstance: "DEFAULT",
 			Entry: &spb.AFTOperation_Mpls{
 				Mpls: &aftpb.Afts_LabelEntryKey{
 					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
 					LabelEntry: &aftpb.Afts_LabelEntry{
+						NextHopGroup:                &wpb.UintValue{Value: 1},
 						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
 						PoppedMplsLabelStack: []*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
 							{PoppedMplsLabelStackUint64: 10},
@@ -407,11 +408,41 @@ func TestEntry(t *testing.T) {
 				Mpls: &aftpb.Afts_LabelEntryKey{
 					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
 					LabelEntry: &aftpb.Afts_LabelEntry{
+						NextHopGroup:                &wpb.UintValue{Value: 1},
 						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
 						PoppedMplsLabelStack: []*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
 							{PoppedMplsLabelStackUint64: 10},
 							{PoppedMplsLabelStackUint64: 20},
 						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "ipv6 entry",
+		in:   IPv6Entry().WithNetworkInstance("DEFAULT").WithPrefix("2001:db8::/42").WithNextHopGroup(1).WithNextHopGroupNetworkInstance("DEFAULT").WithMetadata([]byte{1, 2, 3, 4}),
+		wantOpProto: &spb.AFTOperation{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8::/42",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup:                &wpb.UintValue{Value: 1},
+						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
+						EntryMetadata:               &wpb.BytesValue{Value: []byte{1, 2, 3, 4}},
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8::/42",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup:                &wpb.UintValue{Value: 1},
+						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
+						EntryMetadata:               &wpb.BytesValue{Value: []byte{1, 2, 3, 4}},
 					},
 				},
 			},
@@ -425,7 +456,7 @@ func TestEntry(t *testing.T) {
 				t.Fatalf("did not get expected error for op, got: %v, wantErr? %v", err, tt.wantOpErr)
 			}
 			if diff := cmp.Diff(gotop, tt.wantOpProto, protocmp.Transform()); diff != "" {
-				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
+				t.Fatalf("did not get expected Operation proto, diff(-got,+want):\n%s", diff)
 			}
 
 			gotent, err := tt.in.EntryProto()
@@ -433,7 +464,7 @@ func TestEntry(t *testing.T) {
 				t.Fatalf("did not get expected error for entry, got: %v, wantErr? %v", err, tt.wantEntryErr)
 			}
 			if diff := cmp.Diff(gotent, tt.wantEntryProto, protocmp.Transform()); diff != "" {
-				t.Fatalf("did not get expexcted proto, diff(-got,+want)\n%s", diff)
+				t.Fatalf("did not get expected Entry proto, diff(-got,+want)\n%s", diff)
 			}
 		})
 	}

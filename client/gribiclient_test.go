@@ -1039,6 +1039,66 @@ func TestGet(t *testing.T) {
 			}},
 		},
 	}, {
+		desc: "single IPv6 entry in Server - specific NI",
+		inOperations: []*spb.AFTOperation{{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix:    "2001:db8::/32",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+				},
+			},
+		}},
+		inGetRequest: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_Name{
+				Name: server.DefaultNetworkInstanceName,
+			},
+			Aft: spb.AFTType_ALL,
+		},
+		wantResponse: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: server.DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix:    "2001:db8::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+					},
+				},
+			}},
+		},
+	}, {
+		desc: "single MPLS entry in Server - specific NI",
+		inOperations: []*spb.AFTOperation{{
+			NetworkInstance: server.DefaultNetworkInstanceName,
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+						LabelUint64: 42,
+					},
+					LabelEntry: &aftpb.Afts_LabelEntry{},
+				},
+			},
+		}},
+		inGetRequest: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_Name{
+				Name: server.DefaultNetworkInstanceName,
+			},
+			Aft: spb.AFTType_ALL,
+		},
+		wantResponse: &spb.GetResponse{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: server.DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{},
+					},
+				},
+			}},
+		},
+	}, {
 		desc: "multiple entries - single NI",
 		inOperations: []*spb.AFTOperation{{
 			NetworkInstance: server.DefaultNetworkInstanceName,

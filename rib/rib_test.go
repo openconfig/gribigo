@@ -1205,6 +1205,7 @@ func TestConcreteIPv4Proto(t *testing.T) {
 }
 
 func TestConcreteIPv6Proto(t *testing.T) {
+	// TODO(robjs): Consider whether we can create a test case that fails here and in the other concrete tests.
 	tests := []struct {
 		desc    string
 		inEntry *aft.Afts_Ipv6Entry

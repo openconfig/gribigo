@@ -1946,7 +1946,7 @@ func ConcreteIPv4Proto(e *aft.Afts_Ipv4Entry) (*aftpb.Afts_Ipv4EntryKey, error) 
 	}, nil
 }
 
-// ConcreteIPv46roto takes the input Ipv6Entry GoStruct and returns it as a gRIBI
+// ConcreteIPv6Proto takes the input Ipv6Entry GoStruct and returns it as a gRIBI
 // Ipv6EntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func ConcreteIPv6Proto(e *aft.Afts_Ipv6Entry) (*aftpb.Afts_Ipv6EntryKey, error) {
 	ip6proto := &aftpb.Afts_Ipv6Entry{}

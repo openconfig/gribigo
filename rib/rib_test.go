@@ -1318,7 +1318,7 @@ func mustPath(s string) *gpb.Path {
 	return p
 }
 
-func mustTypedValue(i interface{}) *gpb.TypedValue {
+func mustTypedValue(i any) *gpb.TypedValue {
 	tv, err := value.FromScalar(i)
 	if err != nil {
 		panic(fmt.Sprintf("cannot convert value %v, %v", i, err))
@@ -1342,7 +1342,7 @@ func TestHooks(t *testing.T) {
 		inOps   []*op
 		storeFn bool
 		gnmiFn  bool
-		want    []interface{}
+		want    []any
 	}{{
 		desc: "store add hooks",
 		inOps: []*op{{
@@ -1356,7 +1356,7 @@ func TestHooks(t *testing.T) {
 			NH: 84,
 		}},
 		storeFn: true,
-		want: []interface{}{
+		want: []any{
 			&op{Do: constants.Add, TS: 0, IP4: "8.8.8.8/32"},
 			&op{Do: constants.Add, TS: 1, NHG: 42},
 			&op{Do: constants.Add, TS: 2, NH: 84},
@@ -1377,7 +1377,7 @@ func TestHooks(t *testing.T) {
 			MPLS: 42,
 		}},
 		storeFn: true,
-		want: []interface{}{
+		want: []any{
 			&op{Do: constants.Add, TS: 0, IP6: "2001:DB8::/32"},
 			&op{Do: constants.Add, TS: 1, NHG: 42},
 			&op{Do: constants.Add, TS: 2, NH: 84},
@@ -1402,7 +1402,7 @@ func TestHooks(t *testing.T) {
 			NHG: 20,
 		}},
 		storeFn: true,
-		want: []interface{}{
+		want: []any{
 			&op{Do: constants.Delete, TS: 0, IP4: "8.8.8.8/32"},
 			&op{Do: constants.Delete, TS: 1, IP4: "1.1.1.1/32"},
 			&op{Do: constants.Delete, TS: 2, MPLS: 42},
@@ -1418,7 +1418,7 @@ func TestHooks(t *testing.T) {
 			Do:  constants.Delete,
 			IP4: "2.2.2.2/32",
 		}},
-		want: []interface{}{
+		want: []any{
 			&op{Do: constants.Delete, TS: 0, IP4: "1.1.1.1/32"},
 			&op{Do: constants.Delete, TS: 1, IP4: "2.2.2.2/32"},
 		},
@@ -1432,7 +1432,7 @@ func TestHooks(t *testing.T) {
 			IP4: "4.5.6.7/32",
 		}},
 		gnmiFn: true,
-		want: []interface{}{
+		want: []any{
 			&gpb.Notification{
 				Timestamp: 42,
 				Atomic:    true,
@@ -1460,7 +1460,7 @@ func TestHooks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got := []interface{}{}
+			got := []any{}
 
 			tsFn := func() int64 {
 				return int64(len(got))
@@ -4160,7 +4160,7 @@ func TestResolvedEntryHook(t *testing.T) {
 		return r
 	}
 
-	gotCh := make(chan interface{})
+	gotCh := make(chan any)
 
 	stringHook := func(_ map[string]*aft.RIB, op constants.OpType, netinst string, aft constants.AFT, prefix any, _ ...ResolvedDetails) {
 		s := fmt.Sprintf("%s %s:%v->%v", op, aft, netinst, prefix)

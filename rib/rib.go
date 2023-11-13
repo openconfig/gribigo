@@ -435,7 +435,7 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 		refdNHGID = t.Ipv6.GetIpv6Entry().GetNextHopGroup().GetValue()
 		v6Prefix = t.Ipv6.GetPrefix()
 
-		log.V(2).Info("[op %d] attempting to add IPv6 prefix %s", op.GetId(), t.Ipv6.GetPrefix())
+		log.V(2).Infof("[op %d] attempting to add IPv6 prefix %s", op.GetId(), t.Ipv6.GetPrefix())
 		installed, replaced, err = niR.AddIPv6(t.Ipv6, explicitReplace)
 	case *spb.AFTOperation_NextHop:
 		log.V(2).Infof("[op %d] attempting to add NH Index %d", op.GetId(), t.NextHop.GetIndex())
@@ -2049,7 +2049,7 @@ func protoFromGoStruct(s ygot.ValidatedGoStruct, prefix *gpb.Path, pb proto.Mess
 		return fmt.Errorf("cannot marshal existing entry key %s, %v", s, err)
 	}
 
-	vals := map[*gpb.Path]interface{}{}
+	vals := map[*gpb.Path]any{}
 	for _, n := range ns {
 		for _, u := range n.GetUpdate() {
 			vals[u.Path] = u.Val

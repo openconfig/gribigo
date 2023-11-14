@@ -25,7 +25,6 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
-	"github.com/kylelemons/godebug/pretty"
 	"github.com/openconfig/gnmi/value"
 	"github.com/openconfig/goyang/pkg/yang"
 	"github.com/openconfig/gribigo/aft"
@@ -574,7 +573,6 @@ func isNil[T any](t T) bool {
 // are decremented.
 func handleReferences[P topLevelEntryProto, S topLevelEntryStruct](r *RIB, niRIB *RIBHolder, original S, new P) {
 	incRefCounts := true
-	log.Infof("original was %+v isNil? %v", original, isNil(original))
 	newNHGNI := new.GetNextHopGroupNetworkInstance().GetValue()
 	newNHG := new.GetNextHopGroup().GetValue()
 	if !isNil(original) {
@@ -607,7 +605,6 @@ func handleReferences[P topLevelEntryProto, S topLevelEntryStruct](r *RIB, niRIB
 		referencingRIB, err := r.refdRIB(niRIB, newNHGNI)
 		switch err {
 		case nil:
-			log.Infof("incrementing reference for NHG ID %d in %s", newNHG, newNHGNI)
 			referencingRIB.incNHGRefCount(newNHG)
 		default:
 			log.Errorf("cannot find network instance %s", newNHGNI)
@@ -618,14 +615,12 @@ func handleReferences[P topLevelEntryProto, S topLevelEntryStruct](r *RIB, niRIB
 func (r *RIB) handleNHGReferences(niRIB *RIBHolder, original *aft.Afts_NextHopGroup, new *aftpb.Afts_NextHopGroup) {
 	// Increment all the new references.
 	for _, nh := range new.NextHop {
-		log.Infof("incrementing reference for NH ID %d in %s", nh.GetIndex(), niRIB.name)
 		niRIB.incNHRefCount(nh.GetIndex())
 	}
 
 	// And decrement all the old references.
 	if original != nil {
 		for _, nh := range original.NextHop {
-			log.Infof("decrementing reference for NH ID %d in %s", nh.GetIndex(), niRIB.name)
 			niRIB.decNHRefCount(nh.GetIndex())
 		}
 	}
@@ -751,10 +746,7 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 			if err != nil {
 				return nil, nil, err
 			}
-			log.Infof("decrementing NHG count in VRF %s", originalv4.GetNextHopGroupNetworkInstance())
-			log.Infof("decrementing reference count from %+v", referencingRIB.refCounts)
 			referencingRIB.decNHGRefCount(originalv4.GetNextHopGroup())
-			log.Infof("decrementing reference count to %+v", referencingRIB.refCounts)
 			callHook = true
 			aft = constants.IPv4
 			key = originalv4.GetPrefix()
@@ -769,9 +761,7 @@ func (r *RIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*OpResult, []*OpRe
 			key = originalv6.GetPrefix()
 		case originalNHG != nil:
 			for id := range originalNHG.NextHop {
-				log.Infof("decrementing reference count from %+v", niR.refCounts)
 				niR.decNHRefCount(id)
-				log.Infof("decrementing reference count to %+v", niR.refCounts)
 			}
 		case originalMPLS != nil:
 			referencingRIB, err := r.refdRIB(niR, originalMPLS.GetNextHopGroupNetworkInstance())
@@ -988,10 +978,8 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 		case id == 0:
 			return false, fmt.Errorf("bad NextHopGroup ID 0")
 		case !niRIB.nhgExists(id):
-			log.Infof("idempotent delete of NHG ID %d", id)
 			return true, nil
 		}
-		log.Infof("NHG is referenced? %v", niRIB.nhgReferenced(id))
 		// if the NHG is not referenced, then we can delete it.
 		return !niRIB.nhgReferenced(id), nil
 	}
@@ -1001,10 +989,8 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 		case idx == 0:
 			return false, fmt.Errorf("bad NextHop ID 0")
 		case !niRIB.nhExists(idx):
-			log.Infof("idempotent delete of NH index %d", idx)
 			return true, nil
 		}
-		log.Infof("NH is referenced? %v", niRIB.nhReferenced(idx))
 		// again if the NH is not referenced, then we can delete it.
 		return !niRIB.nhReferenced(idx), nil
 	}
@@ -1739,10 +1725,7 @@ func (r *RIBHolder) locklessDeleteNHG(id uint64) error {
 
 	// NextHops must be in the same network instance and NHGs.
 	for idx := range de.NextHop {
-		log.Infof("decrementing reference count for NH %d", idx)
-		log.Infof("was %d", r.refCounts.NextHop[idx])
 		r.decNHRefCount(idx)
-		log.Infof("now %d", r.refCounts.NextHop[idx])
 	}
 
 	delete(r.r.Afts.NextHopGroup, id)
@@ -2399,7 +2382,6 @@ func (r *RIB) Flush(networkInstances []string) error {
 			case err != nil:
 				log.Errorf("cannot find network instance RIB %s during Flush for IPv4 prefix %s", entry.GetNextHopGroupNetworkInstance(), p)
 			default:
-				log.Infof("decrementing reference in VRF %s", entry.GetNextHopGroupNetworkInstance())
 				referencedRIB.decNHGRefCount(entry.GetNextHopGroup())
 			}
 			if err := niR.locklessDeleteIPv4(p); err != nil {
@@ -2460,10 +2442,6 @@ func (r *RIB) Flush(networkInstances []string) error {
 			}
 		}
 
-	}
-
-	for niN, ni := range r.niRIB {
-		log.Infof("after flush, refCounts in %s are %v", niN, pretty.Sprint(ni.refCounts))
 	}
 
 	if len(errs) != 0 {

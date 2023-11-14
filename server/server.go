@@ -427,24 +427,16 @@ func (s *Server) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 		nis = []string{t.Name}
 	}
 
-	msgs := []string{}
-	for _, n := range nis {
-		niR, ok := s.masterRIB.NetworkInstanceRIB(n)
-		if !ok {
-			// non-fatal, this means that a network instnace that we checked for
-			// was removed during the flush.
-			log.Errorf("network instance %s was removed during Flush", n)
-			continue
-		}
-		if err := niR.Flush(); err != nil {
-			msgs = append(msgs, fmt.Sprintf("cannot flush RIB for network instance, %s", n))
-		}
-	}
-
-	if len(msgs) != 0 {
+	if err := s.masterRIB.Flush(nis); err != nil {
+		fErr, ok := err.(*rib.FlushErr)
 		det := &bytes.Buffer{}
-		for _, msg := range msgs {
-			det.WriteString(fmt.Sprintf("%s\n", msg))
+		switch ok {
+		case true:
+			for _, msg := range fErr.Errs {
+				det.WriteString(fmt.Sprintf("%s\n", msg))
+			}
+		default:
+			det.WriteString(fmt.Sprintf("%v", err))
 		}
 		// Always use codes.Internal here since any error (not being able to flush, or
 		// not finding an NI that we already checked existed is some internal logic

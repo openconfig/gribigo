@@ -866,8 +866,8 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 
 	// Throughout the following code, we know there is a single entry within the
 	// candidate RIB, since checkCandidate performs this check.
-
-	// We always check references in the local network instance and esolve in the
+	//
+	// We always check references in the local network instance and resolve in the
 	// default NI if we didn't get asked for a specific NI. We check for this before
 	// doing the delete to make sure we're working in a valid NI.
 	if netInst == "" {
@@ -888,9 +888,11 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 	// by walking all RIBs, but this is expensive, so rather we check the refCounter
 	// within the RIB instance.
 	for id := range caft.NextHopGroup {
-		if id == 0 {
+		switch {
+		case id == 0:
 			return false, fmt.Errorf("bad NextHopGroup ID 0")
 		}
+		log.Infof("is referenced? %v", niRIB.nhgReferenced(id))
 		// if the NHG is not referenced, then we can te it.
 		return !niRIB.nhgReferenced(id), nil
 	}
@@ -1231,6 +1233,9 @@ func (r *RIBHolder) locklessDeleteIPv4(prefix string) error {
 		return fmt.Errorf("cannot find prefix %s", prefix)
 	}
 
+	// Decrement reference count.
+	r.decNHGRefCount(de.GetNextHopGroup())
+
 	delete(r.r.Afts.Ipv4Entry, prefix)
 	if r.postChangeHook != nil {
 		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
@@ -1372,6 +1377,9 @@ func (r *RIBHolder) locklessDeleteIPv6(prefix string) error {
 	if de == nil {
 		return fmt.Errorf("cannot find prefix %s", prefix)
 	}
+
+	// Decrement reference count for the NHG.
+	r.decNHGRefCount(de.GetNextHopGroup())
 
 	delete(r.r.Afts.Ipv6Entry, prefix)
 	if r.postChangeHook != nil {
@@ -1552,6 +1560,9 @@ func (r *RIBHolder) locklessDeleteMPLS(label aft.Afts_LabelEntry_Label_Union) er
 		return fmt.Errorf("cannot find label %d", label)
 	}
 
+	// Decrement reference count for NHG.
+	r.decNHGRefCount(de.GetNextHopGroup())
+
 	delete(r.r.Afts.LabelEntry, label)
 	if r.postChangeHook != nil {
 		r.postChangeHook(constants.Delete, unixTS(), r.name, de)
@@ -1616,6 +1627,10 @@ func (r *RIBHolder) locklessDeleteNHG(id uint64) error {
 	de := r.r.Afts.NextHopGroup[id]
 	if de == nil {
 		return fmt.Errorf("cannot find NHG %d", id)
+	}
+
+	for _, nh := range de.NextHop {
+		r.decNHRefCount(nh.GetIndex())
 	}
 
 	delete(r.r.Afts.NextHopGroup, id)
@@ -1812,6 +1827,7 @@ func (r *RIBHolder) decNHGRefCount(i uint64) {
 func (r *RIBHolder) nhgReferenced(i uint64) bool {
 	r.refCounts.mu.RLock()
 	defer r.refCounts.mu.RUnlock()
+	log.Infof("reference count is %d", r.refCounts.NextHopGroup[i])
 	return r.refCounts.NextHopGroup[i] > 0
 }
 

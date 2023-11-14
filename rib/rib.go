@@ -2359,62 +2359,94 @@ func (f *FlushErr) Error() string {
 //     of backup NHGs, which we may allow today. we remove the backup NHGs.
 //   - we remove the remaining NHGs.
 //   - we remove the NHs.
-func (r *RIBHolder) Flush() error {
+//
+// Flush handles updating the reference counts within the RIB.
+func (r *RIB) Flush(networkInstances []string) error {
 	errs := []error{}
 
-	// We hold a long lock during the Flush operation since we need to ensure that
-	// no entries are added to it whilst we remove all entries. This also means
-	// that we use the locklessDeleteXXX functions below to avoid deadlocking.
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for p := range r.r.Afts.Ipv4Entry {
-		if err := r.locklessDeleteIPv4(p); err != nil {
-			errs = append(errs, err)
+	for _, netInst := range networkInstances {
+		niR, ok := r.NetworkInstanceRIB(netInst)
+		if !ok {
+			log.Errorf("cannot find network instance RIB for %s", netInst)
 		}
-	}
 
-	for p := range r.r.Afts.Ipv6Entry {
-		if err := r.locklessDeleteIPv6(p); err != nil {
-			errs = append(errs, err)
+		// We hold a long lock during the Flush operation since we need to ensure that
+		// no entries are added to it whilst we remove all entries. This also means
+		// that we use the locklessDeleteXXX functions below to avoid deadlocking.
+		niR.mu.Lock()
+		defer niR.mu.Unlock()
+
+		for p, entry := range niR.r.Afts.Ipv4Entry {
+			referencedRIB, err := r.refdRIB(niR, entry.GetNextHopGroupNetworkInstance())
+			switch {
+			case err != nil:
+				log.Errorf("cannot find network instance RIB %s during Flush for IPv4 prefix %s", entry.GetNextHopGroupNetworkInstance(), p)
+			default:
+				referencedRIB.decNHGRefCount(entry.GetNextHopGroup())
+			}
+			if err := niR.locklessDeleteIPv4(p); err != nil {
+				errs = append(errs, err)
+			}
 		}
-	}
 
-	for label := range r.r.Afts.LabelEntry {
-		if err := r.locklessDeleteMPLS(label); err != nil {
-			errs = append(errs, err)
+		for p, entry := range niR.r.Afts.Ipv6Entry {
+			referencedRIB, err := r.refdRIB(niR, entry.GetNextHopGroupNetworkInstance())
+			switch {
+			case err != nil:
+				log.Errorf("cannot find network instance RIB %s during Flush for IPv6 prefix %s", entry.GetNextHopGroupNetworkInstance(), p)
+			default:
+				referencedRIB.decNHGRefCount(entry.GetNextHopGroup())
+			}
+			if err := niR.locklessDeleteIPv6(p); err != nil {
+				errs = append(errs, err)
+			}
 		}
-	}
 
-	backupNHGs := []uint64{}
-	for _, nhg := range r.r.Afts.NextHopGroup {
-		if nhg.BackupNextHopGroup != nil {
-			backupNHGs = append(backupNHGs, *nhg.BackupNextHopGroup)
+		for label, entry := range niR.r.Afts.LabelEntry {
+			referencedRIB, err := r.refdRIB(niR, entry.GetNextHopGroupNetworkInstance())
+			switch {
+			case err != nil:
+				log.Errorf("cannot find network instance RIB %s during Flush for MPLS label %d", entry.GetNextHopGroupNetworkInstance(), label)
+			default:
+				referencedRIB.decNHGRefCount(entry.GetNextHopGroup())
+			}
+			if err := niR.locklessDeleteMPLS(label); err != nil {
+				errs = append(errs, err)
+			}
 		}
-	}
 
-	delNHG := func(id uint64) {
-		if err := r.locklessDeleteNHG(id); err != nil {
-			errs = append(errs, err)
+		backupNHGs := []uint64{}
+		for _, nhg := range niR.r.Afts.NextHopGroup {
+			if nhg.BackupNextHopGroup != nil {
+				backupNHGs = append(backupNHGs, *nhg.BackupNextHopGroup)
+			}
 		}
-	}
 
-	for _, id := range backupNHGs {
-		delNHG(id)
-	}
-
-	for n := range r.r.Afts.NextHopGroup {
-		delNHG(n)
-	}
-
-	for n := range r.r.Afts.NextHop {
-		if err := r.locklessDeleteNH(n); err != nil {
-			errs = append(errs, err)
+		delNHG := func(id uint64) {
+			if err := niR.locklessDeleteNHG(id); err != nil {
+				errs = append(errs, err)
+			}
 		}
+
+		for _, id := range backupNHGs {
+			delNHG(id)
+		}
+
+		for n := range niR.r.Afts.NextHopGroup {
+			delNHG(n)
+		}
+
+		for n := range niR.r.Afts.NextHop {
+			if err := niR.locklessDeleteNH(n); err != nil {
+				errs = append(errs, err)
+			}
+		}
+
 	}
 
 	if len(errs) != 0 {
 		return &FlushErr{Errs: errs}
 	}
+
 	return nil
 }

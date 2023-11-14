@@ -63,6 +63,9 @@ func main() {
 	}
 
 	stop, err := startgRIBI(ctx, *addr, creds, opts...)
+	if err != nil {
+		log.Exitf("cannot start gRIBI server, %v", err)
+	}
 	defer stop()
 
 	go func() {

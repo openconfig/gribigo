@@ -19,6 +19,8 @@ package testcommon
 import (
 	"path/filepath"
 	"runtime"
+
+	"google.golang.org/grpc/credentials"
 )
 
 // TLSCreds returns the path for the testcommon/testdata file for all other tests
@@ -27,4 +29,19 @@ func TLSCreds() (string, string) {
 	_, fn, _, _ := runtime.Caller(0)
 	td := filepath.Join(filepath.Dir(fn), "testdata")
 	return filepath.Join(td, "server.cert"), filepath.Join(td, "server.key")
+}
+
+// TLSCreds returns TLS credentials that can be used for a device.
+type TLSCred struct {
+	C credentials.TransportCredentials
+}
+
+// TLSCredsFromFile loads the credentials from the specified cert and key file
+// and returns them such that they can be used for the gNMI and gRIBI servers.
+func TLSCredsFromFile(certFile, keyFile string) (*TLSCred, error) {
+	t, err := credentials.NewServerTLSFromFile(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	return &TLSCred{C: t}, nil
 }

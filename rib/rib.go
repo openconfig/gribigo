@@ -1952,24 +1952,29 @@ func (r *RIBHolder) nhgReferenced(i uint64) bool {
 // indicating whether the NextHop was installed, along with a second boolean that
 // indicates whether this was an implicit replace. If encountered, it returns an error
 // if the group is invalid.
-func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey, explicitReplace bool) (bool, bool, error) {
+func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey, explicitReplace bool) (bool, *aft.Afts_NextHop, error) {
 	if r.r == nil {
-		return false, false, errors.New("invalid RIB structure, nil")
+		return false, nil, errors.New("invalid RIB structure, nil")
 	}
 
 	if e == nil {
-		return false, false, errors.New("nil NextHop provided")
+		return false, nil, errors.New("nil NextHop provided")
 	}
 
 	nr, err := candidateRIB(&aftpb.Afts{
 		NextHop: []*aftpb.Afts_NextHopKey{e},
 	})
 	if err != nil {
-		return false, false, fmt.Errorf("invalid NextHopGroup, %v", err)
+		return false, nil, fmt.Errorf("invalid NextHopGroup, %v", err)
 	}
 
 	if explicitReplace && !r.nhExists(e.GetIndex()) {
-		return false, false, fmt.Errorf("cannot replace NextHop %d, does not exist", e.GetIndex())
+		return false, nil, fmt.Errorf("cannot replace NextHop %d, does not exist", e.GetIndex())
+	}
+
+	var replaced *aft.Afts_NextHop
+	if r.nhExists(e.GetIndex()) {
+		replaced = r.retrieveNH(e.GetIndex())
 	}
 
 	if r.checkFn != nil {
@@ -1977,17 +1982,16 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey, explicitReplace bool) (
 		if err != nil {
 			// Entry can never be installed (see the documentation in
 			// the AddIPv4 function for additional details).
-			return false, false, err
+			return false, nil, err
 		}
 		if !ok {
 			// Entry is not valid for installation right now.
-			return false, false, nil
+			return false, nil, nil
 		}
 	}
 
-	implicit, err := r.doAddNH(e.GetIndex(), nr)
-	if err != nil {
-		return false, false, err
+	if _, err := r.doAddNH(e.GetIndex(), nr); err != nil {
+		return false, nil, err
 	}
 
 	if r.postChangeHook != nil {
@@ -1996,7 +2000,7 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey, explicitReplace bool) (
 		}
 	}
 
-	return true, implicit, nil
+	return true, replaced, nil
 }
 
 // nhExists returns true if the next-hop with index index exists within the RIBHolder.

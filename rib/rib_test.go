@@ -5091,15 +5091,14 @@ func mustSharedNHRIB(nhNI string) *RIB {
 func TestFlush(t *testing.T) {
 	tests := []struct {
 		desc             string
-		inRIB            *RIB
-		wantEmptyNIs     []string
+		inRIB            *RIBHolder
 		wantErrSubstring string
 	}{{
 		desc: "nh only",
-		inRIB: func() *RIB {
-			dn := "DEFAULT"
-			r := New(dn)
-			_, _, err := r.niRIB[dn].AddNextHop(&aftpb.Afts_NextHopKey{
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+
+			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
 				NextHop: &aftpb.Afts_NextHop{
 					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
@@ -5111,13 +5110,10 @@ func TestFlush(t *testing.T) {
 
 			return r
 		}(),
-		wantEmptyNIs: []string{"DEFAULT"},
 	}, {
 		desc: "nhg + nh",
-		inRIB: func() *RIB {
-			dn := "DEFAULT"
-			rr := New(dn)
-			r := rr.niRIB[dn]
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
@@ -5144,15 +5140,12 @@ func TestFlush(t *testing.T) {
 				t.Fatalf("cannot add next-hop-group, %v", err)
 			}
 
-			return rr
+			return r
 		}(),
-		wantEmptyNIs: []string{"DEFAULT"},
 	}, {
 		desc: "nhg with backup + nh",
-		inRIB: func() *RIB {
-			dn := "DEFAULT"
-			rr := New(dn)
-			r := rr.niRIB[dn]
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
@@ -5195,15 +5188,12 @@ func TestFlush(t *testing.T) {
 				t.Fatalf("cannot add next-hop-group, %v", err)
 			}
 
-			return rr
+			return r
 		}(),
-		wantEmptyNIs: []string{"DEFAULT"},
 	}, {
 		desc: "circular reference to NHG",
-		inRIB: func() *RIB {
-			dn := "DEFAULT"
-			rr := New(dn)
-			r := rr.niRIB[dn]
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
@@ -5247,15 +5237,12 @@ func TestFlush(t *testing.T) {
 				t.Fatalf("cannot add next-hop-group, %v", err)
 			}
 
-			return rr
+			return r
 		}(),
-		wantEmptyNIs: []string{"DEFAULT"},
 	}, {
 		desc: "ipv4 + nhg + nh",
-		inRIB: func() *RIB {
-			dn := "DEFAULT"
-			rr := New(dn)
-			r := rr.niRIB[dn]
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
@@ -5292,16 +5279,12 @@ func TestFlush(t *testing.T) {
 				t.Fatalf("cannot add ipv4 entry, %v", err)
 			}
 
-			return rr
+			return r
 		}(),
-		wantEmptyNIs: []string{"DEFAULT"},
 	}, {
 		desc: "ipv6",
-		inRIB: func() *RIB {
-			dn := "DEFAULT"
-			rr := New(dn)
-			r := rr.niRIB[dn]
-
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
 			r.checkFn = nil
 
 			_, _, err := r.AddIPv6(&aftpb.Afts_Ipv6EntryKey{
@@ -5314,16 +5297,12 @@ func TestFlush(t *testing.T) {
 				t.Fatalf("cannot add ipv6 entry, %v", err)
 			}
 
-			return rr
+			return r
 		}(),
-		wantEmptyNIs: []string{"DEFAULT"},
 	}, {
 		desc: "mpls",
-		inRIB: func() *RIB {
-			dn := "DEFAULT"
-			rr := New(dn)
-			r := rr.niRIB[dn]
-
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
 			r.checkFn = nil
 
 			_, _, err := r.AddMPLS(&aftpb.Afts_LabelEntryKey{
@@ -5335,104 +5314,38 @@ func TestFlush(t *testing.T) {
 				},
 			}, false)
 			if err != nil {
-				t.Fatalf("cannot add MPLS entry, %v", err)
+				t.Fatalf("cannot add ipv6 entry, %v", err)
 			}
-			return rr
+			return r
 		}(),
-		wantEmptyNIs: []string{"DEFAULT"},
-	}, {
-		desc: "flush with references across VRFs",
-		inRIB: func() *RIB {
-			dn := "DEFAULT"
-			nd := "NON-DEFAULT"
-			rr := New(dn)
-			rr.AddNetworkInstance(nd)
-
-			defRIB := rr.niRIB[dn]
-			nonDefRIB := rr.niRIB[nd]
-
-			if _, _, err := defRIB.AddNextHop(&aftpb.Afts_NextHopKey{
-				Index: 1,
-				NextHop: &aftpb.Afts_NextHop{
-					IpAddress: &wpb.StringValue{Value: "192.0.2.1"},
-				},
-			}, false); err != nil {
-				t.Fatalf("cannot add NH, %v", err)
-			}
-
-			if _, _, err := defRIB.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
-				Id: 1,
-				NextHopGroup: &aftpb.Afts_NextHopGroup{
-					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
-						Index: 1,
-						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
-							Weight: &wpb.UintValue{Value: 1},
-						},
-					}},
-				},
-			}, false); err != nil {
-				t.Fatalf("cannot add NHG, %v", err)
-			}
-
-			if _, _, err := nonDefRIB.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
-				Prefix: "192.0.2.0/32",
-				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
-					NextHopGroup:                &wpb.UintValue{Value: 1},
-					NextHopGroupNetworkInstance: &wpb.StringValue{Value: dn},
-				},
-			}, false); err != nil {
-				t.Fatalf("cannot add IPv4 entry to non-default VRF, %v", err)
-			}
-			return rr
-		}(),
-		wantEmptyNIs: []string{"NON-DEFAULT", "DEFAULT"},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got := tt.inRIB.Flush(tt.wantEmptyNIs)
+			got := tt.inRIB.Flush()
 			if diff := errdiff.Substring(got, tt.wantErrSubstring); diff != "" {
 				t.Fatalf("did not get expected error when flushing RIB, %s", diff)
 			}
 		})
 
-		for _, niName := range tt.wantEmptyNIs {
-			niRIB, ok := tt.inRIB.NetworkInstanceRIB(niName)
-			if !ok {
-				t.Fatalf("cannot get network instance RIB for %s", niName)
-			}
+		if l := len(tt.inRIB.r.Afts.Ipv4Entry); l != 0 {
+			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+		}
 
-			if l := len(niRIB.r.Afts.Ipv4Entry); l != 0 {
-				t.Fatalf("NI: %s, did not remove all IPv4 entries, got: %d, want: 0", niName, l)
-			}
+		if l := len(tt.inRIB.r.Afts.Ipv6Entry); l != 0 {
+			t.Fatalf("did not remove all IPv6 entries, got: %d, want: 0", l)
+		}
 
-			if l := len(niRIB.r.Afts.Ipv6Entry); l != 0 {
-				t.Fatalf("NI: %s, did not remove all IPv6 entries, got: %d, want: 0", niName, l)
-			}
+		if l := len(tt.inRIB.r.Afts.LabelEntry); l != 0 {
+			t.Fatalf("did not remove all MPLS entries, got: %d, want: 0", l)
+		}
 
-			if l := len(niRIB.r.Afts.LabelEntry); l != 0 {
-				t.Fatalf("NI: %s, did not remove all MPLS entries, got: %d, want: 0", niName, l)
-			}
+		if l := len(tt.inRIB.r.Afts.NextHopGroup); l != 0 {
+			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+		}
 
-			if l := len(niRIB.r.Afts.NextHopGroup); l != 0 {
-				t.Fatalf("NI: %s, did not remove all IPv4 entries, got: %d, want: 0", niName, l)
-			}
-
-			if l := len(niRIB.r.Afts.NextHop); l != 0 {
-				t.Fatalf("NI: %s, did not remove all IPv4 entries, got: %d, want: 0", niName, l)
-			}
-
-			for nhID, gotCount := range niRIB.refCounts.NextHop {
-				if gotCount != 0 {
-					t.Errorf("invalid non-zero refcount for NH ID %d, got: %d, want: 0", nhID, gotCount)
-				}
-			}
-
-			for nhgID, gotCount := range niRIB.refCounts.NextHopGroup {
-				if gotCount != 0 {
-					t.Errorf("invalid non-zero refcount for NHG ID %d, got: %d, want: 0", nhgID, gotCount)
-				}
-			}
+		if l := len(tt.inRIB.r.Afts.NextHop); l != 0 {
+			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
 		}
 	}
 }

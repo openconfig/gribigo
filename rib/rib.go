@@ -2167,7 +2167,7 @@ func protoFromGoStruct(s ygot.ValidatedGoStruct, prefix *gpb.Path, pb proto.Mess
 		return fmt.Errorf("cannot marshal existing entry key %s, %v", s, err)
 	}
 
-	vals := map[*gpb.Path]interface{}{}
+	vals := map[*gpb.Path]any{}
 	for _, n := range ns {
 		for _, u := range n.GetUpdate() {
 			vals[u.Path] = u.Val

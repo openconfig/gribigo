@@ -71,7 +71,7 @@ const (
 	NextHopGroup
 	// MPLS specifies the label-entry/MPLS AFT.
 	MPLS
-	//  IPv6 speciifes the IPv6 AFT.
+	// IPv6 speciifes the IPv6 AFT.
 	IPv6
 )
 

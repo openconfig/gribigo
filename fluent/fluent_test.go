@@ -56,6 +56,7 @@ func TestGRIBIClient(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			c.Start(ctx, t)
+			c.Stop(t)
 		},
 	}, {
 		desc: "simple connection to invalid server",
@@ -65,6 +66,7 @@ func TestGRIBIClient(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			c.Start(ctx, t)
+			c.Stop(t)
 		},
 		wantFatalMsg: "cannot dial target",
 	}, {
@@ -77,6 +79,7 @@ func TestGRIBIClient(t *testing.T) {
 			// NB: we discard the error here, this test case is just to check we are
 			// marked converged.
 			c.Await(context.Background(), t)
+			c.Stop(t)
 		},
 	}, {
 		desc: "write basic IPv4 entry",
@@ -89,6 +92,7 @@ func TestGRIBIClient(t *testing.T) {
 			c.Modify().AddEntry(t, IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(1))
 			c.StartSending(context.Background(), t)
 			c.Await(context.Background(), t)
+			c.Stop(t)
 		},
 	}, {
 		desc: "remove basic next-hop",
@@ -107,6 +111,7 @@ func TestGRIBIClient(t *testing.T) {
 			if len(s.SendErrs) != 0 || len(s.ReadErrs) != 0 {
 				t.Fatalf("got unexpected errors, %+v", s)
 			}
+			c.Stop(t)
 		},
 	}}
 
@@ -141,6 +146,9 @@ func TestGRIBIClient(t *testing.T) {
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
 			tt.inFn(d.GRIBIAddr(), t)
+
+			// TODO(robjs): check error when https://github.com/openconfig/lemming/pull/226 is submitted.
+			d.Stop()
 		})
 	}
 }
@@ -377,13 +385,14 @@ func TestEntry(t *testing.T) {
 		},
 	}, {
 		desc: "mpls entry",
-		in:   LabelEntry().WithNetworkInstance("DEFAULT").WithLabel(42).WithNextHopGroupNetworkInstance("DEFAULT").WithPoppedLabelStack(10, 20),
+		in:   LabelEntry().WithNetworkInstance("DEFAULT").WithLabel(42).WithNextHopGroup(1).WithNextHopGroupNetworkInstance("DEFAULT").WithPoppedLabelStack(10, 20),
 		wantOpProto: &spb.AFTOperation{
 			NetworkInstance: "DEFAULT",
 			Entry: &spb.AFTOperation_Mpls{
 				Mpls: &aftpb.Afts_LabelEntryKey{
 					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
 					LabelEntry: &aftpb.Afts_LabelEntry{
+						NextHopGroup:                &wpb.UintValue{Value: 1},
 						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
 						PoppedMplsLabelStack: []*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
 							{PoppedMplsLabelStackUint64: 10},
@@ -399,11 +408,41 @@ func TestEntry(t *testing.T) {
 				Mpls: &aftpb.Afts_LabelEntryKey{
 					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: 42},
 					LabelEntry: &aftpb.Afts_LabelEntry{
+						NextHopGroup:                &wpb.UintValue{Value: 1},
 						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
 						PoppedMplsLabelStack: []*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
 							{PoppedMplsLabelStackUint64: 10},
 							{PoppedMplsLabelStackUint64: 20},
 						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "ipv6 entry",
+		in:   IPv6Entry().WithNetworkInstance("DEFAULT").WithPrefix("2001:db8::/42").WithNextHopGroup(1).WithNextHopGroupNetworkInstance("DEFAULT").WithMetadata([]byte{1, 2, 3, 4}),
+		wantOpProto: &spb.AFTOperation{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8::/42",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup:                &wpb.UintValue{Value: 1},
+						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
+						EntryMetadata:               &wpb.BytesValue{Value: []byte{1, 2, 3, 4}},
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8::/42",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup:                &wpb.UintValue{Value: 1},
+						NextHopGroupNetworkInstance: &wpb.StringValue{Value: "DEFAULT"},
+						EntryMetadata:               &wpb.BytesValue{Value: []byte{1, 2, 3, 4}},
 					},
 				},
 			},
@@ -417,7 +456,7 @@ func TestEntry(t *testing.T) {
 				t.Fatalf("did not get expected error for op, got: %v, wantErr? %v", err, tt.wantOpErr)
 			}
 			if diff := cmp.Diff(gotop, tt.wantOpProto, protocmp.Transform()); diff != "" {
-				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
+				t.Fatalf("did not get expected Operation proto, diff(-got,+want):\n%s", diff)
 			}
 
 			gotent, err := tt.in.EntryProto()
@@ -425,7 +464,7 @@ func TestEntry(t *testing.T) {
 				t.Fatalf("did not get expected error for entry, got: %v, wantErr? %v", err, tt.wantEntryErr)
 			}
 			if diff := cmp.Diff(gotent, tt.wantEntryProto, protocmp.Transform()); diff != "" {
-				t.Fatalf("did not get expexcted proto, diff(-got,+want)\n%s", diff)
+				t.Fatalf("did not get expected Entry proto, diff(-got,+want)\n%s", diff)
 			}
 		})
 	}

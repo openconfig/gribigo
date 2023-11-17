@@ -23,3 +23,7 @@ document for additional details relating to contributions.
 ## Licensing
 
 This project is licensed under the Apache 2.0 license.
+
+## Trivia
+
+The logo for this repository is a rib-eye steak, somewhat of an inside joke between the main collaborators on gRIBI, who cannot agree whether it is pronounced gee-rib-ee or gee-rib-eye.

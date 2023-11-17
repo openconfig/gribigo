@@ -345,18 +345,24 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		}
 	}()
 
+	resultDone := make(chan struct{})
 	go func() {
 		for {
-			res := <-resultChan
-			// update that we have received at least one message.
-			if err := ms.Send(res); err != nil {
-				errCh <- status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
+			select {
+			case res := <-resultChan:
+				// update that we have received at least one message.
+				if err := ms.Send(res); err != nil {
+					errCh <- status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
+					return
+				}
+			case <-resultDone:
 				return
 			}
 		}
 	}()
 
 	err := <-errCh
+	close(resultDone)
 
 	// when this client goes away, we need to clean up its state.
 	s.deleteClient(cid)
@@ -421,24 +427,16 @@ func (s *Server) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 		nis = []string{t.Name}
 	}
 
-	msgs := []string{}
-	for _, n := range nis {
-		niR, ok := s.masterRIB.NetworkInstanceRIB(n)
-		if !ok {
-			// non-fatal, this means that a network instnace that we checked for
-			// was removed during the flush.
-			log.Errorf("network instance %s was removed during Flush", n)
-			continue
-		}
-		if err := niR.Flush(); err != nil {
-			msgs = append(msgs, fmt.Sprintf("cannot flush RIB for network instance, %s", n))
-		}
-	}
-
-	if len(msgs) != 0 {
+	if err := s.masterRIB.Flush(nis); err != nil {
+		fErr, ok := err.(*rib.FlushErr)
 		det := &bytes.Buffer{}
-		for _, msg := range msgs {
-			det.WriteString(fmt.Sprintf("%s\n", msg))
+		switch ok {
+		case true:
+			for _, msg := range fErr.Errs {
+				det.WriteString(fmt.Sprintf("%s\n", msg))
+			}
+		default:
+			det.WriteString(fmt.Sprintf("%v", err))
 		}
 		// Always use codes.Internal here since any error (not being able to flush, or
 		// not finding an NI that we already checked existed is some internal logic
@@ -1006,7 +1004,7 @@ func checkElectionForModify(opID uint64, opElecID *spb.Uint128, election *electi
 	return nil, true, nil
 }
 
-// doGet implents the Get RPC for the gRIBI server. It handles the input GetRequest, writing
+// doGet implements the Get RPC for the gRIBI server. It handles the input GetRequest, writing
 // the set of GetResponses to the specified msgCh. When the Get is done, the function writes to
 // doneCh such that the caller knows that the work that is being done is complete. If a message
 // is received on stopCh the function returns. Any errors that are experienced are written to
@@ -1036,10 +1034,10 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 
 	filter := map[spb.AFTType]bool{}
 	switch v := req.Aft; v {
-	case spb.AFTType_ALL, spb.AFTType_IPV4, spb.AFTType_NEXTHOP, spb.AFTType_NEXTHOP_GROUP:
+	case spb.AFTType_ALL, spb.AFTType_IPV4, spb.AFTType_NEXTHOP, spb.AFTType_NEXTHOP_GROUP, spb.AFTType_MPLS, spb.AFTType_IPV6:
 		filter[v] = true
 	default:
-		errCh <- status.Errorf(codes.Unimplemented, "AFTs other than IPv4, IPv6, NHG and NH are unimplemented, requested: %s", v)
+		errCh <- status.Errorf(codes.Unimplemented, "AFTs other than IPv4, MPLS, IPv6, NHG and NH are unimplemented, requested: %s", v)
 	}
 
 	for _, ni := range netInstances {

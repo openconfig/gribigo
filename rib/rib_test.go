@@ -49,6 +49,7 @@ const (
 	nhg
 	nh
 	mpls
+	ipv6
 )
 
 func TestAdd(t *testing.T) {
@@ -59,7 +60,7 @@ func TestAdd(t *testing.T) {
 		inEntry           proto.Message
 		inExplicitReplace bool
 		wantInstalled     bool
-		wantReplace       bool
+		wantReplace       ygot.GoStruct
 		wantRIB           *aft.RIB
 		wantErr           bool
 	}{{
@@ -143,7 +144,10 @@ func TestAdd(t *testing.T) {
 			},
 		},
 		wantInstalled: true,
-		wantReplace:   true,
+		wantReplace: &aft.Afts_Ipv4Entry{
+			Prefix:        ygot.String("8.8.8.8/32"),
+			EntryMetadata: []byte{0, 1, 2, 3, 4, 5, 6, 7},
+		},
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
@@ -199,7 +203,9 @@ func TestAdd(t *testing.T) {
 			NextHopGroup: &aftpb.Afts_NextHopGroup{},
 		},
 		wantInstalled: true,
-		wantReplace:   true,
+		wantReplace: &aft.Afts_NextHopGroup{
+			Id: ygot.Uint64(1),
+		},
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
@@ -227,7 +233,9 @@ func TestAdd(t *testing.T) {
 			NextHop: &aftpb.Afts_NextHop{},
 		},
 		wantInstalled: true,
-		wantReplace:   true,
+		wantReplace: &aft.Afts_NextHop{
+			Index: ygot.Uint64(1),
+		},
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHop: map[uint64]*aft.Afts_NextHop{
@@ -258,7 +266,9 @@ func TestAdd(t *testing.T) {
 		},
 		inExplicitReplace: true,
 		wantInstalled:     true,
-		wantReplace:       true,
+		wantReplace: &aft.Afts_NextHopGroup{
+			Id: ygot.Uint64(1),
+		},
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
@@ -290,7 +300,9 @@ func TestAdd(t *testing.T) {
 		},
 		inExplicitReplace: true,
 		wantInstalled:     true,
-		wantReplace:       true,
+		wantReplace: &aft.Afts_NextHop{
+			Index: ygot.Uint64(1),
+		},
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHop: map[uint64]*aft.Afts_NextHop{
@@ -322,7 +334,10 @@ func TestAdd(t *testing.T) {
 		},
 		inExplicitReplace: true,
 		wantInstalled:     true,
-		wantReplace:       true,
+		wantReplace: &aft.Afts_Ipv4Entry{
+			Prefix:        ygot.String("22.32.42.52/32"),
+			EntryMetadata: []byte{0, 1, 2, 3, 4, 5, 6, 7},
+		},
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
@@ -455,7 +470,9 @@ func TestAdd(t *testing.T) {
 			LabelEntry: &aftpb.Afts_LabelEntry{},
 		},
 		wantInstalled: true,
-		wantReplace:   true,
+		wantReplace: &aft.Afts_LabelEntry{
+			Label: aft.UnionUint32(42),
+		},
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				LabelEntry: map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry{
@@ -481,7 +498,9 @@ func TestAdd(t *testing.T) {
 		},
 		inExplicitReplace: true,
 		wantInstalled:     true,
-		wantReplace:       true,
+		wantReplace: &aft.Afts_LabelEntry{
+			Label: aft.UnionUint32(42),
+		},
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				LabelEntry: map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry{
@@ -503,6 +522,100 @@ func TestAdd(t *testing.T) {
 		},
 		inExplicitReplace: true,
 		wantErr:           true,
+	}, {
+		desc:        "IPv6 - valid entry",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inType:      ipv6,
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+		wantInstalled: true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv6Entry: map[string]*aft.Afts_Ipv6Entry{
+					"2001:db8::/32": {
+						Prefix: ygot.String("2001:db8::/32"),
+					},
+				},
+			},
+		},
+	}, {
+		desc:        "IPv6 - invalid entry",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inType:      ipv6,
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+		wantErr: true,
+	}, {
+		desc: "IPv6 - implicit replace",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			r.r.GetOrCreateAfts().GetOrCreateNextHop(1)
+			r.r.GetOrCreateAfts().GetOrCreateNextHopGroup(42)
+			r.r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::/32").NextHopGroup = ygot.Uint64(42)
+			return r
+		}(),
+		inType: ipv6,
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+		wantInstalled: true,
+		wantReplace: &aft.Afts_Ipv6Entry{
+			Prefix:       ygot.String("2001:db8::/32"),
+			NextHopGroup: ygot.Uint64(42),
+		},
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv6Entry: map[string]*aft.Afts_Ipv6Entry{
+					"2001:db8::/32": {
+						Prefix: ygot.String("2001:db8::/32"),
+					},
+				},
+			},
+		},
+	}, {
+		desc: "IPv6 - explicit replace",
+		inRIBHolder: func() *RIBHolder {
+			r := NewRIBHolder("DEFAULT")
+			r.r.GetOrCreateAfts().GetOrCreateNextHop(1)
+			r.r.GetOrCreateAfts().GetOrCreateNextHopGroup(42)
+			r.r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::/32").NextHopGroup = ygot.Uint64(42)
+			return r
+		}(),
+		inType:            ipv6,
+		inExplicitReplace: true,
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+		wantInstalled: true,
+		wantReplace: &aft.Afts_Ipv6Entry{
+			Prefix:       ygot.String("2001:db8::/32"),
+			NextHopGroup: ygot.Uint64(42),
+		},
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv6Entry: map[string]*aft.Afts_Ipv6Entry{
+					"2001:db8::/32": {
+						Prefix: ygot.String("2001:db8::/32"),
+					},
+				},
+			},
+		},
+	}, {
+		desc:              "IPv6 - explicit replace - does not exist",
+		inRIBHolder:       NewRIBHolder("DEFAULT"),
+		inType:            ipv6,
+		inExplicitReplace: true,
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+		wantErr: true,
 	}, {
 		desc: "nh with label stack",
 		inRIBHolder: func() *RIBHolder {
@@ -527,7 +640,9 @@ func TestAdd(t *testing.T) {
 			},
 		},
 		wantInstalled: true,
-		wantReplace:   true,
+		wantReplace: &aft.Afts_NextHop{
+			Index: ygot.Uint64(1),
+		},
 		wantRIB: &aft.RIB{
 			Afts: &aft.Afts{
 				NextHop: map[uint64]*aft.Afts_NextHop{
@@ -575,8 +690,9 @@ func TestAdd(t *testing.T) {
 			r := tt.inRIBHolder
 
 			var (
-				gotInstalled, gotImplicit bool
-				err                       error
+				gotInstalled bool
+				gotReplaced  ygot.GoStruct
+				err          error
 			)
 
 			switch tt.inType {
@@ -589,14 +705,15 @@ func TestAdd(t *testing.T) {
 					}
 					return
 				}
-				gotInstalled, gotImplicit, err = r.AddIPv4(tt.inEntry.(*aftpb.Afts_Ipv4EntryKey), tt.inExplicitReplace)
+				gotInstalled, gotReplaced, err = r.AddIPv4(tt.inEntry.(*aftpb.Afts_Ipv4EntryKey), tt.inExplicitReplace)
 			case nhg:
-				gotInstalled, gotImplicit, err = r.AddNextHopGroup(tt.inEntry.(*aftpb.Afts_NextHopGroupKey), tt.inExplicitReplace)
+				gotInstalled, gotReplaced, err = r.AddNextHopGroup(tt.inEntry.(*aftpb.Afts_NextHopGroupKey), tt.inExplicitReplace)
 			case nh:
-				gotInstalled, gotImplicit, err = r.AddNextHop(tt.inEntry.(*aftpb.Afts_NextHopKey), tt.inExplicitReplace)
-
+				gotInstalled, gotReplaced, err = r.AddNextHop(tt.inEntry.(*aftpb.Afts_NextHopKey), tt.inExplicitReplace)
 			case mpls:
-				gotInstalled, gotImplicit, err = r.AddMPLS(tt.inEntry.(*aftpb.Afts_LabelEntryKey), tt.inExplicitReplace)
+				gotInstalled, gotReplaced, err = r.AddMPLS(tt.inEntry.(*aftpb.Afts_LabelEntryKey), tt.inExplicitReplace)
+			case ipv6:
+				gotInstalled, gotReplaced, err = r.AddIPv6(tt.inEntry.(*aftpb.Afts_Ipv6EntryKey), tt.inExplicitReplace)
 			default:
 				t.Fatalf("unsupported test type in Add, %v", tt.inType)
 			}
@@ -607,8 +724,19 @@ func TestAdd(t *testing.T) {
 			if gotInstalled != tt.wantInstalled {
 				t.Fatalf("did not get expected installed bool, got: %v, want: %v", gotInstalled, tt.wantInstalled)
 			}
-			if gotImplicit != tt.wantReplace {
-				t.Fatalf("did not get expected implicit bool, got: %v, want: %v", gotImplicit, tt.wantReplace)
+			if tt.wantReplace != nil {
+				if diff := cmp.Diff(gotReplaced, tt.wantReplace, cmpopts.EquateEmpty()); diff != "" {
+					got, want := fmt.Sprintf("%v", gotReplaced), fmt.Sprintf("%v", tt.wantReplace)
+					gotJS, err := ygot.Marshal7951(gotReplaced)
+					if err == nil {
+						got = string(gotJS)
+					}
+					wantJS, err := ygot.Marshal7951(tt.wantReplace)
+					if err == nil {
+						want = string(wantJS)
+					}
+					t.Fatalf("did not get expected replaced value, got: %s, want: %s", got, want)
+				}
 			}
 
 			diffN, err := ygot.Diff(r.r, tt.wantRIB)
@@ -630,6 +758,20 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		nhgni    string
 	}
 
+	type mplsentry struct {
+		label    uint32
+		metadata []byte
+		nhg      uint64
+		nhgni    string
+	}
+
+	type ipv6entry struct {
+		prefix   string
+		metadata []byte
+		nhg      uint64
+		nhgni    string
+	}
+
 	type nh struct {
 		id uint64
 		ip string
@@ -644,6 +786,8 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		v4      *ipv4entry
 		group   *nhg
 		nexthop *nh
+		mpls    *mplsentry
+		v6      *ipv6entry
 	}
 
 	ribEntries := func(e []*entry) *aft.RIB {
@@ -660,6 +804,28 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 				}
 				if en.v4.nhgni != "" {
 					p.NextHopGroupNetworkInstance = ygot.String(en.v4.nhgni)
+				}
+			case en.v6 != nil:
+				p := a.GetOrCreateAfts().GetOrCreateIpv6Entry(en.v6.prefix)
+				if en.v6.metadata != nil {
+					p.EntryMetadata = en.v6.metadata
+				}
+				if en.v6.nhg != 0 {
+					p.NextHopGroup = ygot.Uint64(en.v6.nhg)
+				}
+				if en.v6.nhgni != "" {
+					p.NextHopGroupNetworkInstance = ygot.String(en.v6.nhgni)
+				}
+			case en.mpls != nil:
+				p := a.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(en.mpls.label))
+				if en.mpls.metadata != nil {
+					p.EntryMetadata = en.mpls.metadata
+				}
+				if en.mpls.nhg != 0 {
+					p.NextHopGroup = ygot.Uint64(en.mpls.nhg)
+				}
+				if en.mpls.nhgni != "" {
+					p.NextHopGroupNetworkInstance = ygot.String(en.mpls.nhgni)
 				}
 			case en.group != nil:
 				n := a.GetOrCreateAfts().GetOrCreateNextHopGroup(en.group.id)
@@ -753,6 +919,143 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 		wantOrig: (*aft.Afts_Ipv4Entry)(nil),
 		wantOK:   true,
 	}, {
+		desc: "delete ipv6 entry, no payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{
+				{v6: &ipv6entry{prefix: "2001:db8::/32"}},
+			}),
+		},
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix: "2001:db8::/32",
+		},
+		wantOK:   true,
+		wantOrig: &aft.Afts_Ipv6Entry{Prefix: ygot.String("2001:db8::/32")},
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{}),
+		},
+	}, {
+		desc: "delete ipv6 entry, matching payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{
+				{v6: &ipv6entry{prefix: "2001:db8::/32", metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}}},
+			}),
+		},
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix: "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+				EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+			},
+		},
+		wantOK: true,
+		wantOrig: &aft.Afts_Ipv6Entry{
+			Prefix:        ygot.String("2001:db8::/32"),
+			EntryMetadata: aft.Binary{0, 1, 2, 3, 4, 5, 6, 7},
+		},
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{}),
+		},
+	}, {
+		desc: "delete ipv6 entry, mismatched payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				v6: &ipv6entry{prefix: "2001:db8::/32", metadata: []byte{1, 2, 3, 4}},
+			}}),
+		},
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix: "2001:db8::/32",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+				EntryMetadata: &wpb.BytesValue{Value: []byte{2, 3, 4, 5}},
+			},
+		},
+		wantOK: true,
+		wantOrig: &aft.Afts_Ipv6Entry{
+			Prefix:        ygot.String("2001:db8::/32"),
+			EntryMetadata: aft.Binary{1, 2, 3, 4},
+		},
+		wantPostRIB: &RIBHolder{},
+	}, {
+		desc:  "delete ipv6 entry, no such entry",
+		inRIB: NewRIBHolder("foo"),
+		inEntry: &aftpb.Afts_Ipv6EntryKey{
+			Prefix: "2001:db8::/32",
+		},
+		wantOrig: (*aft.Afts_Ipv6Entry)(nil),
+		wantOK:   true,
+	}, {
+		// MPLS
+		desc: "delete mpls entry, no payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{
+				{mpls: &mplsentry{label: 42}},
+			}),
+		},
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+		wantOK:   true,
+		wantOrig: &aft.Afts_LabelEntry{Label: aft.UnionUint32(42)},
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{}),
+		},
+	}, {
+		desc: "delete mpls entry, matching payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{
+				{mpls: &mplsentry{label: 42, metadata: []byte{0, 1, 2, 3, 4, 5, 6, 7}}},
+			}),
+		},
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{
+				EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+			},
+		},
+		wantOK: true,
+		wantOrig: &aft.Afts_LabelEntry{
+			Label:         aft.UnionUint32(42),
+			EntryMetadata: aft.Binary{0, 1, 2, 3, 4, 5, 6, 7},
+		},
+		wantPostRIB: &RIBHolder{
+			r: ribEntries([]*entry{}),
+		},
+	}, {
+		desc: "delete mpls entry, mismatched payload",
+		inRIB: &RIBHolder{
+			r: ribEntries([]*entry{{
+				mpls: &mplsentry{label: 42, metadata: []byte{1, 2, 3, 4}},
+			}}),
+		},
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{
+				EntryMetadata: &wpb.BytesValue{Value: []byte{0, 1, 2, 3, 4, 5, 6, 7}},
+			},
+		},
+		wantOK: true,
+		wantOrig: &aft.Afts_LabelEntry{
+			Label:         aft.UnionUint32(42),
+			EntryMetadata: aft.Binary{1, 2, 3, 4},
+		},
+		wantPostRIB: &RIBHolder{},
+	}, {
+		desc:  "delete mpls entry, no such entry",
+		inRIB: NewRIBHolder("foo"),
+		inEntry: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+		wantOrig: (*aft.Afts_LabelEntry)(nil),
+		wantOK:   true,
+	}, {
 		desc: "delete nhg",
 		inRIB: &RIBHolder{
 			r: ribEntries([]*entry{{
@@ -833,6 +1136,10 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 				ok, gotOrig, err = tt.inRIB.DeleteNextHopGroup(v)
 			case *aftpb.Afts_NextHopKey:
 				ok, gotOrig, err = tt.inRIB.DeleteNextHop(v)
+			case *aftpb.Afts_Ipv6EntryKey:
+				ok, gotOrig, err = tt.inRIB.DeleteIPv6(v)
+			case *aftpb.Afts_LabelEntryKey:
+				ok, gotOrig, err = tt.inRIB.DeleteMPLS(v)
 			default:
 				t.Fatalf("unknown input entry type, %T", err)
 			}
@@ -846,6 +1153,46 @@ func TestIndividualDeleteEntryFunctions(t *testing.T) {
 				if diff := cmp.Diff(gotOrig, tt.wantOrig); diff != "" {
 					t.Fatalf("did not get expected original entry, diff(-got,+want):\n%s", diff)
 				}
+			}
+		})
+	}
+}
+
+func TestConcreteNHGProto(t *testing.T) {
+	tests := []struct {
+		desc    string
+		inEntry *aft.Afts_NextHopGroup
+		want    *aftpb.Afts_NextHopGroupKey
+		wantErr bool
+	}{{
+		desc: "populated nhg",
+		inEntry: func() *aft.Afts_NextHopGroup {
+			a := &aft.Afts_NextHopGroup{}
+			a.Id = ygot.Uint64(1)
+			a.GetOrCreateNextHop(1).Weight = ygot.Uint64(1)
+			return a
+		}(),
+		want: &aftpb.Afts_NextHopGroupKey{
+			Id: 1,
+			NextHopGroup: &aftpb.Afts_NextHopGroup{
+				NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+						Weight: &wpb.UintValue{Value: 1},
+					},
+				}},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := ConcreteNextHopGroupProto(tt.inEntry)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, want: %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(got, tt.want, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
 			}
 		})
 	}
@@ -884,9 +1231,108 @@ func TestConcreteIPv4Proto(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := concreteIPv4Proto(tt.inEntry)
+			got, err := ConcreteIPv4Proto(tt.inEntry)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("did not get expec	ted error, got: %v, wantErr? %v", err, tt.wantErr)
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(got, tt.want, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestConcreteIPv6Proto(t *testing.T) {
+	// TODO(robjs): Consider whether we can create a test case that fails here and in the other concrete tests.
+	tests := []struct {
+		desc    string
+		inEntry *aft.Afts_Ipv6Entry
+		want    *aftpb.Afts_Ipv6EntryKey
+		wantErr bool
+	}{{
+		desc: "prefix-only",
+		inEntry: &aft.Afts_Ipv6Entry{
+			Prefix: ygot.String("2001:4c20:cafe::/48"),
+		},
+		want: &aftpb.Afts_Ipv6EntryKey{
+			Prefix:    "2001:4c20:cafe::/48",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+		},
+	}, {
+		desc: "with metadata",
+		inEntry: &aft.Afts_Ipv6Entry{
+			Prefix:        ygot.String("2001:4c20:beef::/48"),
+			EntryMetadata: []byte{1, 2, 3, 4},
+		},
+		want: &aftpb.Afts_Ipv6EntryKey{
+			Prefix: "2001:4c20:beef::/48",
+			Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+				EntryMetadata: &wpb.BytesValue{
+					Value: []byte{1, 2, 3, 4},
+				},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := ConcreteIPv6Proto(tt.inEntry)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(got, tt.want, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestConcreteMPLSProto(t *testing.T) {
+	tests := []struct {
+		desc    string
+		inEntry *aft.Afts_LabelEntry
+		want    *aftpb.Afts_LabelEntryKey
+		wantErr bool
+	}{{
+		desc: "label only",
+		inEntry: &aft.Afts_LabelEntry{
+			Label: aft.UnionUint32(42),
+		},
+		want: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{},
+		},
+	}, {
+		desc: "enumerated label",
+		inEntry: &aft.Afts_LabelEntry{
+			Label: aft.MplsTypes_MplsLabel_Enum_IPV4_EXPLICIT_NULL, // not allowed
+		},
+		wantErr: true,
+	}, {
+		desc: "label with metadata set",
+		inEntry: &aft.Afts_LabelEntry{
+			Label:         aft.UnionUint32(42),
+			EntryMetadata: []byte{4, 3, 2, 1},
+		},
+		want: &aftpb.Afts_LabelEntryKey{
+			Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+				LabelUint64: 42,
+			},
+			LabelEntry: &aftpb.Afts_LabelEntry{
+				EntryMetadata: &wpb.BytesValue{
+					Value: []byte{4, 3, 2, 1},
+				},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := ConcreteMPLSProto(tt.inEntry)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}
 			if diff := cmp.Diff(got, tt.want, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
 				t.Fatalf("did not get expected proto, diff(-got,+want):\n%s", diff)
@@ -910,7 +1356,7 @@ func mustPath(s string) *gpb.Path {
 	return p
 }
 
-func mustTypedValue(i interface{}) *gpb.TypedValue {
+func mustTypedValue(i any) *gpb.TypedValue {
 	tv, err := value.FromScalar(i)
 	if err != nil {
 		panic(fmt.Sprintf("cannot convert value %v, %v", i, err))
@@ -920,11 +1366,13 @@ func mustTypedValue(i interface{}) *gpb.TypedValue {
 
 func TestHooks(t *testing.T) {
 	type op struct {
-		Do  constants.OpType
-		TS  int64
-		NH  uint64
-		NHG uint64
-		IP4 string
+		Do   constants.OpType
+		TS   int64
+		NH   uint64
+		NHG  uint64
+		IP4  string
+		MPLS uint32
+		IP6  string
 	}
 
 	tests := []struct {
@@ -932,7 +1380,7 @@ func TestHooks(t *testing.T) {
 		inOps   []*op
 		storeFn bool
 		gnmiFn  bool
-		want    []interface{}
+		want    []any
 	}{{
 		desc: "store add hooks",
 		inOps: []*op{{
@@ -946,10 +1394,32 @@ func TestHooks(t *testing.T) {
 			NH: 84,
 		}},
 		storeFn: true,
-		want: []interface{}{
+		want: []any{
 			&op{Do: constants.Add, TS: 0, IP4: "8.8.8.8/32"},
 			&op{Do: constants.Add, TS: 1, NHG: 42},
 			&op{Do: constants.Add, TS: 2, NH: 84},
+		},
+	}, {
+		desc: "store add IPv6 and MPLS hooks",
+		inOps: []*op{{
+			Do:  constants.Add,
+			IP6: "2001:DB8::/32",
+		}, {
+			Do:  constants.Add,
+			NHG: 42,
+		}, {
+			Do: constants.Add,
+			NH: 84,
+		}, {
+			Do:   constants.Add,
+			MPLS: 42,
+		}},
+		storeFn: true,
+		want: []any{
+			&op{Do: constants.Add, TS: 0, IP6: "2001:DB8::/32"},
+			&op{Do: constants.Add, TS: 1, NHG: 42},
+			&op{Do: constants.Add, TS: 2, NH: 84},
+			&op{Do: constants.Add, TS: 3, MPLS: 42},
 		},
 	}, {
 		desc: "store delete hooks",
@@ -959,11 +1429,23 @@ func TestHooks(t *testing.T) {
 		}, {
 			Do:  constants.Delete,
 			IP4: "1.1.1.1/32",
+		}, {
+			Do:   constants.Delete,
+			MPLS: 42,
+		}, {
+			Do: constants.Delete,
+			NH: 10,
+		}, {
+			Do:  constants.Delete,
+			NHG: 20,
 		}},
 		storeFn: true,
-		want: []interface{}{
+		want: []any{
 			&op{Do: constants.Delete, TS: 0, IP4: "8.8.8.8/32"},
 			&op{Do: constants.Delete, TS: 1, IP4: "1.1.1.1/32"},
+			&op{Do: constants.Delete, TS: 2, MPLS: 42},
+			&op{Do: constants.Delete, TS: 3, NH: 10},
+			&op{Do: constants.Delete, TS: 4, NHG: 20},
 		},
 	}, {
 		desc: "store add and delete",
@@ -974,7 +1456,7 @@ func TestHooks(t *testing.T) {
 			Do:  constants.Delete,
 			IP4: "2.2.2.2/32",
 		}},
-		want: []interface{}{
+		want: []any{
 			&op{Do: constants.Delete, TS: 0, IP4: "1.1.1.1/32"},
 			&op{Do: constants.Delete, TS: 1, IP4: "2.2.2.2/32"},
 		},
@@ -988,7 +1470,7 @@ func TestHooks(t *testing.T) {
 			IP4: "4.5.6.7/32",
 		}},
 		gnmiFn: true,
-		want: []interface{}{
+		want: []any{
 			&gpb.Notification{
 				Timestamp: 42,
 				Atomic:    true,
@@ -1016,19 +1498,27 @@ func TestHooks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got := []interface{}{}
+			got := []any{}
 
 			tsFn := func() int64 {
 				return int64(len(got))
 			}
 			store := func(o constants.OpType, _ int64, _ string, gs ygot.ValidatedGoStruct) {
-				switch t := gs.(type) {
+				switch et := gs.(type) {
 				case *aft.Afts_Ipv4Entry:
-					got = append(got, &op{Do: o, TS: tsFn(), IP4: t.GetPrefix()})
+					got = append(got, &op{Do: o, TS: tsFn(), IP4: et.GetPrefix()})
 				case *aft.Afts_NextHopGroup:
-					got = append(got, &op{Do: o, TS: tsFn(), NHG: t.GetId()})
+					got = append(got, &op{Do: o, TS: tsFn(), NHG: et.GetId()})
 				case *aft.Afts_NextHop:
-					got = append(got, &op{Do: o, TS: tsFn(), NH: t.GetIndex()})
+					got = append(got, &op{Do: o, TS: tsFn(), NH: et.GetIndex()})
+				case *aft.Afts_Ipv6Entry:
+					got = append(got, &op{Do: o, TS: tsFn(), IP6: et.GetPrefix()})
+				case *aft.Afts_LabelEntry:
+					lv, ok := et.GetLabel().(aft.UnionUint32)
+					if !ok {
+						t.Fatalf("invalid label type: %v %T", et.GetLabel(), et.GetLabel())
+					}
+					got = append(got, &op{Do: o, TS: tsFn(), MPLS: uint32(lv)})
 				}
 			}
 
@@ -1113,6 +1603,28 @@ func TestHooks(t *testing.T) {
 							t.Fatalf("cannot pre-add IPv4 entry %s: %v", o.IP4, err)
 						}
 					}
+				case o.IP6 != "":
+					switch o.Do {
+					case constants.Replace, constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].AddIPv6(&aftpb.Afts_Ipv6EntryKey{
+							Prefix:    o.IP6,
+							Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+						}, false); err != nil {
+							t.Fatalf("cannot pre-add IPv6 entry %s: %v", o.IP4, err)
+						}
+					}
+				case o.MPLS != 0:
+					switch o.Do {
+					case constants.Replace, constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].AddMPLS(&aftpb.Afts_LabelEntryKey{
+							Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+								LabelUint64: uint64(o.MPLS),
+							},
+							LabelEntry: &aftpb.Afts_LabelEntry{},
+						}, false); err != nil {
+							t.Fatalf("cannot pre-add IPv6 entry %s: %v", o.IP4, err)
+						}
+					}
 				case o.NHG != 0:
 					switch o.Do {
 					case constants.Replace, constants.Delete:
@@ -1164,6 +1676,46 @@ func TestHooks(t *testing.T) {
 							t.Fatalf("cannote delete IPv4 entry %s: %v", o.IP4, err)
 						}
 					}
+				case o.IP6 != "":
+					switch o.Do {
+					case constants.Add:
+						if _, _, err := r.niRIB[r.defaultName].AddIPv6(&aftpb.Afts_Ipv6EntryKey{
+							Prefix: o.IP6,
+							Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						}, false); err != nil {
+							t.Fatalf("cannot add IPv6 entry %s: %v", o.IP4, err)
+						}
+					case constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].DeleteIPv6(&aftpb.Afts_Ipv6EntryKey{
+							Prefix: o.IP6,
+						}); err != nil {
+							t.Fatalf("cannote delete IPv6 entry %s: %v", o.IP6, err)
+						}
+					}
+				case o.MPLS != 0:
+					switch o.Do {
+					case constants.Add:
+						if _, _, err := r.niRIB[r.defaultName].AddMPLS(&aftpb.Afts_LabelEntryKey{
+							Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+								LabelUint64: uint64(o.MPLS),
+							},
+							LabelEntry: &aftpb.Afts_LabelEntry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						}, false); err != nil {
+							t.Fatalf("cannot add MPLS entry %s: %v", o.IP4, err)
+						}
+					case constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].DeleteMPLS(&aftpb.Afts_LabelEntryKey{
+							Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+								LabelUint64: uint64(o.MPLS),
+							},
+						}); err != nil {
+							t.Fatalf("cannote delete MPLS entry %d: %v", o.MPLS, err)
+						}
+					}
 				case o.NHG != 0:
 					switch o.Do {
 					case constants.Add:
@@ -1172,6 +1724,12 @@ func TestHooks(t *testing.T) {
 							NextHopGroup: &aftpb.Afts_NextHopGroup{},
 						}, false); err != nil {
 							t.Fatalf("cannot add NHG entry %d, %v", o.NHG, err)
+						}
+					case constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].DeleteNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+							Id: o.NHG,
+						}); err != nil {
+							t.Fatalf("cannote delete NHG entry %d: %v", o.NHG, err)
 						}
 					}
 				case o.NH != 0:
@@ -1182,6 +1740,12 @@ func TestHooks(t *testing.T) {
 							NextHop: &aftpb.Afts_NextHop{},
 						}, false); err != nil {
 							t.Fatalf("cannot add NH entry %d, %v", o.NH, err)
+						}
+					case constants.Delete:
+						if _, _, err := r.niRIB[r.defaultName].DeleteNextHop(&aftpb.Afts_NextHopKey{
+							Index: o.NH,
+						}); err != nil {
+							t.Fatalf("cannote delete NH entry %d: %v", o.NH, err)
 						}
 					}
 				}
@@ -1226,17 +1790,6 @@ func TestCanResolve(t *testing.T) {
 		want:             false,
 		wantErrSubstring: "invalid nil candidate",
 	}, {
-		desc:  "ipv6 entry - invalid",
-		inRIB: New(defName),
-		inNI:  defName,
-		inCand: func() *aft.RIB {
-			r := &aft.RIB{}
-			r.GetOrCreateAfts().GetOrCreateIpv6Entry("ff00::1/128")
-			return r
-		}(),
-		wantErrSubstring: "IPv6 entries are unsupported",
-	}, {
-
 		desc:  "Ethernet - invalid",
 		inRIB: New(defName),
 		inNI:  defName,
@@ -1513,6 +2066,95 @@ func TestCanResolve(t *testing.T) {
 			return r
 		}(),
 		want: true,
+	}, {
+		desc:  "zero index nhg in IPv6 entry - invalid",
+		inRIB: New(defName),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::1/128")
+			i.NextHopGroup = ygot.Uint64(0)
+			return r
+		}(),
+		wantErrSubstring: "invalid zero-index NHG in IPv6Entry",
+	}, {
+		desc:  "resolve ipv6 entry in nil NI - invalid",
+		inRIB: New(defName),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::1/128")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String("404")
+			return r
+		}(),
+		wantErrSubstring: "invalid unknown network-instance for entry",
+	}, {
+		desc: "resolve ipv6 entry in default NI - implicit name",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB[defName].r = &aft.RIB{}
+			cc := r.niRIB[defName].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::1/128")
+			i.NextHopGroup = ygot.Uint64(1)
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "resolve ipv6 entry in default NI - explicit name",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB[defName].r = &aft.RIB{}
+			cc := r.niRIB[defName].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8:1::/48")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String(defName)
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "resolve ipv6 entry in non-default NI",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB["vrf-42"] = NewRIBHolder("vrf-42")
+			r.niRIB["vrf-42"].r = &aft.RIB{}
+			cc := r.niRIB["vrf-42"].r.GetOrCreateAfts()
+			cc.GetOrCreateNextHopGroup(1)
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::/32")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String("vrf-42")
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "resolve ipv6 entry in non-default NI - not found",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.niRIB["vrf-42"] = NewRIBHolder("vrf-42")
+			r.niRIB["vrf-42"].r = &aft.RIB{}
+			r.niRIB["vrf-42"].r.GetOrCreateAfts()
+			// explicitly don't create NHG
+			return r
+		}(),
+		inCand: func() *aft.RIB {
+			r := &aft.RIB{}
+			i := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:db8::/32")
+			i.NextHopGroup = ygot.Uint64(1)
+			i.NextHopGroupNetworkInstance = ygot.String("vrf-42")
+			return r
+		}(),
 	}}
 
 	for _, tt := range tests {
@@ -1949,7 +2591,6 @@ func TestRIBAddEntry(t *testing.T) {
 			if err != nil || len(fails) != 0 {
 				t.Fatalf("cannot build test case, cannot add NHG, got: %v or failed ops %d", err, len(fails))
 			}
-
 			return r
 		}(),
 		inNI: defName,
@@ -2214,6 +2855,194 @@ func TestRIBAddEntry(t *testing.T) {
 
 			return nil
 		},
+	}, {
+		desc: "resolvable MPLS entry",
+		inRIB: func() *RIB {
+			r := New(defName)
+			// op#1: NHG ID 1 pending on NH index = 1 showing up
+			r.pendingEntries[1] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 1,
+					Entry: &spb.AFTOperation_NextHopGroup{
+						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+							Id: 1,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{
+								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+									Index:   1,
+									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+								}},
+							},
+						},
+					},
+				},
+			}
+
+			// op#2: MPLS entry pending on NNG index 1 showing up (q'd above)
+			r.pendingEntries[2] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 2,
+					Entry: &spb.AFTOperation_Mpls{
+						Mpls: &aftpb.Afts_LabelEntryKey{
+							Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+								LabelUint64: 42,
+							},
+							LabelEntry: &aftpb.Afts_LabelEntry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				},
+			}
+			return r
+		}(),
+		inNI: defName,
+		// op#3 -> NH = 1 shows up, makes NHG 1 and label 42 resolvable.
+		inOp: &spb.AFTOperation{
+			Id: 3,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 1,
+			Op: &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index:   1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+							}},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 2,
+			Op: &spb.AFTOperation{
+				Id: 2,
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 3,
+			Op: &spb.AFTOperation{
+				Id: 3,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "resolvable IPv6 entry",
+		inRIB: func() *RIB {
+			r := New(defName)
+			// op#1: NHG ID 1 pending on NH index = 1 showing up
+			r.pendingEntries[1] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 1,
+					Entry: &spb.AFTOperation_NextHopGroup{
+						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+							Id: 1,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{
+								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+									Index:   1,
+									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+								}},
+							},
+						},
+					},
+				},
+			}
+
+			// op#2: IPv6 entry pending on NNG index 1 showing up (q'd above)
+			r.pendingEntries[2] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 2,
+					Entry: &spb.AFTOperation_Ipv6{
+						Ipv6: &aftpb.Afts_Ipv6EntryKey{
+							Prefix: "2001:db8::/32",
+							Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				},
+			}
+			return r
+		}(),
+		inNI: defName,
+		// op#3 -> NH = 1 shows up, makes NHG 1 and label 42 resolvable.
+		inOp: &spb.AFTOperation{
+			Id: 3,
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 1,
+			Op: &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index:   1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+							}},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 2,
+			Op: &spb.AFTOperation{
+				Id: 2,
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:db8::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			},
+		}, {
+			ID: 3,
+			Op: &spb.AFTOperation{
+				Id: 3,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHop{},
+					},
+				},
+			},
+		}},
 	}}
 
 	for _, tt := range tests {
@@ -2470,6 +3299,45 @@ func TestDeleteEntry(t *testing.T) {
 					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
 						Id:           1,
 						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+					},
+				},
+			},
+		}},
+	}, {
+		desc: "delete IPv6 - success",
+		inRIB: func() *RIB {
+			r := New(defName, DisableRIBCheckFn())
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix:    "2001:db8::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+					},
+				},
+			}); err != nil {
+				t.Fatalf("cannot set up test case, %v", err)
+			}
+			return r
+		}(),
+		inNetworkInstance: defName,
+		inOp: &spb.AFTOperation{
+			Id: 42,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix:    "2001:db8::/32",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+				},
+			},
+		},
+		wantOKs: []*OpResult{{
+			ID: 42,
+			Op: &spb.AFTOperation{
+				Id: 42,
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix:    "2001:db8::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
 					},
 				},
 			},
@@ -2925,6 +3793,20 @@ func TestGetRIB(t *testing.T) {
 			t.Fatalf("cannot build RIB, %v", err)
 		}
 
+		cr = &aft.RIB{}
+		mpls := cr.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+		mpls.NextHopGroup = ygot.Uint64(42)
+
+		if _, err := r.doAddMPLS(42, cr); err != nil {
+			t.Fatalf("cannot build RIB, %v", err)
+		}
+
+		cr = &aft.RIB{}
+		cr.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:4c20::/32").NextHopGroup = ygot.Uint64(42)
+		if _, err := r.doAddIPv6("2001:4c20::/32", cr); err != nil {
+			t.Fatalf("cannot build RIB, %v", err)
+		}
+
 		return r
 	}()
 
@@ -2965,6 +3847,66 @@ func TestGetRIB(t *testing.T) {
 					Ipv4: &aftpb.Afts_Ipv4EntryKey{
 						Prefix: "1.1.1.1/32",
 						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc: "mpls entry",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("VRF-1")
+
+			cr := &aft.RIB{}
+			mpls := cr.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+			mpls.NextHopGroup = ygot.Uint64(42)
+
+			if _, err := r.doAddMPLS(42, cr); err != nil {
+				t.Fatalf("cannot build RIB, %v", err)
+			}
+			return r
+		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-1",
+				Entry: &spb.AFTEntry_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc: "ipv6 entry",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("VRF42")
+
+			cr := &aft.RIB{}
+			cr.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:4c20::/32").NextHopGroup = ygot.Uint64(42)
+			if _, err := r.doAddIPv6("2001:4c20::/32", cr); err != nil {
+				t.Fatalf("cannot build RIB, %v", err)
+			}
+			return r
+		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF42",
+				Entry: &spb.AFTEntry_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:4c20::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
 							NextHopGroup: &wpb.UintValue{Value: 42},
 						},
 					},
@@ -3051,6 +3993,27 @@ func TestGetRIB(t *testing.T) {
 			}},
 		}},
 	}, {
+		desc:  "all tables populated but filtered to mpls",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_MPLS: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
 		desc:  "all tables populated but filtered to nhg",
 		inRIB: allPopRIB,
 		inFilter: map[spb.AFTType]bool{
@@ -3061,8 +4024,15 @@ func TestGetRIB(t *testing.T) {
 				NetworkInstance: "VRF-42",
 				Entry: &spb.AFTEntry_NextHopGroup{
 					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
-						Id:           42,
-						NextHopGroup: &aftpb.Afts_NextHopGroup{},
+						Id: 42,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index: 1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+									Weight: &wpb.UintValue{Value: 1},
+								},
+							}},
+						},
 					},
 				},
 			}},
@@ -3081,6 +4051,46 @@ func TestGetRIB(t *testing.T) {
 						Index: 1,
 						NextHop: &aftpb.Afts_NextHop{
 							IpAddress: &wpb.StringValue{Value: "1.1.1.1/32"},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to ipv6",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_IPV6: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:4c20::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc:  "all tables populated but filtered to mpls",
+		inRIB: allPopRIB,
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_MPLS: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
 						},
 					},
 				},
@@ -3188,7 +4198,31 @@ func TestResolvedEntryHook(t *testing.T) {
 		return r
 	}
 
-	gotCh := make(chan interface{})
+	gotCh := make(chan any)
+
+	stringHook := func(_ map[string]*aft.RIB, op constants.OpType, netinst string, aft constants.AFT, prefix any, _ ...ResolvedDetails) {
+		s := fmt.Sprintf("%s %s:%v->%v", op, aft, netinst, prefix)
+		t.Logf("writing to channel: %s", s)
+		gotCh <- s
+	}
+
+	stringChecker := func(s string) func() error {
+		return func() error {
+			got := <-gotCh
+			switch t := got.(type) {
+			case error:
+				return t
+			case string:
+				if t != s {
+					return fmt.Errorf("got incorrect string, got: %s, want: %s", got, s)
+				}
+				return nil
+			default:
+				return fmt.Errorf("got unexpected type, got: %T, want: string", got)
+			}
+		}
+	}
+
 	tests := []struct {
 		desc        string
 		inRIB       *RIB
@@ -3210,8 +4244,8 @@ func TestResolvedEntryHook(t *testing.T) {
 				},
 			},
 		},
-		inHook: func(_ map[string]*aft.RIB, _ constants.OpType, netinst, prefix string) {
-			gotCh <- fmt.Sprintf("%s->%s", netinst, prefix)
+		inHook: func(_ map[string]*aft.RIB, _ constants.OpType, netinst string, aft constants.AFT, prefix any, _ ...ResolvedDetails) {
+			gotCh <- fmt.Sprintf("%s:%s->%s", aft, netinst, prefix)
 		},
 		checkFn: func() error {
 			got := <-gotCh
@@ -3219,7 +4253,7 @@ func TestResolvedEntryHook(t *testing.T) {
 			if !ok {
 				return fmt.Errorf("got wrong type of result, got: %T, want: string", got)
 			}
-			if got, want := gotS, fmt.Sprintf("%s->10.0.0.0/8", defName); got != want {
+			if got, want := gotS, fmt.Sprintf("IPv4:%s->10.0.0.0/8", defName); got != want {
 				return fmt.Errorf("did not get expected result, got: %v, want: %v", got, want)
 			}
 			return nil
@@ -3239,10 +4273,16 @@ func TestResolvedEntryHook(t *testing.T) {
 				},
 			},
 		},
-		inHook: func(ribs map[string]*aft.RIB, op constants.OpType, netinst, prefix string) {
-			summ, err := afthelper.NextHopAddrsForPrefix(ribs, netinst, prefix)
+		inHook: func(ribs map[string]*aft.RIB, op constants.OpType, netinst string, aft constants.AFT, prefix any, _ ...ResolvedDetails) {
+			p, ok := prefix.(string)
+			if aft != constants.IPv4 || !ok {
+				gotCh <- fmt.Errorf("invalid prefix received, mismatched AFT (%s) or prefix data type (%v:%T)", aft, prefix, prefix)
+				return
+			}
+			summ, err := afthelper.NextHopAddrsForPrefix(ribs, netinst, p)
 			if err != nil {
 				gotCh <- err
+				return
 			}
 			gotCh <- summ
 		},
@@ -3265,6 +4305,356 @@ func TestResolvedEntryHook(t *testing.T) {
 			}
 			return nil
 		},
+	}, {
+		desc:  "add ipv6 entry",
+		inRIB: baseRIB(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8:cafe:beef::/64",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inHook: func(ribs map[string]*aft.RIB, op constants.OpType, netinst string, aft constants.AFT, key any, _ ...ResolvedDetails) {
+			gotCh <- fmt.Sprintf("%s->%s:%s", netinst, aft, key)
+		},
+		checkFn: func() error {
+			got := <-gotCh
+			switch t := got.(type) {
+			case error:
+				return fmt.Errorf("got error, %v", t)
+			case string:
+				if got, want := t, fmt.Sprintf("%s->IPv6:2001:db8:cafe:beef::/64", defName); got != want {
+					return fmt.Errorf("did not get expected result, got: %v, want: %v", got, want)
+				}
+			}
+			return nil
+		},
+	}, {
+		desc:  "check that hook was called for an mpls entry",
+		inRIB: baseRIB(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+						LabelUint64: 42,
+					},
+					LabelEntry: &aftpb.Afts_LabelEntry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inHook: func(ribs map[string]*aft.RIB, op constants.OpType, netinst string, aft constants.AFT, key any, _ ...ResolvedDetails) {
+			gotCh <- fmt.Sprintf("%s->%s:%d", netinst, aft, key)
+		},
+		checkFn: func() error {
+			got := <-gotCh
+			switch t := got.(type) {
+			case error:
+				return fmt.Errorf("got error, %v", t)
+			case string:
+				if got, want := t, fmt.Sprintf("%s->MPLS:42", defName); got != want {
+					return fmt.Errorf("did not get expected result, got: %v, want: %v", got, want)
+				}
+			}
+			return nil
+		},
+	}, {
+		desc: "delete ipv4 entry",
+		inRIB: func() *RIB {
+			r := baseRIB()
+			_, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "10.0.0.0/8",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			})
+			if err != nil {
+				t.Fatalf("cannot build complete RIB, error: %v", err)
+			}
+			return r
+		}(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_DELETE,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "10.0.0.0/8",
+				},
+			},
+		},
+		inHook:  stringHook,
+		checkFn: stringChecker("Delete IPv4:DEFAULT->10.0.0.0/8"),
+	}, {
+		desc: "delete mpls entry",
+		inRIB: func() *RIB {
+			r := baseRIB()
+			_, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				}})
+			if err != nil {
+				t.Fatalf("cannot build complete RIB, error: %v", err)
+			}
+			return r
+		}(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_DELETE,
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+						LabelUint64: 42,
+					},
+				},
+			},
+		},
+		inHook:  stringHook,
+		checkFn: stringChecker("Delete MPLS:DEFAULT->42"),
+	}, {
+		desc: "delete ipv6 entry",
+		inRIB: func() *RIB {
+			r := baseRIB()
+			_, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:db8:42::/48",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				}})
+			if err != nil {
+				t.Fatalf("cannot build complete RIB, error: %v", err)
+			}
+			return r
+		}(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_DELETE,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:db8:42::/48",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		},
+		inHook:  stringHook,
+		checkFn: stringChecker("Delete IPv6:DEFAULT->2001:db8:42::/48"),
+	}, {
+		desc: "replace ipv4 entry",
+		inRIB: func() *RIB {
+			r := baseRIB()
+
+			ops := []*spb.AFTOperation{{
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 2,
+						NextHop: &aftpb.Afts_NextHop{
+							IpAddress: &wpb.StringValue{Value: "2.2.2.2"},
+						},
+					},
+				},
+			}, {
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 2,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index: 2,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+									Weight: &wpb.UintValue{Value: 32},
+								},
+							}},
+						},
+					},
+				},
+			}, {
+				Op: spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "10.0.0.0/8",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			}}
+			for i, op := range ops {
+				op.Id = uint64(i)
+				op.Op = spb.AFTOperation_ADD
+
+				if _, _, err := r.AddEntry(defName, op); err != nil {
+					t.Fatalf("cannot add entry %s, %v", prototext.Format(op), err)
+				}
+			}
+			return r
+		}(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_REPLACE,
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "10.0.0.0/8",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 2},
+					},
+				},
+			},
+		},
+		inHook:  stringHook,
+		checkFn: stringChecker("Add IPv4:DEFAULT->10.0.0.0/8"),
+	}, {
+		desc: "replace mpls entry",
+		inRIB: func() *RIB {
+			r := baseRIB()
+
+			ops := []*spb.AFTOperation{{
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 2,
+						NextHop: &aftpb.Afts_NextHop{
+							IpAddress: &wpb.StringValue{Value: "2.2.2.2"},
+						},
+					},
+				},
+			}, {
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 2,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index: 2,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+									Weight: &wpb.UintValue{Value: 32},
+								},
+							}},
+						},
+					},
+				},
+			}, {
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			}}
+			for i, op := range ops {
+				op.Id = uint64(i)
+				op.Op = spb.AFTOperation_ADD
+
+				if _, _, err := r.AddEntry(defName, op); err != nil {
+					t.Fatalf("cannot add entry %s, %v", prototext.Format(op), err)
+				}
+			}
+			return r
+		}(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_REPLACE,
+			Entry: &spb.AFTOperation_Mpls{
+				Mpls: &aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+						LabelUint64: 42,
+					},
+					LabelEntry: &aftpb.Afts_LabelEntry{
+						NextHopGroup: &wpb.UintValue{Value: 2},
+					},
+				},
+			},
+		},
+		inHook:  stringHook,
+		checkFn: stringChecker("Add MPLS:DEFAULT->42"),
+	}, {
+
+		desc: "replace ipv6 entry",
+		inRIB: func() *RIB {
+			r := baseRIB()
+
+			ops := []*spb.AFTOperation{{
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 2,
+						NextHop: &aftpb.Afts_NextHop{
+							IpAddress: &wpb.StringValue{Value: "2.2.2.2"},
+						},
+					},
+				},
+			}, {
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 2,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index: 2,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+									Weight: &wpb.UintValue{Value: 32},
+								},
+							}},
+						},
+					},
+				},
+			}, {
+				Op: spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:cafe::/48",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			}}
+			for i, op := range ops {
+				op.Id = uint64(i)
+				op.Op = spb.AFTOperation_ADD
+
+				if _, _, err := r.AddEntry(defName, op); err != nil {
+					t.Fatalf("cannot add entry %s, %v", prototext.Format(op), err)
+				}
+			}
+			return r
+		}(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_REPLACE,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:cafe::/48",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup: &wpb.UintValue{Value: 2},
+					},
+				},
+			},
+		},
+		inHook:  stringHook,
+		checkFn: stringChecker("Add IPv6:DEFAULT->2001:cafe::/48"),
 	}}
 
 	for _, tt := range tests {
@@ -3280,13 +4670,22 @@ func TestResolvedEntryHook(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if err := tt.checkFn(); err != nil {
-					checkErr = err
+				if tt.checkFn != nil {
+					if err := tt.checkFn(); err != nil {
+						checkErr = err
+					}
 				}
 			}()
 
-			if _, fails, err := tt.inRIB.AddEntry(defName, tt.inOperation); err != nil || len(fails) != 0 {
-				t.Fatalf("did not successfully add entry, error: %v, fails: %v", err, fails)
+			switch tt.inOperation.Op {
+			case spb.AFTOperation_ADD, spb.AFTOperation_REPLACE:
+				if _, fails, err := tt.inRIB.AddEntry(defName, tt.inOperation); err != nil || len(fails) != 0 {
+					t.Fatalf("did not successfully add entry, error: %v, fails: %v", err, fails)
+				}
+			case spb.AFTOperation_DELETE:
+				if _, fails, err := tt.inRIB.DeleteEntry(defName, tt.inOperation); err != nil || len(fails) != 0 {
+					t.Fatalf("did not successfully delete entry, error: %v', fails: %v", err, fails)
+				}
 			}
 			wg.Wait()
 			if checkErr != nil {
@@ -3327,6 +4726,60 @@ func TestCanDelete(t *testing.T) {
 		inDelCandidate: func() *aft.RIB {
 			r := &aft.RIB{}
 			r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "can delete IPv6 - always OK",
+		inRIB: func() *RIB {
+			r := New(defName)
+
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix:    "2001:cafe::/127",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{},
+					},
+				},
+			}); err != nil {
+				t.Fatalf("cannot build testcase, got err: %v", err)
+			}
+
+			return r
+		}(),
+		inNetInst: defName,
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:cafe::/127")
+			return r
+		}(),
+		want: true,
+	}, {
+		desc: "can delete MPLS - always OK",
+		inRIB: func() *RIB {
+			r := New(defName)
+
+			if _, _, err := r.AddEntry(defName, &spb.AFTOperation{
+				Id: 1,
+				Entry: &spb.AFTOperation_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{},
+					},
+				},
+			}); err != nil {
+				t.Fatalf("cannot build testcase, got err: %v", err)
+			}
+
+			return r
+		}(),
+		inNetInst: defName,
+		inDelCandidate: func() *aft.RIB {
+			r := &aft.RIB{}
+			r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
 			return r
 		}(),
 		want: true,
@@ -3638,14 +5091,15 @@ func mustSharedNHRIB(nhNI string) *RIB {
 func TestFlush(t *testing.T) {
 	tests := []struct {
 		desc             string
-		inRIB            *RIBHolder
+		inRIB            *RIB
+		wantEmptyNIs     []string
 		wantErrSubstring string
 	}{{
 		desc: "nh only",
-		inRIB: func() *RIBHolder {
-			r := NewRIBHolder("DEFAULT")
-
-			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
+		inRIB: func() *RIB {
+			dn := "DEFAULT"
+			r := New(dn)
+			_, _, err := r.niRIB[dn].AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
 				NextHop: &aftpb.Afts_NextHop{
 					IpAddress: &wpb.StringValue{Value: "1.2.3.4"},
@@ -3657,10 +5111,13 @@ func TestFlush(t *testing.T) {
 
 			return r
 		}(),
+		wantEmptyNIs: []string{"DEFAULT"},
 	}, {
 		desc: "nhg + nh",
-		inRIB: func() *RIBHolder {
-			r := NewRIBHolder("DEFAULT")
+		inRIB: func() *RIB {
+			dn := "DEFAULT"
+			rr := New(dn)
+			r := rr.niRIB[dn]
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
@@ -3687,12 +5144,15 @@ func TestFlush(t *testing.T) {
 				t.Fatalf("cannot add next-hop-group, %v", err)
 			}
 
-			return r
+			return rr
 		}(),
+		wantEmptyNIs: []string{"DEFAULT"},
 	}, {
 		desc: "nhg with backup + nh",
-		inRIB: func() *RIBHolder {
-			r := NewRIBHolder("DEFAULT")
+		inRIB: func() *RIB {
+			dn := "DEFAULT"
+			rr := New(dn)
+			r := rr.niRIB[dn]
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
@@ -3735,12 +5195,15 @@ func TestFlush(t *testing.T) {
 				t.Fatalf("cannot add next-hop-group, %v", err)
 			}
 
-			return r
+			return rr
 		}(),
+		wantEmptyNIs: []string{"DEFAULT"},
 	}, {
 		desc: "circular reference to NHG",
-		inRIB: func() *RIBHolder {
-			r := NewRIBHolder("DEFAULT")
+		inRIB: func() *RIB {
+			dn := "DEFAULT"
+			rr := New(dn)
+			r := rr.niRIB[dn]
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
@@ -3784,12 +5247,15 @@ func TestFlush(t *testing.T) {
 				t.Fatalf("cannot add next-hop-group, %v", err)
 			}
 
-			return r
+			return rr
 		}(),
+		wantEmptyNIs: []string{"DEFAULT"},
 	}, {
 		desc: "ipv4 + nhg + nh",
-		inRIB: func() *RIBHolder {
-			r := NewRIBHolder("DEFAULT")
+		inRIB: func() *RIB {
+			dn := "DEFAULT"
+			rr := New(dn)
+			r := rr.niRIB[dn]
 
 			_, _, err := r.AddNextHop(&aftpb.Afts_NextHopKey{
 				Index: 1,
@@ -3826,28 +5292,246 @@ func TestFlush(t *testing.T) {
 				t.Fatalf("cannot add ipv4 entry, %v", err)
 			}
 
-			return r
+			return rr
 		}(),
+		wantEmptyNIs: []string{"DEFAULT"},
+	}, {
+		desc: "ipv6",
+		inRIB: func() *RIB {
+			dn := "DEFAULT"
+			rr := New(dn)
+			r := rr.niRIB[dn]
+
+			r.checkFn = nil
+
+			_, _, err := r.AddIPv6(&aftpb.Afts_Ipv6EntryKey{
+				Prefix: "2001:db8::/32",
+				Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+					NextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add ipv6 entry, %v", err)
+			}
+
+			return rr
+		}(),
+		wantEmptyNIs: []string{"DEFAULT"},
+	}, {
+		desc: "mpls",
+		inRIB: func() *RIB {
+			dn := "DEFAULT"
+			rr := New(dn)
+			r := rr.niRIB[dn]
+
+			r.checkFn = nil
+
+			_, _, err := r.AddMPLS(&aftpb.Afts_LabelEntryKey{
+				Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+					LabelUint64: 42,
+				},
+				LabelEntry: &aftpb.Afts_LabelEntry{
+					NextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			}, false)
+			if err != nil {
+				t.Fatalf("cannot add MPLS entry, %v", err)
+			}
+			return rr
+		}(),
+		wantEmptyNIs: []string{"DEFAULT"},
+	}, {
+		desc: "flush with references across VRFs",
+		inRIB: func() *RIB {
+			dn := "DEFAULT"
+			nd := "NON-DEFAULT"
+			rr := New(dn)
+			rr.AddNetworkInstance(nd)
+
+			defRIB := rr.niRIB[dn]
+			nonDefRIB := rr.niRIB[nd]
+
+			if _, _, err := defRIB.AddNextHop(&aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					IpAddress: &wpb.StringValue{Value: "192.0.2.1"},
+				},
+			}, false); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+
+			if _, _, err := defRIB.AddNextHopGroup(&aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+							Weight: &wpb.UintValue{Value: 1},
+						},
+					}},
+				},
+			}, false); err != nil {
+				t.Fatalf("cannot add NHG, %v", err)
+			}
+
+			if _, _, err := nonDefRIB.AddIPv4(&aftpb.Afts_Ipv4EntryKey{
+				Prefix: "192.0.2.0/32",
+				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+					NextHopGroup:                &wpb.UintValue{Value: 1},
+					NextHopGroupNetworkInstance: &wpb.StringValue{Value: dn},
+				},
+			}, false); err != nil {
+				t.Fatalf("cannot add IPv4 entry to non-default VRF, %v", err)
+			}
+			return rr
+		}(),
+		wantEmptyNIs: []string{"NON-DEFAULT", "DEFAULT"},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got := tt.inRIB.Flush()
+			got := tt.inRIB.Flush(tt.wantEmptyNIs)
 			if diff := errdiff.Substring(got, tt.wantErrSubstring); diff != "" {
 				t.Fatalf("did not get expected error when flushing RIB, %s", diff)
 			}
 		})
 
-		if l := len(tt.inRIB.r.Afts.Ipv4Entry); l != 0 {
-			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
-		}
+		for _, niName := range tt.wantEmptyNIs {
+			niRIB, ok := tt.inRIB.NetworkInstanceRIB(niName)
+			if !ok {
+				t.Fatalf("cannot get network instance RIB for %s", niName)
+			}
 
-		if l := len(tt.inRIB.r.Afts.NextHopGroup); l != 0 {
-			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
-		}
+			if l := len(niRIB.r.Afts.Ipv4Entry); l != 0 {
+				t.Fatalf("NI: %s, did not remove all IPv4 entries, got: %d, want: 0", niName, l)
+			}
 
-		if l := len(tt.inRIB.r.Afts.NextHop); l != 0 {
-			t.Fatalf("did not remove all IPv4 entries, got: %d, want: 0", l)
+			if l := len(niRIB.r.Afts.Ipv6Entry); l != 0 {
+				t.Fatalf("NI: %s, did not remove all IPv6 entries, got: %d, want: 0", niName, l)
+			}
+
+			if l := len(niRIB.r.Afts.LabelEntry); l != 0 {
+				t.Fatalf("NI: %s, did not remove all MPLS entries, got: %d, want: 0", niName, l)
+			}
+
+			if l := len(niRIB.r.Afts.NextHopGroup); l != 0 {
+				t.Fatalf("NI: %s, did not remove all IPv4 entries, got: %d, want: 0", niName, l)
+			}
+
+			if l := len(niRIB.r.Afts.NextHop); l != 0 {
+				t.Fatalf("NI: %s, did not remove all IPv4 entries, got: %d, want: 0", niName, l)
+			}
+
+			for nhID, gotCount := range niRIB.refCounts.NextHop {
+				if gotCount != 0 {
+					t.Errorf("invalid non-zero refcount for NH ID %d, got: %d, want: 0", nhID, gotCount)
+				}
+			}
+
+			for nhgID, gotCount := range niRIB.refCounts.NextHopGroup {
+				if gotCount != 0 {
+					t.Errorf("invalid non-zero refcount for NHG ID %d, got: %d, want: 0", nhgID, gotCount)
+				}
+			}
 		}
 	}
+}
+
+func TestRIBContents(t *testing.T) {
+	tests := []struct {
+		desc    string
+		inRIB   *RIB
+		want    map[string]*aft.RIB
+		wantErr bool
+	}{{
+		desc: "one NI",
+		inRIB: &RIB{
+			niRIB: map[string]*RIBHolder{
+				"default": {
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+								"1.0.0.0/24": {
+									Prefix: ygot.String("1.0.0.0/24"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		want: map[string]*aft.RIB{
+			"default": {
+				Afts: &aft.Afts{
+					Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+						"1.0.0.0/24": {
+							Prefix: ygot.String("1.0.0.0/24"),
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "two NIs",
+		inRIB: &RIB{
+			niRIB: map[string]*RIBHolder{
+				"default": {
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+								"1.0.0.0/24": {
+									Prefix: ygot.String("1.0.0.0/24"),
+								},
+							},
+						},
+					},
+				},
+				"pepsicola": {
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							NextHop: map[uint64]*aft.Afts_NextHop{
+								1: {
+									Index: ygot.Uint64(1),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		want: map[string]*aft.RIB{
+			"default": {
+				Afts: &aft.Afts{
+					Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+						"1.0.0.0/24": {
+							Prefix: ygot.String("1.0.0.0/24"),
+						},
+					},
+				},
+			},
+			"pepsicola": {
+				Afts: &aft.Afts{
+					NextHop: map[uint64]*aft.Afts_NextHop{
+						1: {
+							Index: ygot.Uint64(1),
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := tt.inRIB.RIBContents()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("(*RIB).RIBContents(): did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+
+			if diff := cmp.Diff(got, tt.want); diff != "" {
+				t.Fatalf("(*RIB).RIBContents(): did not get expected contents, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+
 }

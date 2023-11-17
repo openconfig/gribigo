@@ -76,6 +76,12 @@ func TestCompliance(t *testing.T) {
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
 			tt.In.Fn(c, t, opts...)
+
+			c.Stop(t)
+			sc.Stop(t)
+			// TODO(robjs): Currnetly, lemming does not return nil errors when stopping successfully, check
+			// error when upstream is fixed.
+			d.Stop()
 		})
 	}
 }

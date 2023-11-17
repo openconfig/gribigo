@@ -942,10 +942,23 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 
 	v, ok := c.qs.pendq.Ops[op.Id]
 	if !ok {
-		if op.GetStatus() == spb.AFTResult_FIB_PROGRAMMED && TreatRIBACKAsCompletedInFIBACKMode {
+		switch {
+		case op.GetStatus() == spb.AFTResult_FIB_PROGRAMMED && TreatRIBACKAsCompletedInFIBACKMode:
 			// Expected condition, we hav already dequeued this operation because we are treating RIB_ACK as completed
 			// even though we are in FIB programmed mode.
 			return nil, nil
+		case op.GetStatus() == spb.AFTResult_RIB_PROGRAMMED && c.state.SessParams.GetAckType() == spb.SessionParameters_RIB_AND_FIB_ACK:
+			// This condition occurs when the server sends up a FIB_ACK before a RIB_ACK and hence we have dequeued
+			// the operation. In this case, we don't return an error and simply log that this happened. This is based
+			// on being permissive, but is unexpected since gRPC should maintain the order, and there's no reason that
+			// we would expect that something can be programmed in the FIB before it has hit the RIB.
+			log.Warningf("operation %d, unexpectedly saw RIB_ACK after FIB_ACK", op.Id)
+
+			return &OpResult{
+				Timestamp:         unixTS(),
+				OperationID:       op.GetId(),
+				ProgrammingResult: op.GetStatus(),
+			}, nil
 		}
 		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
 	}

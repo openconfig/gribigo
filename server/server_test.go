@@ -1413,6 +1413,9 @@ func TestModifyEntry(t *testing.T) {
 		wantResponse: &spb.ModifyResponse{
 			Result: []*spb.AFTResult{{
 				Id:     2,
+				Status: spb.AFTResult_RIB_PROGRAMMED,
+			}, {
+				Id:     2,
 				Status: spb.AFTResult_FIB_PROGRAMMED,
 			}},
 		},

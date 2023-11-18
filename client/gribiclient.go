@@ -48,6 +48,20 @@ var (
 	// unixTS is a function that returns a timestamp in nanoseconds for the current time.
 	// It can be overloaded in unit tests to ensure that deterministic output is received.
 	unixTS = time.Now().UnixNano
+
+	// BusyLoopDelay specifies a delay that should be used when looping around pending
+	// transactions. By default, the client tries not to busy loop, but this can introduce
+	// artificial delays when benchmarking server operations. It is NOT RECOMMENDED to
+	// change the default value other than when measuring convergence time at the client.
+	BusyLoopDelay = 100 * time.Millisecond
+
+	// TreatRIBACKAsCompletedInFIBACKMode allows the caller to modify the client behaviour
+	// to treat a RIB ACK from the target as the end of an operation even though the session
+	// has requested FIB_ACK. This allows benchmarking of the time to receive a RIB_ACK from
+	// a server in FIB_ACK mode. In production clients that require FIB_ACK it is ACTIVELY
+	// HARMFUL to change this value, since the client will consider a server to have converged
+	// on receipt of a RIB_ACK despite the fact that the session requested FIB_ACK.
+	TreatRIBACKAsCompletedInFIBACKMode = false
 )
 
 // Client is a wrapper for the gRIBI client.
@@ -921,23 +935,52 @@ func (c *Client) addPendingOp(op *spb.AFTOperation) error {
 func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 	c.qs.pendMu.Lock()
 	defer c.qs.pendMu.Unlock()
-	v := c.qs.pendq.Ops[op.Id]
 
-	switch op.GetStatus() {
-	case spb.AFTResult_FIB_PROGRAMMED, spb.AFTResult_FIB_FAILED:
-		delete(c.qs.pendq.Ops, op.Id)
-	case spb.AFTResult_RIB_PROGRAMMED:
-		if v == nil {
-			// workaround for FIB before RIB
+	if TreatRIBACKAsCompletedInFIBACKMode && c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK {
+		return nil, fmt.Errorf("logic error, TreatRIBACKAsCompletedInFIBACKMode set to true in %s mode", c.state.SessParams.GetAckType())
+	}
+
+	v, ok := c.qs.pendq.Ops[op.Id]
+	if !ok {
+		switch {
+		case op.GetStatus() == spb.AFTResult_FIB_PROGRAMMED && TreatRIBACKAsCompletedInFIBACKMode:
+			// Expected condition, we hav already dequeued this operation because we are treating RIB_ACK as completed
+			// even though we are in FIB programmed mode.
+			return nil, nil
+		case op.GetStatus() == spb.AFTResult_RIB_PROGRAMMED && c.state.SessParams.GetAckType() == spb.SessionParameters_RIB_AND_FIB_ACK:
+			// This condition occurs when the server sends up a FIB_ACK before a RIB_ACK and hence we have dequeued
+			// the operation. In this case, we don't return an error and simply log that this happened. This is based
+			// on being permissive, but is unexpected since gRPC should maintain the order, and there's no reason that
+			// we would expect that something can be programmed in the FIB before it has hit the RIB.
+			log.Warningf("operation %d, unexpectedly saw RIB_ACK after FIB_ACK", op.Id)
+
 			return &OpResult{
-				OperationID:       op.Id,
 				Timestamp:         unixTS(),
-				ProgrammingResult: spb.AFTResult_RIB_PROGRAMMED,
+				OperationID:       op.GetId(),
+				ProgrammingResult: op.GetStatus(),
 			}, nil
 		}
+		return nil, fmt.Errorf("could not dequeue operation %d, unknown operation", op.Id)
+	}
 
-		if c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK {
+	// We know that the operation exists - determine how to dequeue it.
+	switch op.GetStatus() {
+	case spb.AFTResult_FIB_FAILED, spb.AFTResult_FIB_PROGRAMMED:
+		if TreatRIBACKAsCompletedInFIBACKMode {
+			log.Infof("RIB ACK not received for operation %d - dequeue is based on FIB ACK", op.Id)
+		}
+		delete(c.qs.pendq.Ops, op.Id)
+	case spb.AFTResult_RIB_PROGRAMMED:
+		switch {
+		case TreatRIBACKAsCompletedInFIBACKMode:
+			// Dequeue, since we're specifically being asked to use RIB ACKs as the completion of the
+			// transaction.
 			delete(c.qs.pendq.Ops, op.Id)
+		case c.state.SessParams.GetAckType() != spb.SessionParameters_RIB_AND_FIB_ACK:
+			// RIB ACK dequeues when we are not expecting FIB ACK.
+			delete(c.qs.pendq.Ops, op.Id)
+		default:
+			// We're in FIB_ACK mode and this is a RIB_ACK, so the transaction is not complete.
 		}
 	case spb.AFTResult_FAILED:
 		delete(c.qs.pendq.Ops, op.Id)
@@ -1197,7 +1240,7 @@ func (c *Client) AwaitConverged(ctx context.Context) error {
 		if done {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond) // avoid busy looping.
+		time.Sleep(BusyLoopDelay) // avoid busy looping.
 	}
 }
 

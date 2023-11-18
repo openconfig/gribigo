@@ -1700,6 +1700,65 @@ func TestServerModifyIntegration(t *testing.T) {
 			}
 			return nil
 		},
+	}, {
+		desc: "test benchmarking parameters",
+		testFn: func(ctx context.Context, c *Client) error {
+			defer func() {
+				TreatRIBACKAsCompletedInFIBACKMode = false
+				BusyLoopDelay = 100 * time.Millisecond
+				c.Close()
+			}()
+
+			if err := c.Connect(ctx); err != nil {
+				return fmt.Errorf("Connect(): cannot connect to server, %v", err)
+			}
+
+			TreatRIBACKAsCompletedInFIBACKMode = true
+			BusyLoopDelay = 0 * time.Millisecond
+
+			// Explicitly set our session parameters for the test.
+			c.state.SessParams = &spb.SessionParameters{
+				AckType:     spb.SessionParameters_RIB_AND_FIB_ACK,
+				Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+				Persistence: spb.SessionParameters_PRESERVE,
+			}
+
+			c.Q(&spb.ModifyRequest{
+				ElectionId: &spb.Uint128{
+					Low:  1,
+					High: 0,
+				},
+			})
+
+			c.StartSending()
+
+			c.Q(&spb.ModifyRequest{
+				Operation: []*spb.AFTOperation{{
+					ElectionId: &spb.Uint128{
+						Low:  1,
+						High: 0,
+					},
+					Id:              1,
+					NetworkInstance: server.DefaultNetworkInstanceName,
+					Op:              spb.AFTOperation_ADD,
+					Entry: &spb.AFTOperation_NextHop{
+						NextHop: &aftpb.Afts_NextHopKey{
+							Index:   1,
+							NextHop: &aftpb.Afts_NextHop{},
+						},
+					},
+				}},
+			})
+
+			time.Sleep(100 * time.Millisecond) // Ensure that we got RIB and FIB ACK.
+
+			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			if err := c.AwaitConverged(ctx); err != nil {
+				return fmt.Errorf("AwaitConverged(): returned error, %v", err)
+			}
+			return nil
+		},
 	}}
 
 	for _, tt := range tests {

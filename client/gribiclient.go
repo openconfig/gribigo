@@ -28,6 +28,7 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
+	"github.com/openconfig/gnmi/errlist"
 	"github.com/openconfig/gribigo/constants"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -1140,6 +1141,43 @@ func (c *Client) Results() ([]*OpResult, error) {
 	c.qs.resultMu.RLock()
 	defer c.qs.resultMu.RUnlock()
 	return append(make([]*OpResult, 0, len(c.qs.resultq)), c.qs.resultq...), nil
+}
+
+// AckResult allows a caller to acknowledge a specific result in the client's
+// queue removing it from the queue stored in the client. If results are not
+// acknowledged, the client will store all results indefinitely.
+func (c *Client) AckResult(res ...*OpResult) error {
+	if c.qs == nil {
+		return errors.New("invalid (nil) queue in client")
+	}
+
+	toACK := map[uint64]bool{}
+	for _, r := range res {
+		toACK[r.OperationID] = false
+	}
+
+	c.qs.resultMu.RLock()
+	defer c.qs.resultMu.RUnlock()
+	nrq := []*OpResult{}
+	for _, r := range c.qs.resultq {
+		_, ok := toACK[r.OperationID]
+		if !ok {
+			nrq = append(nrq, r)
+		}
+		if ok {
+			toACK[r.OperationID] = true
+		}
+	}
+	c.qs.resultq = nrq
+
+	var errs errlist.List
+	for k, v := range toACK {
+		if !v {
+			errs.Add(fmt.Errorf("cannot find operation ID %d to acknowledge", k))
+		}
+	}
+
+	return errs.Err()
 }
 
 // ClientStatus is the overview status of the client, timestamped according to the

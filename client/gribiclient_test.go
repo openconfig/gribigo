@@ -27,6 +27,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/rib"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
@@ -2317,6 +2318,113 @@ func TestReset(t *testing.T) {
 			}
 			if len(c.qs.resultq) != 0 {
 				t.Errorf("unexpected results queue, got: %d, want: 0", len(c.qs.resultq))
+			}
+		})
+	}
+}
+
+func TestAckResult(t *testing.T) {
+	tests := []struct {
+		desc        string
+		inClient    *Client
+		inACK       []*OpResult
+		wantResultQ []*OpResult
+		wantErr     bool
+	}{{
+		desc: "ACK single result",
+		inClient: &Client{
+			qs: &clientQs{
+				resultq: []*OpResult{{
+					OperationID: 42,
+				}},
+			},
+		},
+		inACK: []*OpResult{{
+			OperationID: 42,
+		}},
+		wantResultQ: []*OpResult{},
+	}, {
+		desc: "ACK single result with details",
+		inClient: &Client{
+			qs: &clientQs{
+				resultq: []*OpResult{{
+					OperationID:             42,
+					Timestamp:               42,
+					CurrentServerElectionID: &spb.Uint128{Low: 42},
+					Details: &OpDetailsResults{
+						Type:         constants.Add,
+						NextHopIndex: 42,
+					},
+				}},
+			},
+		},
+		inACK: []*OpResult{{
+			OperationID: 42,
+		}},
+		wantResultQ: []*OpResult{},
+	}, {
+		desc: "ACK does not remove another operation",
+		inClient: &Client{
+			qs: &clientQs{
+				resultq: []*OpResult{{
+					OperationID: 42,
+				}, {
+					OperationID: 21,
+				}},
+			},
+		},
+		inACK: []*OpResult{{
+			OperationID: 42,
+		}},
+		wantResultQ: []*OpResult{{
+			OperationID: 21,
+		}},
+	}, {
+		desc: "ACK removes multiple operations",
+		inClient: &Client{
+			qs: &clientQs{
+				resultq: []*OpResult{{
+					OperationID: 42,
+				}, {
+					OperationID: 21,
+				}},
+			},
+		},
+		inACK: []*OpResult{{
+			OperationID: 42,
+		}, {
+			OperationID: 21,
+		}},
+		wantResultQ: []*OpResult{},
+	}, {
+		desc: "requested ACK not found",
+		inClient: &Client{
+			qs: &clientQs{
+				resultq: []*OpResult{{
+					OperationID: 42,
+				}, {
+					OperationID: 21,
+				}},
+			},
+		},
+		inACK: []*OpResult{{
+			OperationID: 1528,
+		}},
+		wantResultQ: []*OpResult{{
+			OperationID: 42,
+		}, {
+			OperationID: 21,
+		}},
+		wantErr: true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if err := tt.inClient.AckResult(tt.inACK...); (err != nil) != tt.wantErr {
+				t.Fatalf("(client).AckResult(%v): did not get expected error, got: %v, wantErr? %v", tt.inACK, err, tt.wantErr)
+			}
+			if diff := cmp.Diff(tt.inClient.qs.resultq, tt.wantResultQ); diff != "" {
+				t.Fatalf("(client).AckResult(%v): did not get expected results q, diff(-got,+want):\n%s", tt.inACK, diff)
 			}
 		})
 	}

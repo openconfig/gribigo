@@ -76,6 +76,46 @@ func TestFromGetResponses(t *testing.T) {
 			},
 		},
 	}, {
+		desc: "single ipv6 entry",
+		inResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-1",
+				Entry: &spb.AFTEntry_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:db8::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+		inDefaultName: "DEFAULT",
+		wantRIB: &RIB{
+			defaultName: defaultName,
+			niRIB: map[string]*RIBHolder{
+				"DEFAULT": {
+					name: "DEFAULT",
+					r: &aft.RIB{
+						Afts: &aft.Afts{},
+					},
+				},
+				"VRF-1": {
+					name: "VRF-1",
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							Ipv6Entry: map[string]*aft.Afts_Ipv6Entry{
+								"2001:db8::/32": {
+									Prefix:       ygot.String("2001:db8::/32"),
+									NextHopGroup: ygot.Uint64(42),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
 		desc: "next-hop group entry",
 		inResponses: []*spb.GetResponse{{
 			Entry: []*spb.AFTEntry{{

@@ -41,6 +41,8 @@ func FromGetResponses(defaultName string, responses []*spb.GetResponse, opt ...R
 				niAFTs[ni].Ipv4Entry = append(niAFTs[ni].Ipv4Entry, t.Ipv4)
 			case *spb.AFTEntry_Mpls:
 				niAFTs[ni].LabelEntry = append(niAFTs[ni].LabelEntry, t.Mpls)
+			case *spb.AFTEntry_Ipv6:
+				niAFTs[ni].Ipv6Entry = append(niAFTs[ni].Ipv6Entry, t.Ipv6)
 			case *spb.AFTEntry_NextHopGroup:
 				niAFTs[ni].NextHopGroup = append(niAFTs[ni].NextHopGroup, t.NextHopGroup)
 			case *spb.AFTEntry_NextHop:

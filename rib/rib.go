@@ -43,6 +43,19 @@ import (
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
+// Schema for the AFT model used by the RIB -- we set a global to ensure that
+// we only deserialise it once.
+var aftSchema *yang.Entry
+
+func init() {
+	// Unmarshal the YANG schema on startup.
+	r, err := aft.Schema()
+	if err != nil {
+		log.Exitf("cannot unmarshal YANG schema, %v", err)
+	}
+	aftSchema = r.RootSchema()
+}
+
 // unixTS is used to determine the current unix timestamp in nanoseconds since the
 // epoch. It is defined such that it can be overloaded by unit tests.
 var unixTS = time.Now().UnixNano
@@ -1112,15 +1125,6 @@ func (r *RIBHolder) GetNextHopGroup(id uint64) (*aft.Afts_NextHopGroup, bool) {
 	return n, true
 }
 
-// rootSchema returns the schema of the root of the AFT YANG tree.
-func rootSchema() (*yang.Entry, error) {
-	s, err := aft.Schema()
-	if err != nil {
-		return nil, fmt.Errorf("cannot get schema, %v", err)
-	}
-	return s.RootSchema(), nil
-}
-
 // candidateRIB takes the input set of Afts and returns them as a aft.RIB pointer
 // that can be merged into an existing RIB.
 func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
@@ -1130,11 +1134,6 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 	}
 
 	nr := &aft.RIB{}
-	rs, err := rootSchema()
-	if err != nil {
-		return nil, err
-	}
-
 	for p, v := range paths {
 		sv, err := value.FromScalar(v)
 
@@ -1145,7 +1144,8 @@ func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
 			}
 			return nil, fmt.Errorf("cannot convert field %s to scalar, %v", ps, sv)
 		}
-		if err := ytypes.SetNode(rs, nr, p, sv, &ytypes.InitMissingElements{}); err != nil {
+		// Use the global aftSchema to avoid needing to unmarshal again.
+		if err := ytypes.SetNode(aftSchema, nr, p, sv, &ytypes.InitMissingElements{}); err != nil {
 			return nil, fmt.Errorf("invalid RIB %s, %v", a, err)
 		}
 	}

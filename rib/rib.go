@@ -664,13 +664,12 @@ func (r *RIB) callResolvedEntryHook(optype constants.OpType, netinst string, aft
 // AFT struct, of the set of RIBs stored by the instance r. A DeepCopy of the RIBs is returned,
 // along with an error that indicates whether the entries could be copied.
 func (r *RIB) copyRIBs() (map[string]*aft.RIB, error) {
-	// TODO(robjs): Consider whether we need finer grained locking for each network
-	// instance RIB rather than holding the lock whilst we clone the contents.
 	r.nrMu.RLock()
 	defer r.nrMu.RUnlock()
 
 	rib := map[string]*aft.RIB{}
 	for name, niR := range r.niRIB {
+		niR.mu.Lock()
 		// this is likely expensive on very large RIBs, but with today's implementatiom
 		// it seems acceptable, since we then allow the caller not to have to figure out
 		// any locking since they have their own RIB to work on.
@@ -679,6 +678,7 @@ func (r *RIB) copyRIBs() (map[string]*aft.RIB, error) {
 			return nil, fmt.Errorf("cannot copy RIB for NI %s, %v", name, err)
 		}
 		rib[name] = dupRIB.(*aft.RIB)
+		niR.mu.Unlock()
 	}
 	return rib, nil
 }

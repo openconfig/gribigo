@@ -1692,3 +1692,164 @@ func TestOpsIsEmpty(t *testing.T) {
 		})
 	}
 }
+
+func TestOpsDeepCopy(t *testing.T) {
+	tests := []struct {
+		desc string
+		in   *Ops
+	}{{
+		desc: "empty",
+		in:   &Ops{},
+	}, {
+		desc: "nil",
+	}, {
+		desc: "all populated",
+		in: &Ops{
+			NH: []*spb.AFTOperation{{
+				Id: 1,
+			}, {
+				Id: 2,
+			}},
+			NHG: []*spb.AFTOperation{{
+				Id: 3,
+			}, {
+				Id: 4,
+			}},
+			TopLevel: []*spb.AFTOperation{{
+				Id: 5,
+			}, {
+				Id: 6,
+			}},
+		},
+	}, {
+		desc: "more contents",
+		in: &Ops{
+			NH: []*spb.AFTOperation{{
+				Id:              1,
+				NetworkInstance: "DEFAULT",
+			}, {
+				Id:              2,
+				NetworkInstance: "VRF-1",
+			}},
+			NHG: []*spb.AFTOperation{{
+				Id:              3,
+				NetworkInstance: "VRF-2",
+			}, {
+				Id:              4,
+				NetworkInstance: "DEFAULT",
+			}},
+			TopLevel: []*spb.AFTOperation{{
+				Id: 5,
+				Op: spb.AFTOperation_DELETE,
+			}, {
+				Id: 6,
+				Op: spb.AFTOperation_ADD,
+			}},
+		},
+	}, {
+		desc: "child protobuf populated",
+		in: &Ops{
+			TopLevel: []*spb.AFTOperation{{
+				Id:              1,
+				NetworkInstance: "DEFAULT",
+				Op:              spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 1},
+						},
+					},
+				},
+			}},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got := tt.in.DeepCopy()
+			if diff := cmp.Diff(got, tt.in, protocmp.Transform()); diff != "" {
+				t.Fatalf("(Ops).DeepCopy(): did not get expected result, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestReconcileOpsDeepCopy(t *testing.T) {
+	tests := []struct {
+		desc string
+		in   *ReconcileOps
+	}{{
+		desc: "empty",
+		in:   &ReconcileOps{},
+	}, {
+		desc: "nil",
+	}, {
+		desc: "add populated",
+		in: &ReconcileOps{
+			Add: &Ops{
+				NH: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+				NHG: []*spb.AFTOperation{{
+					Id: 2,
+				}},
+				TopLevel: []*spb.AFTOperation{{
+					Id: 3,
+				}},
+			},
+		},
+	}, {
+		desc: "replace populated",
+		in: &ReconcileOps{
+			Replace: &Ops{
+				NH: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+				NHG: []*spb.AFTOperation{{
+					Id: 2,
+				}},
+				TopLevel: []*spb.AFTOperation{{
+					Id: 3,
+				}},
+			},
+		},
+	}, {
+		desc: "delete populated",
+		in: &ReconcileOps{
+			Delete: &Ops{
+				NH: []*spb.AFTOperation{{
+					Id: 1,
+				}},
+				NHG: []*spb.AFTOperation{{
+					Id: 2,
+				}},
+				TopLevel: []*spb.AFTOperation{{
+					Id: 3,
+				}},
+			},
+		},
+	}, {
+		desc: "all populated",
+		in: &ReconcileOps{
+			Add: &Ops{
+				NH: []*spb.AFTOperation{{Id: 1}},
+			},
+			Delete: &Ops{
+				NH: []*spb.AFTOperation{{Id: 2}},
+			},
+			Replace: &Ops{
+				NH: []*spb.AFTOperation{{Id: 3}},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got := tt.in.DeepCopy()
+			if diff := cmp.Diff(got, tt.in, protocmp.Transform()); diff != "" {
+				t.Fatalf("(ReconcileOps).DeepCopy(): did not get expected result, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}

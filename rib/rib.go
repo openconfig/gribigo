@@ -669,7 +669,7 @@ func (r *RIB) copyRIBs() (map[string]*aft.RIB, error) {
 
 	rib := map[string]*aft.RIB{}
 	for name, niR := range r.niRIB {
-		niR.mu.Lock()
+		niR.mu.RLock()
 		// this is likely expensive on very large RIBs, but with today's implementatiom
 		// it seems acceptable, since we then allow the caller not to have to figure out
 		// any locking since they have their own RIB to work on.
@@ -678,7 +678,7 @@ func (r *RIB) copyRIBs() (map[string]*aft.RIB, error) {
 			return nil, fmt.Errorf("cannot copy RIB for NI %s, %v", name, err)
 		}
 		rib[name] = dupRIB.(*aft.RIB)
-		niR.mu.Unlock()
+		niR.mu.RUnlock()
 	}
 	return rib, nil
 }

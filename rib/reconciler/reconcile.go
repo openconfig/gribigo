@@ -31,6 +31,7 @@ import (
 
 	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/gribigo/rib"
+	"google.golang.org/protobuf/proto"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
@@ -149,6 +150,25 @@ func (o *Ops) IsEmpty() bool {
 	return o == nil || len(o.NH) == 0 && len(o.NHG) == 0 && len(o.TopLevel) == 0
 }
 
+// DeepCopy returns a deep copy (including cloning protobufs) of the specified
+// operations.
+func (o *Ops) DeepCopy() *Ops {
+	if o == nil {
+		return nil
+	}
+	no := &Ops{}
+	for _, op := range o.NH {
+		no.NH = append(no.NH, proto.Clone(op).(*spb.AFTOperation))
+	}
+	for _, op := range o.NHG {
+		no.NHG = append(no.NHG, proto.Clone(op).(*spb.AFTOperation))
+	}
+	for _, op := range o.TopLevel {
+		no.TopLevel = append(no.TopLevel, proto.Clone(op).(*spb.AFTOperation))
+	}
+	return no
+}
+
 // ReconcileOps stores the operations that are required for a specific reconciliation
 // run.
 type ReconcileOps struct {
@@ -174,6 +194,19 @@ func (r *ReconcileOps) Merge(in *ReconcileOps) {
 // IsEmpty determines whether the specified ReconcileOps contains any operations.
 func (r *ReconcileOps) IsEmpty() bool {
 	return r == nil || r.Add.IsEmpty() && r.Delete.IsEmpty() && r.Replace.IsEmpty()
+}
+
+// DeepCopy returns a copy of a reconcile ops struct, making a deep copy of all
+// of the fields, including cloning protobufs.
+func (r *ReconcileOps) DeepCopy() *ReconcileOps {
+	if r == nil {
+		return nil
+	}
+	return &ReconcileOps{
+		Add:     r.Add.DeepCopy(),
+		Delete:  r.Delete.DeepCopy(),
+		Replace: r.Replace.DeepCopy(),
+	}
 }
 
 // NewReconcileOps returns a new reconcileOps struct with the fields initialised.

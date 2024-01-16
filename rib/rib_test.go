@@ -4184,6 +4184,29 @@ func TestResolvedEntryHook(t *testing.T) {
 					},
 				},
 			},
+		}, {
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 10,
+					NextHop: &aftpb.Afts_NextHop{
+						IpAddress: &wpb.StringValue{Value: "1000:10:10::10"},
+					},
+				},
+			},
+		}, {
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 10,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 10,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 32},
+							},
+						}},
+					},
+				},
+			},
 		}}
 
 		for i, op := range ops {
@@ -4259,7 +4282,7 @@ func TestResolvedEntryHook(t *testing.T) {
 			return nil
 		},
 	}, {
-		desc:  "aft helper",
+		desc:  "aft helper v4",
 		inRIB: baseRIB(),
 		inOperation: &spb.AFTOperation{
 			Id: 42,
@@ -4296,6 +4319,53 @@ func TestResolvedEntryHook(t *testing.T) {
 					"1.1.1.1": {
 						Weight:          32,
 						Address:         "1.1.1.1",
+						NetworkInstance: "DEFAULT",
+					},
+				}
+				if diff := cmp.Diff(got, want); diff != "" {
+					return fmt.Errorf("got diff, %s", diff)
+				}
+			}
+			return nil
+		},
+	}, {
+		desc:  "aft helper v6",
+		inRIB: baseRIB(),
+		inOperation: &spb.AFTOperation{
+			Id: 42,
+			Op: spb.AFTOperation_ADD,
+			Entry: &spb.AFTOperation_Ipv6{
+				Ipv6: &aftpb.Afts_Ipv6EntryKey{
+					Prefix: "2001:aaaa::/64",
+					Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+						NextHopGroup: &wpb.UintValue{Value: 10},
+					},
+				},
+			},
+		},
+		inHook: func(ribs map[string]*aft.RIB, op constants.OpType, netinst string, aft constants.AFT, prefix any, _ ...ResolvedDetails) {
+			p, ok := prefix.(string)
+			if aft != constants.IPv6 || !ok {
+				gotCh <- fmt.Errorf("invalid prefix received, mismatched AFT (%s) or prefix data type (%v:%T)", aft, prefix, prefix)
+				return
+			}
+			summ, err := afthelper.NextHopAddrsForPrefix(ribs, netinst, p)
+			if err != nil {
+				gotCh <- err
+				return
+			}
+			gotCh <- summ
+		},
+		checkFn: func() error {
+			got := <-gotCh
+			switch t := got.(type) {
+			case error:
+				return fmt.Errorf("got error, %v", t)
+			case map[string]*afthelper.NextHopSummary:
+				want := map[string]*afthelper.NextHopSummary{
+					"1000:10:10::10": {
+						Weight:          32,
+						Address:         "1000:10:10::10",
 						NetworkInstance: "DEFAULT",
 					},
 				}

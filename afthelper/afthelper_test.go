@@ -82,6 +82,33 @@ func TestNextHopAddrsForPrefix(t *testing.T) {
 			},
 		},
 	}, {
+		desc: "ipv6 with two NH, one v4 and one v6",
+		inRIB: map[string]*aft.RIB{
+			defName: func() *aft.RIB {
+				r := &aft.RIB{}
+				r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:aaaa::/64").NextHopGroup = ygot.Uint64(1)
+				r.GetOrCreateAfts().GetOrCreateNextHopGroup(1).GetOrCreateNextHop(1).Weight = ygot.Uint64(1)
+				r.GetOrCreateAfts().GetOrCreateNextHopGroup(1).GetOrCreateNextHop(2).Weight = ygot.Uint64(1)
+				r.GetOrCreateAfts().GetOrCreateNextHop(1).IpAddress = ygot.String("1000:10:10::10")
+				r.GetOrCreateAfts().GetOrCreateNextHop(2).IpAddress = ygot.String("2.2.2.2")
+				return r
+			}(),
+		},
+		inNetInst: defName,
+		inPrefix:  "2001:aaaa::/64",
+		want: map[string]*NextHopSummary{
+			"1000:10:10::10": {
+				Address:         "1000:10:10::10",
+				Weight:          1,
+				NetworkInstance: defName,
+			},
+			"2.2.2.2": {
+				Address:         "2.2.2.2",
+				Weight:          1,
+				NetworkInstance: defName,
+			},
+		},
+	}, {
 		desc:      "can't find network instance",
 		inRIB:     map[string]*aft.RIB{},
 		inNetInst: "fish",
@@ -116,6 +143,39 @@ func TestNextHopAddrsForPrefix(t *testing.T) {
 			"2.2.2.2": {
 				Weight:          2,
 				Address:         "2.2.2.2",
+				NetworkInstance: "VRF-1",
+			},
+		},
+	}, {
+		desc: "ipv6 with two NH, one v4 and one v6 in different network instance",
+		inRIB: map[string]*aft.RIB{
+			defName: func() *aft.RIB {
+				r := &aft.RIB{}
+				v6 := r.GetOrCreateAfts().GetOrCreateIpv6Entry("2001:aaaa::/64")
+				v6.NextHopGroup = ygot.Uint64(1)
+				v6.NextHopGroupNetworkInstance = ygot.String("VRF-1")
+				return r
+			}(),
+			"VRF-1": func() *aft.RIB {
+				r := &aft.RIB{}
+				r.GetOrCreateAfts().GetOrCreateNextHopGroup(1).GetOrCreateNextHop(1).Weight = ygot.Uint64(1)
+				r.GetOrCreateAfts().GetOrCreateNextHopGroup(1).GetOrCreateNextHop(2).Weight = ygot.Uint64(1)
+				r.GetOrCreateAfts().GetOrCreateNextHop(1).IpAddress = ygot.String("1000:10:10::10")
+				r.GetOrCreateAfts().GetOrCreateNextHop(2).IpAddress = ygot.String("2.2.2.2")
+				return r
+			}(),
+		},
+		inNetInst: defName,
+		inPrefix:  "2001:aaaa::/64",
+		want: map[string]*NextHopSummary{
+			"1000:10:10::10": {
+				Address:         "1000:10:10::10",
+				Weight:          1,
+				NetworkInstance: "VRF-1",
+			},
+			"2.2.2.2": {
+				Address:         "2.2.2.2",
+				Weight:          1,
 				NetworkInstance: "VRF-1",
 			},
 		},

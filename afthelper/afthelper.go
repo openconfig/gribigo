@@ -18,6 +18,7 @@ package afthelper
 
 import (
 	"fmt"
+	"net/netip"
 
 	"github.com/openconfig/gribigo/aft"
 )
@@ -42,13 +43,31 @@ func NextHopAddrsForPrefix(rib map[string]*aft.RIB, netinst, prefix string) (map
 		return nil, fmt.Errorf("network instance %s does not exist", netinst)
 	}
 
-	v4 := niAFT.GetAfts().GetIpv4Entry(prefix)
-	if v4 == nil {
-		return nil, fmt.Errorf("cannot find IPv4 prefix in AFT")
+	pfx, err := netip.ParsePrefix(prefix)
+	if err != nil {
+		return nil, fmt.Errorf("invalid prefix: %v", err)
+	}
+
+	var otherNI string
+	var nhgID uint64
+	if pfx.Addr().Is4() {
+		v4 := niAFT.GetAfts().GetIpv4Entry(prefix)
+		if v4 == nil {
+			return nil, fmt.Errorf("cannot find IPv4 prefix in AFT")
+		}
+		otherNI = v4.GetNextHopGroupNetworkInstance()
+		nhgID = v4.GetNextHopGroup()
+	} else {
+		v6 := niAFT.GetAfts().GetIpv6Entry(prefix)
+		if v6 == nil {
+			return nil, fmt.Errorf("cannot find IPv6 prefix in AFT")
+		}
+		otherNI = v6.GetNextHopGroupNetworkInstance()
+		nhgID = v6.GetNextHopGroup()
 	}
 
 	nhNI := netinst
-	if otherNI := v4.GetNextHopGroupNetworkInstance(); otherNI != "" {
+	if otherNI != "" {
 		nhNI = otherNI
 	}
 
@@ -56,9 +75,9 @@ func NextHopAddrsForPrefix(rib map[string]*aft.RIB, netinst, prefix string) (map
 		return nil, fmt.Errorf("got invalid network instance, %s", nhNI)
 	}
 
-	nhg := rib[nhNI].GetAfts().GetNextHopGroup(v4.GetNextHopGroup())
+	nhg := rib[nhNI].GetAfts().GetNextHopGroup(nhgID)
 	if nhg == nil {
-		return nil, fmt.Errorf("got unknown NHG %d in NI %s", v4.GetNextHopGroup(), nhNI)
+		return nil, fmt.Errorf("got unknown NHG %d in NI %s", nhgID, nhNI)
 	}
 
 	// sum is a map of index -> weight.

@@ -244,6 +244,19 @@ func (c *Client) UseStub(stub spb.GRIBIClient) error {
 	return nil
 }
 
+// ReplaceStub replaces the gRPC stub used by the client only if the client
+// is not in a sending state.
+func (c *Client) ReplaceStub(stub spb.GRIBIClient) error {
+	c.qs.sendMu.Lock()
+	defer c.qs.sendMu.Unlock()
+	if c.qs.sending.Load() {
+		return errors.New("must be in stopped sending state to replace stub")
+	}
+
+	c.c = stub
+	return nil
+}
+
 // Reset clears the client's transient state - is is recommended to call this method between
 // reconnections at a server to clear pending queues and results which are no longer valid.
 func (c *Client) Reset() {

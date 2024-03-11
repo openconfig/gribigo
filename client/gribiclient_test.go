@@ -112,6 +112,43 @@ func TestHandleParams(t *testing.T) {
 	}
 }
 
+func TestReplaceStub(t *testing.T) {
+	tests := []struct {
+		desc      string
+		inSending bool
+		wantErr   bool
+	}{
+		{
+			desc:      "sending",
+			inSending: true,
+			wantErr:   true,
+		},
+		{
+			desc: "not-sending",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			c, err := New()
+			if err != nil {
+				t.Fatalf("cannot create client, %v", err)
+			}
+
+			c.StartSending()
+			if !tt.inSending {
+				c.StopSending()
+			}
+
+			if err := c.ReplaceStub(nil); err != nil {
+				if tt.wantErr {
+					return
+				}
+				t.Errorf("ReplaceStub(...) returned unexpected err: %v", err)
+			}
+		})
+	}
+}
+
 func TestQ(t *testing.T) {
 	tests := []struct {
 		desc      string

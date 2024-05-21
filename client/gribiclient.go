@@ -679,6 +679,9 @@ type OpResult struct {
 	// ClientError describes an error that is internal to the client.
 	ClientError string
 
+	// ServerError describes an error provided from the gRIBI server.
+	ServerError string
+
 	// ProgrammingResult stores the result of an AFT operation on the server.
 	ProgrammingResult spb.AFTResult_Status
 
@@ -711,7 +714,11 @@ func (o *OpResult) String() string {
 	}
 
 	if v := o.ClientError; v != "" {
-		buf.WriteString(fmt.Sprintf(" With Error: %s", v))
+		buf.WriteString(fmt.Sprintf(" With Client Error: %s", v))
+	}
+
+	if v := o.ServerError; v != "" {
+		buf.WriteString(fmt.Sprintf(" With Server Error: %s", v))
 	}
 	buf.WriteString(">")
 
@@ -1026,6 +1033,7 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 		Latency:           n - v.Timestamp,
 		OperationID:       op.GetId(),
 		ProgrammingResult: op.GetStatus(),
+		ServerError:       op.GetErrorDetails().GetErrorMessage(),
 		Details:           det,
 	}, nil
 }

@@ -527,6 +527,11 @@ var (
 			ShortName:    "Add IPv6 entry with metadata",
 			RequiresIPv6: true,
 		},
+	}, {
+		In: Test{
+			Fn:        AddToNonexistentNetworkInstance,
+			ShortName: "Add to a nonexistent network instance",
+		},
 	}}
 )
 
@@ -1907,8 +1912,7 @@ func AddToNonexistentNetworkInstance(c *fluent.GRIBIClient, t testing.TB, _ ...T
 			c.Modify().AddEntry(t, fluent.IPv6Entry().
 				WithPrefix("2001:db8::1/128").
 				WithNetworkInstance(nonexistentVRFName).
-				WithNextHopGroup(1)
-			)
+				WithNextHopGroup(1))
 		},
 	}
 

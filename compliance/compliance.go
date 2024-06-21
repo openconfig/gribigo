@@ -1,6 +1,6 @@
 // Copyright 2021 Google LLC
 //
-	// Licensed under the Apache License, Version 2.0 (the "License");
+// Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
@@ -1899,7 +1899,6 @@ func AddIPv6Metadata(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			AsResult(),
 		chk.IgnoreOperationID())
 }
-
 
 // AddToNonexistentNetworkInstance adds a IPV6Entry to a network
 // instance that does not exist and verifies it fails.

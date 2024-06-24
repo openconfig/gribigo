@@ -63,6 +63,9 @@ var (
 	// overriden by tests that have pushed a configuration to the server where they
 	// have created a name that is not the specified string.
 	vrfName = "NON-DEFAULT-VRF"
+
+	// nonexistentVRFName is a name of a VRF that does not exist on the server.
+	nonexistentVRFName = "NonExistentVrf"
 )
 
 // SetDefaultNetworkInstanceName allows an external caller to specify a network
@@ -523,6 +526,11 @@ var (
 			Fn:           AddIPv6Metadata,
 			ShortName:    "Add IPv6 entry with metadata",
 			RequiresIPv6: true,
+		},
+	}, {
+		In: Test{
+			Fn:        AddToNonexistentNetworkInstance,
+			ShortName: "Add to a nonexistent network instance",
 		},
 	}}
 )
@@ -1888,6 +1896,32 @@ func AddIPv6Metadata(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			WithNextHopOperation(1).
 			WithOperationType(constants.Add).
 			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// AddToNonexistentNetworkInstance adds a IPV6Entry to a network
+// instance that does not exist and verifies it fails.
+func AddToNonexistentNetworkInstance(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithIndex(1).WithNetworkInstance(defaultNetworkInstanceName).WithIPAddress("192.0.2.3"))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName).AddNextHop(1, 1))
+			c.Modify().AddEntry(t, fluent.IPv6Entry().
+				WithPrefix("2001:db8::1/128").
+				WithNetworkInstance(nonexistentVRFName).
+				WithNextHopGroup(1))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv6Operation("2001:db8::1/128").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult(),
 		chk.IgnoreOperationID())
 }

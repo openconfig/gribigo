@@ -532,6 +532,11 @@ var (
 			Fn:        AddToNonexistentNetworkInstance,
 			ShortName: "Add to a nonexistent network instance",
 		},
+	}, {
+		In: Test{
+			Fn:        AddDuplicateNexthop,
+			ShortName: "Add two NextHops with identical contents",
+		},
 	}}
 )
 

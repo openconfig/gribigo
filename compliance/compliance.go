@@ -1931,7 +1931,7 @@ func AddToNonexistentNetworkInstance(c *fluent.GRIBIClient, t testing.TB, _ ...T
 		chk.IgnoreOperationID())
 }
 
-// Tests a case where two nexthops with duplicate contents are temporarily programmed
+// Tests a case where two nexthops with duplicate contents are temporarily programmed.
 func AddDuplicateNexthop(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
 	ops := []func(){

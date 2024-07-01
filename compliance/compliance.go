@@ -532,6 +532,11 @@ var (
 			Fn:        AddToNonexistentNetworkInstance,
 			ShortName: "Add to a nonexistent network instance",
 		},
+	}, {
+		In: Test{
+			Fn:        AddDuplicateNexthop,
+			ShortName: "Add two NextHops with identical contents",
+		},
 	}}
 )
 
@@ -1922,6 +1927,47 @@ func AddToNonexistentNetworkInstance(c *fluent.GRIBIClient, t testing.TB, _ ...T
 			WithIPv6Operation("2001:db8::1/128").
 			WithOperationType(constants.Add).
 			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// Tests a case where two nexthops with duplicate contents are temporarily programmed.
+func AddDuplicateNexthop(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName).AddNextHop(1, 1))
+		},
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(2).WithIPAddress("192.0.2.1"))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName).AddNextHop(2, 1))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(2).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
 			AsResult(),
 		chk.IgnoreOperationID())
 }

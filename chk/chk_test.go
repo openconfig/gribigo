@@ -340,6 +340,27 @@ func TestHasResultsCache(t *testing.T) {
 			// explicitly empty
 		}},
 		expectFatalMsg: "test error",
+	}, {
+		desc: "ignore server error",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			ServerError: "fish",
+		}},
+		inOpt: []resultOpt{},
+		inWants: []*client.OpResult{{
+			OperationID: 42,
+		}},
+	}, {
+		desc: "do not ignore server error",
+		inResults: []*client.OpResult{{
+			OperationID: 42,
+			ServerError: "chips",
+		}},
+		inOpt: []resultOpt{IncludeServerError()},
+		inWants: []*client.OpResult{{
+			OperationID: 42,
+			ServerError: "chips",
+		}},
 	}}
 
 	for _, tt := range tests {

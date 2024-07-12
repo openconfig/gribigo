@@ -1937,7 +1937,8 @@ func AddToNonexistentNetworkInstance(c *fluent.GRIBIClient, t testing.TB, _ ...T
 			WithOperationType(constants.Add).
 			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult(),
-		chk.IgnoreOperationID())
+		chk.IgnoreOperationID(),
+	)
 }
 
 // Tests a case where two nexthops with duplicate contents are temporarily programmed.

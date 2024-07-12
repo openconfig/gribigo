@@ -73,4 +73,3 @@ require (
 	k8s.io/klog/v2 v2.120.1 // indirect
 )
 
-replace github.com/openconfig/lemming => /Users/robjs/go/src/github.com/openconfig/lemming

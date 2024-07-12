@@ -3043,6 +3043,110 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			},
 		}},
+	}, {
+		desc: "unresolved NHG",
+		inRIB: func() *RIB {
+			r := New(defName)
+			r.pendingEntries[1] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 1,
+					Entry: &spb.AFTOperation_NextHopGroup{
+						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+							Id: 1,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{
+								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+									// waiting on NH 42
+									Index:   42,
+									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+								}},
+							},
+						},
+					},
+				},
+			}
+			return r
+		}(),
+		inNI: defName,
+		// install NH 1
+		inOp: &spb.AFTOperation{
+			Id: 2,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 42},
+							},
+						}},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "unresolved NHG - with no forward references",
+		inRIB: func() *RIB {
+			r := New(defName, DisableForwardReferences())
+			r.pendingEntries[1] = &pendingEntry{
+				ni: defName,
+				op: &spb.AFTOperation{
+					Id: 1,
+					Entry: &spb.AFTOperation_NextHopGroup{
+						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+							Id: 1,
+							NextHopGroup: &aftpb.Afts_NextHopGroup{
+								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+									// waiting on NH 42
+									Index:   42,
+									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+								}},
+							},
+						},
+					},
+				},
+			}
+			return r
+		}(),
+		inNI: defName,
+		// install NH 1
+		inOp: &spb.AFTOperation{
+			Id: 2,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 42},
+							},
+						}},
+					},
+				},
+			},
+		},
+		wantFails: []*OpResult{{
+			ID: 2,
+			Op: &spb.AFTOperation{
+				Id: 2,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index: 1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+									Weight: &wpb.UintValue{Value: 42},
+								},
+							}},
+						},
+					},
+				},
+			},
+			Error: "operation 2 has unresolved dependencies",
+		}},
 	}}
 
 	for _, tt := range tests {

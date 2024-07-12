@@ -872,6 +872,51 @@ func TestDoModify(t *testing.T) {
 			},
 		}},
 	}, {
+		desc: "add with forward references, when forward references are disabled",
+		inServer: func() *Server {
+			s, err := New(WithNoRIBForwardReferences())
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
+			s.cs["testclient"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+				},
+				lastElecID: &spb.Uint128{High: 42, Low: 42},
+			}
+			s.curElecID = &spb.Uint128{High: 42, Low: 42}
+			s.curMaster = "testclient"
+			return s
+		}(),
+		inCID: "testclient",
+		inOps: []*spb.AFTOperation{{
+			Id:              42,
+			NetworkInstance: DefaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "1.1.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     42,
+					Status: spb.AFTResult_FAILED,
+					ErrorDetails: &spb.AFTErrorDetails{
+						ErrorMessage: `operation 42 has unresolved dependencies`,
+					},
+				}},
+			},
+		}},
+	}, {
 		desc: "invalid operation",
 		inServer: func() *Server {
 			s, err := New()
@@ -907,6 +952,9 @@ func TestDoModify(t *testing.T) {
 				Result: []*spb.AFTResult{{
 					Id:     84,
 					Status: spb.AFTResult_FAILED,
+					ErrorDetails: &spb.AFTErrorDetails{
+						ErrorMessage: `invalid IPv4Entry, could not parse a field within the list gribi_aft.Afts.ipv4_entry , nil list member in field gribi_aft.Afts.Ipv4EntryKey.ipv4_entry, <nil>`,
+					},
 				}},
 			},
 		}},
@@ -1666,6 +1714,9 @@ func TestModifyEntry(t *testing.T) {
 			Result: []*spb.AFTResult{{
 				Id:     2,
 				Status: spb.AFTResult_FAILED,
+				ErrorDetails: &spb.AFTErrorDetails{
+					ErrorMessage: "",
+				},
 			}},
 		},
 	}, {
@@ -1720,7 +1771,7 @@ func TestModifyEntry(t *testing.T) {
 			if err != nil {
 				checkStatusErr(t, err, tt.wantErrCode, tt.wantErrDetails)
 			}
-			if diff := cmp.Diff(got, tt.wantResponse, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(got, tt.wantResponse, protocmp.Transform(), protocmp.IgnoreFields(&spb.AFTResult{}, "error_details")); diff != "" {
 				t.Fatalf("did not get expected response, diff(-got,+want):\n%s", diff)
 			}
 		})

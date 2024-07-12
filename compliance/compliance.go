@@ -116,6 +116,9 @@ type Test struct {
 	RequiresMPLS bool
 	// RequiresIPv6 marks a test that requires IPv6 support in the gRIBI server.
 	RequiresIPv6 bool
+	// RequiresDisallowedForwardReferences indicates that the gRIBI server must have
+	// a mode (or always operate in a mode) that disallows forward references.
+	RequiresDisallowedForwardReferences bool
 }
 
 // TestSpec is a description of a test.
@@ -536,6 +539,12 @@ var (
 		In: Test{
 			Fn:        AddDuplicateNexthop,
 			ShortName: "Add two NextHops with identical contents",
+		},
+	}, {
+		In: Test{
+			Fn:                                  ForwardReferencesDisallowed,
+			ShortName:                           "Add a forward reference to a server that disallows it",
+			RequiresDisallowedForwardReferences: true,
 		},
 	}}
 )
@@ -1968,6 +1977,27 @@ func AddDuplicateNexthop(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			WithNextHopOperation(2).
 			WithOperationType(constants.Add).
 			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// ForwardReferencesDisallowed tests a case where a server with disallowed forward references is expected to error
+// when forward references are supplied.
+func ForwardReferencesDisallowed(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName).AddNextHop(1, 1))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult(),
 		chk.IgnoreOperationID())
 }

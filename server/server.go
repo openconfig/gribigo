@@ -237,11 +237,38 @@ func hasWithVRFs(opt []ServerOpt) []string {
 	return nil
 }
 
+// WithNoRIBForwardReferences specifies that the server should not accept
+// forward references in the RIB. This means that next-hop-groups should not
+// be able to reference next-hops that do not exist, and entries cannot reference
+// missing next-hop-groups.
+func WithNoRIBForwardReferences() *disableRIBForwardRefs { return &disableRIBForwardRefs{} }
+
+// disableRIBForwardRefs is the internal implementation of WithNoRIBForwardReferences.
+type disableRIBForwardRefs struct{}
+
+// isServerOpt implements the ServerOpt interface.
+func (*disableRIBForwardRefs) isServerOpt() {}
+
+// hasWithNoRIBForwardReferences checks whether the ServerOpt slice supplied contains the
+// disableRIBForwardRefs option and returns true if so.
+func hasWithNoRIBForwardReferences(opt []ServerOpt) bool {
+	for _, o := range opt {
+		if _, ok := o.(*disableRIBForwardRefs); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // New creates a new gRIBI server.
 func New(opt ...ServerOpt) (*Server, error) {
 	ribOpt := []rib.RIBOpt{}
 	if hasDisableCheckFn(opt) {
 		ribOpt = append(ribOpt, rib.DisableRIBCheckFn())
+	}
+
+	if hasWithNoRIBForwardReferences(opt) {
+		ribOpt = append(ribOpt, rib.DisableForwardReferences())
 	}
 
 	s := &Server{
@@ -913,8 +940,9 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 		results = append(results, &spb.AFTResult{
 			Id:     fail.ID,
 			Status: spb.AFTResult_FAILED,
-			// TODO(robjs): add somewhere for the error that we provide to be
-			// returned.
+			ErrorDetails: &spb.AFTErrorDetails{
+				ErrorMessage: fail.Error,
+			},
 		})
 	}
 

@@ -2248,7 +2248,7 @@ func TestRIBAddEntry(t *testing.T) {
 					},
 				},
 			},
-			Error: "invalid NextHopGroup, could not parse a field within the list gribi_aft.Afts.next_hop , nil list member in field gribi_aft.Afts.NextHopKey.next_hop, <nil>",
+			Error: "invalid NextHop, could not parse a field within the list gribi_aft.Afts.next_hop , nil list member in field gribi_aft.Afts.NextHopKey.next_hop, <nil>",
 		}},
 	}, {
 		desc: "nh makes nhg resolvable",

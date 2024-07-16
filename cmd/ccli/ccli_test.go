@@ -94,7 +94,7 @@ func TestCompliance(t *testing.T) {
 
 	compliance.SetDefaultNetworkInstanceName(*defaultNIName)
 
-	dialOpts := []grpc.DialOption{grpc.WithBlock()}
+	dialOpts := []grpc.DialOption{}
 	if *insecureFlag {
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else if *skipVerify {
@@ -114,17 +114,16 @@ func TestCompliance(t *testing.T) {
 				t.Skip(reason)
 			}
 
-			ctx := context.Background()
-			conn, err := grpc.DialContext(ctx, *addr, dialOpts...)
+			conn, err := grpc.NewClient(*addr, dialOpts...)
 			if err != nil {
-				t.Fatalf("Could not dial gRPC: %v", err)
+				t.Fatalf("grpc.NewClient(...): cannot create client, %v", err)
 			}
 			defer conn.Close()
 			stub := spb.NewGRIBIClient(conn)
 
-			secondConn, err := grpc.DialContext(ctx, *addr, dialOpts...)
+			secondConn, err := grpc.NewClient(*addr, dialOpts...)
 			if err != nil {
-				t.Fatalf("could not dial gRPC for second client: %v", err)
+				t.Fatalf("grpc.NewClient(...): cannot create client, %v", err)
 			}
 			defer secondConn.Close()
 			scStub := spb.NewGRIBIClient(conn)

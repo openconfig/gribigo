@@ -62,7 +62,7 @@ func TestGRIBIClient(t *testing.T) {
 		desc: "simple connection to invalid server",
 		inFn: func(_ string, t testing.TB) {
 			c := NewClient()
-			c.Connection().WithTarget("some.failing.dns.name:noport")
+			c.Connection().WithTarget("http\r://foo.com/")
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			c.Start(ctx, t)

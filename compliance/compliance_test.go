@@ -48,7 +48,7 @@ func TestCompliance(t *testing.T) {
 			lemmingOpts := []lemming.Option{creds, lemming.WithInitialConfig(jsonConfig), lemming.WithGNMIAddr(":0"), lemming.WithGRIBIAddr(":0")}
 
 			if tt.In.RequiresDisallowedForwardReferences {
-				lemmingOpts = append(lemmingOpts, lemming.WithNoRIBForwardReferences())
+				lemmingOpts = append(lemmingOpts, lemming.WithGRIBIOpts(server.WithNoRIBForwardReferences()))
 			}
 
 			d, err := lemming.New("DUT", "", lemmingOpts...)

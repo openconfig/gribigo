@@ -3044,31 +3044,10 @@ func TestRIBAddEntry(t *testing.T) {
 			},
 		}},
 	}, {
-		desc: "unresolved NHG",
-		inRIB: func() *RIB {
-			r := New(defName)
-			r.pendingEntries[1] = &pendingEntry{
-				ni: defName,
-				op: &spb.AFTOperation{
-					Id: 1,
-					Entry: &spb.AFTOperation_NextHopGroup{
-						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
-							Id: 1,
-							NextHopGroup: &aftpb.Afts_NextHopGroup{
-								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
-									// waiting on NH 42
-									Index:   42,
-									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
-								}},
-							},
-						},
-					},
-				},
-			}
-			return r
-		}(),
-		inNI: defName,
-		// install NH 1
+		desc:  "unresolved NHG",
+		inRIB: New(defName),
+		inNI:  defName,
+		// attempt to install NHG1 with unsatisified NH.
 		inOp: &spb.AFTOperation{
 			Id: 2,
 			Entry: &spb.AFTOperation_NextHopGroup{
@@ -3086,31 +3065,10 @@ func TestRIBAddEntry(t *testing.T) {
 			},
 		},
 	}, {
-		desc: "unresolved NHG - with no forward references",
-		inRIB: func() *RIB {
-			r := New(defName, DisableForwardReferences())
-			r.pendingEntries[1] = &pendingEntry{
-				ni: defName,
-				op: &spb.AFTOperation{
-					Id: 1,
-					Entry: &spb.AFTOperation_NextHopGroup{
-						NextHopGroup: &aftpb.Afts_NextHopGroupKey{
-							Id: 1,
-							NextHopGroup: &aftpb.Afts_NextHopGroup{
-								NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
-									// waiting on NH 42
-									Index:   42,
-									NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
-								}},
-							},
-						},
-					},
-				},
-			}
-			return r
-		}(),
-		inNI: defName,
-		// install NH 1
+		desc:  "unresolved NHG - with no forward references",
+		inRIB: New(defName, DisableForwardReferences()),
+		inNI:  defName,
+		// Attempt to install NHG 1 with a missing NH.
 		inOp: &spb.AFTOperation{
 			Id: 2,
 			Entry: &spb.AFTOperation_NextHopGroup{

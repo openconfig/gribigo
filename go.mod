@@ -11,7 +11,7 @@ require (
 	github.com/openconfig/gnmi v0.11.0
 	github.com/openconfig/goyang v1.4.5
 	github.com/openconfig/gribi v1.0.0
-	github.com/openconfig/lemming v0.4.1-0.20240712022034-3984457bddbe
+	github.com/openconfig/lemming v0.4.1-0.20240716194050-8bc4aabf2c71
 	github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07
 	github.com/openconfig/ygot v0.29.19
 	go.uber.org/atomic v1.10.0

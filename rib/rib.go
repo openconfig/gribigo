@@ -121,9 +121,9 @@ type RIB struct {
 	defaultName string
 	// ribCheck indicates whether this RIB is running the RIB check function.
 	ribCheck bool
-	// disallowForwardReferences indicates whether this RIB allows for entries that are
-	// pending since they have unsatifisied dependencies.
-	disallowForwardReferences bool
+	// disableForwardReferences indicates whether this RIB and the VRF RIBs it
+	// contains allow for entries that are pending since they have unsatifisied dependencies.
+	disableForwardReferences bool
 
 	// pendMu protects the pendingEntires map.
 	pendMu sync.RWMutex
@@ -306,7 +306,7 @@ func New(dn string, opt ...RIBOpt) *RIB {
 
 	if hasDisableForwardRef(opt) {
 		rhOpt = append(rhOpt, DisableForwardReferences())
-		r.disallowForwardReferences = true
+		r.disableForwardReferences = true
 	}
 
 	r.niRIB[dn] = NewRIBHolder(dn, rhOpt...)
@@ -374,7 +374,7 @@ func (r *RIB) AddNetworkInstance(name string) error {
 	if r.ribCheck {
 		rhOpt = append(rhOpt, RIBHolderCheckFn(r.checkFn))
 	}
-	if r.disallowForwardReferences {
+	if r.disableForwardReferences {
 		rhOpt = append(rhOpt, DisableForwardReferences())
 	}
 
@@ -601,7 +601,7 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 			}
 		}
 	default:
-		switch r.disallowForwardReferences {
+		switch r.disableForwardReferences {
 		case false:
 			r.addPending(op.GetId(), &pendingEntry{
 				ni: ni,

@@ -55,7 +55,7 @@ func TestNewRemoteRIB(t *testing.T) {
 	}, {
 		desc:           "unsuccessful dial",
 		inDefName:      "DEFAULT",
-		inAddrOverride: "invalid.addr:999999",
+		inAddrOverride: "http\r://foo.com/",
 		wantErr:        true,
 	}}
 
@@ -93,19 +93,15 @@ func TestNewRemoteRIBWithStub(t *testing.T) {
 			addr, stop := newServer(t, nil)
 			defer stop()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
-
 			tlsc := credentials.NewTLS(&tls.Config{
 				InsecureSkipVerify: true,
 			})
 
-			c, err := grpc.DialContext(ctx, addr,
+			c, err := grpc.NewClient(addr,
 				grpc.WithTransportCredentials(tlsc),
-				grpc.WithBlock(),
 			)
 			if err != nil {
-				t.Fatalf("grpc.DialContext(%s): cannot dial server, %v", addr, err)
+				t.Fatalf("grpc.NewClient(%s): cannot dial server, %v", addr, err)
 			}
 
 			if _, err := NewRemoteRIBWithStub(tt.inDefName, spb.NewGRIBIClient(c)); err != nil {

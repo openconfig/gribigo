@@ -2248,7 +2248,7 @@ func TestRIBAddEntry(t *testing.T) {
 					},
 				},
 			},
-			Error: "invalid NextHopGroup, could not parse a field within the list gribi_aft.Afts.next_hop , nil list member in field gribi_aft.Afts.NextHopKey.next_hop, <nil>",
+			Error: "invalid NextHop, could not parse a field within the list gribi_aft.Afts.next_hop , nil list member in field gribi_aft.Afts.NextHopKey.next_hop, <nil>",
 		}},
 	}, {
 		desc: "nh makes nhg resolvable",
@@ -3042,6 +3042,68 @@ func TestRIBAddEntry(t *testing.T) {
 					},
 				},
 			},
+		}},
+	}, {
+		desc:  "unresolved NHG",
+		inRIB: New(defName),
+		inNI:  defName,
+		// attempt to install NHG1 with unsatisified NH.
+		inOp: &spb.AFTOperation{
+			Id: 2,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 42},
+							},
+						}},
+					},
+				},
+			},
+		},
+	}, {
+		desc:  "unresolved NHG - with no forward references",
+		inRIB: New(defName, DisableForwardReferences()),
+		inNI:  defName,
+		// Attempt to install NHG 1 with a missing NH.
+		inOp: &spb.AFTOperation{
+			Id: 2,
+			Entry: &spb.AFTOperation_NextHopGroup{
+				NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+					Id: 1,
+					NextHopGroup: &aftpb.Afts_NextHopGroup{
+						NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+							Index: 1,
+							NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+								Weight: &wpb.UintValue{Value: 42},
+							},
+						}},
+					},
+				},
+			},
+		},
+		wantFails: []*OpResult{{
+			ID: 2,
+			Op: &spb.AFTOperation{
+				Id: 2,
+				Entry: &spb.AFTOperation_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 1,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+								Index: 1,
+								NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+									Weight: &wpb.UintValue{Value: 42},
+								},
+							}},
+						},
+					},
+				},
+			},
+			Error: "operation 2 has unresolved dependencies",
 		}},
 	}}
 

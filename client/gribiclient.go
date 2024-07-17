@@ -218,14 +218,13 @@ func (c *Client) Dial(ctx context.Context, addr string, opts ...DialOpt) error {
 	// TODO(robjs): translate any options within the dial options here, we may
 	// want to consider just accepting some gRPC dialoptions directly.
 
-	dialOpts := []grpc.DialOption{grpc.WithBlock()}
-
+	dialOpts := []grpc.DialOption{}
 	tlsc := credentials.NewTLS(&tls.Config{
 		InsecureSkipVerify: true,
 	})
 	dialOpts = append(dialOpts, grpc.WithTransportCredentials(tlsc))
 
-	conn, err := grpc.DialContext(ctx, addr, dialOpts...)
+	conn, err := grpc.NewClient(addr, dialOpts...)
 	if err != nil {
 		return fmt.Errorf("cannot dial remote system, %v", err)
 	}

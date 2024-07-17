@@ -29,7 +29,6 @@ import (
 	"github.com/openconfig/goyang/pkg/yang"
 	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/gribigo/constants"
-	wpb "github.com/openconfig/ygot/proto/ywrapper"
 	"github.com/openconfig/ygot/protomap"
 	"github.com/openconfig/ygot/ygot"
 	"github.com/openconfig/ygot/ytypes"
@@ -41,6 +40,7 @@ import (
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
 
 // Schema for the AFT model used by the RIB -- we set a global to ensure that
@@ -121,8 +121,11 @@ type RIB struct {
 	defaultName string
 	// ribCheck indicates whether this RIB is running the RIB check function.
 	ribCheck bool
+	// disableForwardReferences indicates whether this RIB and the VRF RIBs it
+	// contains allow for entries that are pending since they have unsatifisied dependencies.
+	disableForwardReferences bool
 
-	// pendMu protects the pendingCandidates.
+	// pendMu protects the pendingEntires map.
 	pendMu sync.RWMutex
 	// pendingEntries is the set of entries that have been requested by
 	// the AddXXX methods that cannot yet be installed in the RIB because they do
@@ -188,6 +191,10 @@ type RIBHolder struct {
 	// groups and next-hops within the RIB. It is used to ensure that referenced NHs
 	// and NHGs cnanot be removed from the RIB.
 	refCounts *niRefCounter
+
+	// disableForwardRef indicates that this RIB should not allow
+	// references to entities that do not yet exist.
+	disableForwardRef bool
 }
 
 // niRefCounter stores reference counters for a particular network instance.
@@ -227,7 +234,7 @@ func DisableRIBCheckFn() *disableCheckFn { return &disableCheckFn{} }
 // disableCheckFn is the internal implementation of DisableRIBCheckFn.
 type disableCheckFn struct{}
 
-// isRIBOpt implements the RIBOpt interface
+// isRIBOpt implements the RIBOpt interface.
 func (*disableCheckFn) isRIBOpt() {}
 
 // hasDisableCheckFn checks whether the RIBOpt slice supplied contains the
@@ -235,6 +242,46 @@ func (*disableCheckFn) isRIBOpt() {}
 func hasDisableCheckFn(opt []RIBOpt) bool {
 	for _, o := range opt {
 		if _, ok := o.(*disableCheckFn); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// DisableForwardReferences specifies that forward references should be
+// disallowed in this RIB -- for example, an NHG cannot reference a NH
+// that does not exist.
+//
+// If set for a RIB then it is applied across all network instances within the
+// RIB. If set for a RIB holder, it is set only for that network instance.
+func DisableForwardReferences() *disableForwardRef { return &disableForwardRef{} }
+
+// disableForwardRef is the internal implementation of DisableForwardReferences.
+type disableForwardRef struct{}
+
+// isRIBOpt implements the RIBOpt interface.
+func (*disableForwardRef) isRIBOpt() {}
+
+// isRHOpt indicates that this option can be used for RIBHolders (individual VRF)
+// RIBs.
+func (*disableForwardRef) isRHOpt() {}
+
+// hasDisableForwardRef checks whether the RIBOpt slice supplied contains the
+// disableForwardRef option.
+func hasDisableForwardRef(opt []RIBOpt) bool {
+	for _, o := range opt {
+		if _, ok := o.(*disableForwardRef); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// hasRHDisableForwardRef checks whether the RHOpt slice supplied contains
+// the disableForwardRef option.
+func hasRHDisableForwardRef(opt []ribHolderOpt) bool {
+	for _, o := range opt {
+		if _, ok := o.(*disableForwardRef); ok {
 			return true
 		}
 	}
@@ -250,11 +297,17 @@ func New(dn string, opt ...RIBOpt) *RIB {
 	}
 
 	rhOpt := []ribHolderOpt{}
+
 	checkRIB := !hasDisableCheckFn(opt)
 	if checkRIB {
 		rhOpt = append(rhOpt, RIBHolderCheckFn(r.checkFn))
 	}
 	r.ribCheck = checkRIB
+
+	if hasDisableForwardRef(opt) {
+		rhOpt = append(rhOpt, DisableForwardReferences())
+		r.disableForwardReferences = true
+	}
 
 	r.niRIB[dn] = NewRIBHolder(dn, rhOpt...)
 
@@ -320,6 +373,9 @@ func (r *RIB) AddNetworkInstance(name string) error {
 	rhOpt := []ribHolderOpt{}
 	if r.ribCheck {
 		rhOpt = append(rhOpt, RIBHolderCheckFn(r.checkFn))
+	}
+	if r.disableForwardReferences {
+		rhOpt = append(rhOpt, DisableForwardReferences())
 	}
 
 	r.niRIB[name] = NewRIBHolder(name, rhOpt...)
@@ -545,10 +601,19 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 			}
 		}
 	default:
-		r.addPending(op.GetId(), &pendingEntry{
-			ni: ni,
-			op: op,
-		})
+		switch r.disableForwardReferences {
+		case false:
+			r.addPending(op.GetId(), &pendingEntry{
+				ni: ni,
+				op: op,
+			})
+		default:
+			*fails = append(*fails, &OpResult{
+				ID:    op.GetId(),
+				Op:    op,
+				Error: fmt.Sprintf("operation %d has unresolved dependencies", op.GetId()),
+			})
+		}
 	}
 
 	return nil
@@ -1084,6 +1149,11 @@ func NewRIBHolder(name string, opts ...ribHolderOpt) *RIBHolder {
 		}
 		r.checkFn = checkFn
 	}
+
+	if hasRHDisableForwardRef(opts) {
+		r.disableForwardRef = true
+	}
+
 	return r
 }
 
@@ -1948,7 +2018,7 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey, explicitReplace bool) (
 		NextHop: []*aftpb.Afts_NextHopKey{e},
 	})
 	if err != nil {
-		return false, nil, fmt.Errorf("invalid NextHopGroup, %v", err)
+		return false, nil, fmt.Errorf("invalid NextHop, %v", err)
 	}
 
 	if explicitReplace && !r.nhExists(e.GetIndex()) {

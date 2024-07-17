@@ -61,7 +61,7 @@ func init() {
 var unixTS = time.Now().UnixNano
 
 // RIBHookFn is a function that is used as a hook following a change. It takes:
-//   - an OpType deterining whether an add, remove, or modify operation was sent.
+//   - an OpType determining whether an add, remove, or modify operation was sent.
 //   - the timestamp in nanoseconds since the unix epoch that a function was performed.
 //   - a string indicating the name of the network instance
 //   - a ygot.ValidatedGoStruct containing the entry that has been changed.
@@ -79,7 +79,7 @@ type RIBHookFn func(constants.OpType, int64, string, ygot.ValidatedGoStruct)
 //   - a string indicating the network instance that the operation was within
 //   - an enumerated value indicating the AFT the operation was within.
 //   - an any that indicates the impacted AFT entry's key. The function must cast
-//     the any to the relevant type.
+//     any to the relevant type.
 //   - a set of details that the handler function may utilise.
 type ResolvedEntryFn func(ribs map[string]*aft.RIB, optype constants.OpType, netinst string, aft constants.AFT, key any, dets ...ResolvedDetails)
 
@@ -125,7 +125,7 @@ type RIB struct {
 	// contains allow for entries that are pending since they have unsatifisied dependencies.
 	disableForwardReferences bool
 
-	// pendMu protects the pendingEntires map.
+	// pendMu protects the pendingEntries map.
 	pendMu sync.RWMutex
 	// pendingEntries is the set of entries that have been requested by
 	// the AddXXX methods that cannot yet be installed in the RIB because they do
@@ -189,7 +189,7 @@ type RIBHolder struct {
 
 	// refCounts is used to store counters for the number of references to next-hop
 	// groups and next-hops within the RIB. It is used to ensure that referenced NHs
-	// and NHGs cnanot be removed from the RIB.
+	// and NHGs cannot be removed from the RIB.
 	refCounts *niRefCounter
 
 	// disableForwardRef indicates that this RIB should not allow
@@ -346,7 +346,7 @@ func (r *RIB) SetPostChangeHook(fn RIBHookFn) {
 	}
 }
 
-// SetResolvedEntryHook asssigns the supplied hook to all network instance RIBs within
+// SetResolvedEntryHook assigns the supplied hook to all network instance RIBs within
 // the RIB structure.
 func (r *RIB) SetResolvedEntryHook(fn ResolvedEntryFn) {
 	r.resolvedEntryHook = fn
@@ -426,7 +426,7 @@ type OpResult struct {
 	Error string
 }
 
-// String returns the OpResult as a human readable string.
+// String returns the OpResult as a human-readable string.
 func (o *OpResult) String() string {
 	return fmt.Sprintf("ID: %d, Type: %s, Error: %v", o.ID, prototext.Format(o.Op), o.Error)
 }
@@ -504,7 +504,7 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 		}
 	case *spb.AFTOperation_Ipv6:
 		v6Prefix = t.Ipv6.GetPrefix()
-		log.V(2).Info("[op %d] attempting to add IPv6 prefix %s", op.GetId(), t.Ipv6.GetPrefix())
+		log.V(2).Infof("[op %d] attempting to add IPv6 prefix %s", op.GetId(), t.Ipv6.GetPrefix())
 		done, orig, err := niR.AddIPv6(t.Ipv6, explicitReplace)
 		switch {
 		case err != nil:
@@ -735,7 +735,7 @@ func (r *RIB) copyRIBs() (map[string]*aft.RIB, error) {
 	rib := map[string]*aft.RIB{}
 	for name, niR := range r.niRIB {
 		niR.mu.RLock()
-		// this is likely expensive on very large RIBs, but with today's implementatiom
+		// this is likely expensive on very large RIBs, but with today's implementation
 		// it seems acceptable, since we then allow the caller not to have to figure out
 		// any locking since they have their own RIB to work on.
 		dupRIB, err := ygot.DeepCopy(niR.r)
@@ -935,6 +935,9 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 		if n.GetIndex() == 0 {
 			return false, fmt.Errorf("invalid index zero for next-hop in NI %s", netInst)
 		}
+		if n.GetIpAddress() == "" {
+			return false, fmt.Errorf("invalid empty next-hop IP address for next-hop in NI %s", netInst)
+		}
 		// we always resolve next-hop entries because they can be resolved outside of gRIBI.
 		return true, nil
 	}
@@ -951,6 +954,9 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 	for _, g := range caft.NextHopGroup {
 		if g.GetId() == 0 {
 			return false, fmt.Errorf("invalid zero-index NHG")
+		}
+		if len(g.NextHop) == 0 {
+			return false, fmt.Errorf("empty next-hop-group")
 		}
 		for _, n := range g.NextHop {
 			// Zero is an invalid value for a next-hop index. GetIndex() will also return 0
@@ -1048,7 +1054,7 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 		return true, nil
 	}
 
-	// Now, we need to check that nothing references a NHG. We could do this naîvely,
+	// Now, we need to check that nothing references a NHG. We could do this naively,
 	// by walking all RIBs, but this is expensive, so rather we check the refCounter
 	// within the RIB instance.
 	for id := range caft.NextHopGroup {
@@ -1262,7 +1268,7 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey, explicitReplace bool) (b
 
 	var orig *aft.Afts_Ipv4Entry
 	// If we are replacing this entry, return the original to allow the caller to handle any
-	// refcounting that is required.
+	// recounting that is required.
 	if explicitReplace || r.ipv4Exists(e.GetPrefix()) {
 		orig = r.retrieveIPv4(e.GetPrefix())
 	}
@@ -1277,7 +1283,7 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey, explicitReplace bool) (b
 		if !ok {
 			// The checkFn validated the entry and found it to be OK, but
 			// indicated that we should not merge it into the RIB because
-			// some prerequisite was not satisifed. Based on this, we
+			// some prerequisite was not satisfied. Based on this, we
 			// return false (we didn't install it), but indicate with err == nil
 			// that the caller can retry this entry at some later point, and we'll
 			// run the checkFn again to see whether it can now be installed.
@@ -1465,7 +1471,7 @@ func (r *RIBHolder) ipv6Exists(prefix string) bool {
 }
 
 // doAddIPv6 implements the addition of the prefix pfx to the RIB using the supplied
-// newRIB as the the entries that should be merged into this RIB.
+// newRIB as the entries that should be merged into this RIB.
 func (r *RIBHolder) doAddIPv6(pfx string, newRIB *aft.RIB) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1593,7 +1599,7 @@ func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (
 		if !ok {
 			// The checkFn validated the entry and found it to be OK, but
 			// indicated that we should not merge it into the RIB because
-			// some prerequisite was not satisifed. Based on this, we
+			// some prerequisite was not satisfied. Based on this, we
 			// return false (we didn't install it), but indicate with err == nil
 			// that the caller can retry this entry at some later point, and we'll
 			// run the checkFn again to see whether it can now be installed.
@@ -2056,7 +2062,7 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey, explicitReplace bool) (
 	return true, replaced, nil
 }
 
-// nhExists returns true if the next-hop with index index exists within the RIBHolder.
+// nhExists returns true if the next-hop with index exists within the RIBHolder.
 func (r *RIBHolder) nhExists(index uint64) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -2276,7 +2282,7 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 	//    for any other entity than that individual entry.
 	//
 	// The latter is a better choice for a high-performance implementation, but
-	// its not clear that we need to worry about this for this implementation *yet*.
+	// it's not clear that we need to worry about this for this implementation *yet*.
 	// In the future we should consider a fine-grained per-entry lock.
 	r.mu.RLock()
 	defer r.mu.RUnlock()

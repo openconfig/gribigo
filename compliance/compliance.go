@@ -60,7 +60,7 @@ var (
 	defaultNetworkInstanceName = server.DefaultNetworkInstanceName
 
 	// vrfName is a name of a non-default VRF that exists on the server. It can be
-	// override by tests that have pushed a configuration to the server where they
+	// overriden by tests that have pushed a configuration to the server where they
 	// have created a name that is not the specified string.
 	vrfName = "NON-DEFAULT-VRF"
 
@@ -2031,7 +2031,7 @@ func ForwardReferencesDisallowed(c *fluent.GRIBIClient, t testing.TB, _ ...TestO
 		chk.IgnoreOperationID())
 }
 
-// IPv4EntryInvalidPrefix - Replace 203.0.113.1/32 with a syntax invalid IP address.
+// IPv4EntryInvalidPrefix - Replace 203.0.113.1/32 with a syntatically invalid IP address.
 func IPv4EntryInvalidPrefix(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
 
@@ -2039,12 +2039,8 @@ func IPv4EntryInvalidPrefix(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(11).AddNextHop(1, 1))
+			// NB: 203.0.113.1 IPv4Entry should include a CIDR mask
 			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
-		},
-		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(2).WithIPAddress("203.0.113.1"))
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(12).AddNextHop(2, 1))
-			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("198.51.100.0/24").WithNetworkInstance(vrfName).WithNextHopGroup(12).WithNextHopGroupNetworkInstance(defaultNetworkInstanceName))
 		},
 	}
 
@@ -2066,12 +2062,8 @@ func IPv4EntryMissingNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...Test
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
+			// NB: NHG 11 has not been defined
 			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
-		},
-		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(2).WithIPAddress("203.0.113.1"))
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(12).AddNextHop(2, 1))
-			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("198.51.100.0/24").WithNetworkInstance(vrfName).WithNextHopGroup(12).WithNextHopGroupNetworkInstance(defaultNetworkInstanceName))
 		},
 	}
 
@@ -2093,13 +2085,9 @@ func IPv4EntryEmptyNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
+			// // NB: NHG is specified to not include any NHs
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(11))
 			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
-		},
-		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(2).WithIPAddress("203.0.113.1"))
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(12).AddNextHop(2, 1))
-			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("198.51.100.0/24").WithNetworkInstance(vrfName).WithNextHopGroup(12).WithNextHopGroupNetworkInstance(defaultNetworkInstanceName))
 		},
 	}
 
@@ -2120,14 +2108,10 @@ func IPv4EntryEmptyNextHop(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 
 	ops := []func(){
 		func() {
+			// NB: NH has no valid actions
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1))
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(11).AddNextHop(1, 1))
 			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
-		},
-		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(2).WithIPAddress("203.0.113.1"))
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(12).AddNextHop(2, 1))
-			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("198.51.100.0/24").WithNetworkInstance(vrfName).WithNextHopGroup(12).WithNextHopGroupNetworkInstance(defaultNetworkInstanceName))
 		},
 	}
 

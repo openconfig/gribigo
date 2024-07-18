@@ -79,7 +79,7 @@ type RIBHookFn func(constants.OpType, int64, string, ygot.ValidatedGoStruct)
 //   - a string indicating the network instance that the operation was within
 //   - an enumerated value indicating the AFT the operation was within.
 //   - an any that indicates the impacted AFT entry's key. The function must cast
-//     any to the relevant type.
+//     the any to the relevant type.
 //   - a set of details that the handler function may utilise.
 type ResolvedEntryFn func(ribs map[string]*aft.RIB, optype constants.OpType, netinst string, aft constants.AFT, key any, dets ...ResolvedDetails)
 
@@ -1054,7 +1054,7 @@ func (r *RIB) canDelete(netInst string, deletionCandidate *aft.RIB) (bool, error
 		return true, nil
 	}
 
-	// Now, we need to check that nothing references a NHG. We could do this naively,
+	// Now, we need to check that nothing references a NHG. We could do this naîvely,
 	// by walking all RIBs, but this is expensive, so rather we check the refCounter
 	// within the RIB instance.
 	for id := range caft.NextHopGroup {
@@ -1268,7 +1268,7 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey, explicitReplace bool) (b
 
 	var orig *aft.Afts_Ipv4Entry
 	// If we are replacing this entry, return the original to allow the caller to handle any
-	// recounting that is required.
+	// refcounting that is required.
 	if explicitReplace || r.ipv4Exists(e.GetPrefix()) {
 		orig = r.retrieveIPv4(e.GetPrefix())
 	}

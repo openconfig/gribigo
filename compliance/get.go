@@ -157,7 +157,8 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 				fluent.IPv4Entry().
 					WithNetworkInstance(defaultNetworkInstanceName).
 					WithNextHopGroup(1).
-					WithPrefix("42.42.42.42/32"))
+					WithPrefix("42.42.42.42/32").
+				    WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}))
 		},
 	}
 
@@ -206,7 +207,87 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 		fluent.IPv4Entry().
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithNextHopGroup(1).
-			WithPrefix("42.42.42.42/32"),
+			WithPrefix("42.42.42.42/32").
+			WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
+	)
+}
+
+// GetIPv6 validates that an installed IPv6 entry is returned via the Get RPC.
+func GetIPv6(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithIndex(1).
+					WithIPAddress("192.0.2.3"))
+		},
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.NextHopGroupEntry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithID(1).
+					AddNextHop(1, 1))
+		},
+		func() {
+			c.Modify().AddEntry(t,
+				fluent.IPv6Entry().
+					WithNetworkInstance(defaultNetworkInstanceName).
+					WithNextHopGroup(1).
+					WithPrefix("2001:db8::/32").
+				    WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, wantACK, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv6Operation("2001:db8::/32").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(wantACK).
+			AsResult(),
+		chk.IgnoreOperationID(),
+	)
+
+	ctx := context.Background()
+	c.Start(ctx, t)
+	defer c.Stop(t)
+	gr, err := c.Get().
+		WithNetworkInstance(defaultNetworkInstanceName).
+		WithAFT(fluent.IPv6).
+		Send()
+
+	if err != nil {
+		t.Fatalf("got unexpected error from get, got: %v", err)
+	}
+
+	chk.GetResponseHasEntries(t, gr,
+		fluent.IPv6Entry().
+			WithNetworkInstance(defaultNetworkInstanceName).
+			WithNextHopGroup(1).
+			WithPrefix("2001:db8::/32").
+			WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
 	)
 }
 

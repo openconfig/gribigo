@@ -158,7 +158,7 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 					WithNetworkInstance(defaultNetworkInstanceName).
 					WithNextHopGroup(1).
 					WithPrefix("42.42.42.42/32").
-				    WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}))
+					WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}))
 		},
 	}
 
@@ -237,7 +237,7 @@ func GetIPv6(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 					WithNetworkInstance(defaultNetworkInstanceName).
 					WithNextHopGroup(1).
 					WithPrefix("2001:db8::/32").
-				    WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}))
+					WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}))
 		},
 	}
 

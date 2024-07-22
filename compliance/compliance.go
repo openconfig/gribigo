@@ -24,15 +24,16 @@ import (
 	"testing"
 	"time"
 
-	"google3/third_party/golang/atomic/atomic"
-	"google3/third_party/golang/grpc/codes/codes"
-	aftpb "google3/third_party/openconfig/gribi/v1/proto/gribi_aft/gribi_aft_go_proto"
-	spb "google3/third_party/openconfig/gribi/v1/proto/service/gribi_go_proto"
-	"google3/third_party/openconfig/gribigo/chk/chk"
-	"google3/third_party/openconfig/gribigo/client/client"
-	"google3/third_party/openconfig/gribigo/constants/constants"
-	"google3/third_party/openconfig/gribigo/fluent/fluent"
-	"google3/third_party/openconfig/gribigo/server/server"
+	"github.com/openconfig/gribigo/chk"
+	"github.com/openconfig/gribigo/client"
+	"github.com/openconfig/gribigo/constants"
+	"github.com/openconfig/gribigo/fluent"
+	"github.com/openconfig/gribigo/server"
+	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
+
+	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 // init statically sets the first Election ID used by the compliance tests to 1, since 0
@@ -115,6 +116,9 @@ type Test struct {
 	RequiresMPLS bool
 	// RequiresIPv6 marks a test that requires IPv6 support in the gRIBI server.
 	RequiresIPv6 bool
+	// RequiresDisallowedForwardReferences indicates that the gRIBI server must have
+	// a mode (or always operate in a mode) that disallows forward references.
+	RequiresDisallowedForwardReferences bool
 }
 
 // TestSpec is a description of a test.
@@ -364,6 +368,11 @@ var (
 		},
 	}, {
 		In: Test{
+			Fn:        makeTestWithACK(GetIPv6, fluent.InstalledInRIB),
+			ShortName: "Get for installed IPv6 Entry - RIB ACK",
+		},
+	}, {
+		In: Test{
 			Fn:        makeTestWithACK(GetIPv4Chain, fluent.InstalledInRIB),
 			ShortName: "Get for installed chain of entries - RIB ACK",
 		},
@@ -388,6 +397,12 @@ var (
 		In: Test{
 			Fn:             makeTestWithACK(GetIPv4, fluent.InstalledInFIB),
 			ShortName:      "Get for installed IPv4 Entry - FIB ACK",
+			RequiresFIBACK: true,
+		},
+	}, {
+		In: Test{
+			Fn:             makeTestWithACK(GetIPv6, fluent.InstalledInFIB),
+			ShortName:      "Get for installed IPv6 Entry - FIB ACK",
 			RequiresFIBACK: true,
 		},
 	}, {
@@ -538,8 +553,14 @@ var (
 		},
 	}, {
 		In: Test{
-			Fn:        makeTestWithACK(AddNHGReferencingToUknownNH, fluent.InstalledInFIB),
-			ShortName: "Add IPEntry with NHG referencing NextHops to Down Port",
+			Fn:                                  ForwardReferencesDisallowed,
+			ShortName:                           "Add a forward reference to a server that disallows it",
+			RequiresDisallowedForwardReferences: true,
+		}, {
+			In: Test{
+				Fn:        makeTestWithACK(AddNHGReferencingToUknownNH, fluent.InstalledInFIB),
+				ShortName: "Add IPEntry with NHG referencing NextHops to Down Port",
+			},
 		},
 	}}
 )
@@ -1932,7 +1953,8 @@ func AddToNonexistentNetworkInstance(c *fluent.GRIBIClient, t testing.TB, _ ...T
 			WithOperationType(constants.Add).
 			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult(),
-		chk.IgnoreOperationID())
+		chk.IgnoreOperationID(),
+	)
 }
 
 // Tests a case where two nexthops with duplicate contents are temporarily programmed.
@@ -1972,6 +1994,27 @@ func AddDuplicateNexthop(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			WithNextHopOperation(2).
 			WithOperationType(constants.Add).
 			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// ForwardReferencesDisallowed tests a case where a server with disallowed forward references is expected to error
+// when forward references are supplied.
+func ForwardReferencesDisallowed(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithID(1).WithNetworkInstance(defaultNetworkInstanceName).AddNextHop(1, 1))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult(),
 		chk.IgnoreOperationID())
 }

@@ -936,6 +936,9 @@ var (
 // WithDecapsulateHeader specifies that the next-hop should apply an action to decapsulate
 // the packet from the specified header, h.
 func (n *nextHopEntry) WithDecapsulateHeader(h Header) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.DecapsulateHeader = encapMap[h]
 	return n
 }
@@ -943,6 +946,9 @@ func (n *nextHopEntry) WithDecapsulateHeader(h Header) *nextHopEntry {
 // WithEncapsulateHeader specifies that the next-hop should apply an action to encapsulate
 // the packet with the specified header, h.
 func (n *nextHopEntry) WithEncapsulateHeader(h Header) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.EncapsulateHeader = encapMap[h]
 	return n
 }

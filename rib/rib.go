@@ -935,9 +935,6 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 		if n.GetIndex() == 0 {
 			return false, fmt.Errorf("invalid index zero for next-hop in NI %s", netInst)
 		}
-		if n.GetIpAddress() == "" {
-			return false, fmt.Errorf("invalid empty next-hop IP address for next-hop in NI %s", netInst)
-		}
 		// we always resolve next-hop entries because they can be resolved outside of gRIBI.
 		return true, nil
 	}

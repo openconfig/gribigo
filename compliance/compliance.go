@@ -554,23 +554,16 @@ var (
 		},
 	}, {
 		In: Test{
-			Fn:        IPv4EntryMissingNextHopGroup,
-			Reference: "TE-3.1.2",
-			ShortName: "Error: Missing NextHopGroup for the IPv4Entry",
+			Fn:                                  IPv4EntryMissingNextHopGroup,
+			Reference:                           "TE-3.1.2",
+			ShortName:                           "Error: Missing NextHopGroup for the IPv4Entry",
 			RequiresDisallowedForwardReferences: true,
 		},
 	}, {
 		In: Test{
-			Fn:        IPv4EntryEmptyNextHopGroup,
-			Reference: "TE-3.1.3",
-			ShortName: "Error: Empty NextHopGroup for the IPv4Entry",
-			RequiresDisallowedForwardReferences: true,
-		},
-	}, {
-		In: Test{
-			Fn:        IPv4EntryEmptyNextHop,
-			Reference: "TE-3.1.4",
-			ShortName: "Error: Empty NextHop for the IPv4Entry",
+			Fn:                                  IPv4EntryEmptyNextHopGroup,
+			Reference:                           "TE-3.1.3",
+			ShortName:                           "Error: Empty NextHopGroup for the IPv4Entry",
 			RequiresDisallowedForwardReferences: true,
 		},
 	}}
@@ -827,7 +820,7 @@ func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
 	ops := []func(){
 		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1))
 		},
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
@@ -1348,8 +1341,7 @@ func ReplaceMissingNH(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 			c.Modify().ReplaceEntry(t,
 				fluent.NextHopEntry().
 					WithNetworkInstance(defaultNetworkInstanceName).
-					WithIndex(42).
-					WithIPAddress("192.0.2.3"))
+					WithIndex(42))
 		},
 	}
 
@@ -2087,30 +2079,6 @@ func IPv4EntryEmptyNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
 			// // NB: NHG is specified to not include any NHs
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(11))
-			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
-		},
-	}
-
-	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
-
-	chk.HasResult(t, res,
-		fluent.OperationResult().
-			WithIPv4Operation("203.0.113.1/32").
-			WithOperationType(constants.Add).
-			WithProgrammingResult(fluent.ProgrammingFailed).
-			AsResult(),
-		chk.IgnoreOperationID())
-}
-
-// IPv4EntryEmptyNextHop - Empty NextHop for the IPv4Entry 203.0.113.1/32.
-func IPv4EntryEmptyNextHop(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
-	defer flushServer(c, t)
-
-	ops := []func(){
-		func() {
-			// NB: NH has no valid actions
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1))
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(11).AddNextHop(1, 1))
 			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
 		},
 	}

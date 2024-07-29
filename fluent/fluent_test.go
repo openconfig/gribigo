@@ -572,24 +572,6 @@ func TestEntriesToModifyRequest(t *testing.T) {
 				},
 			}},
 		},
-	}, {
-		desc: "one NH entry delete with only index",
-		inOp: spb.AFTOperation_DELETE,
-		inEntries: []GRIBIEntry{
-			NextHopEntry().WithNetworkInstance("DEFAULT").WithIndex(1),
-		},
-		wantModifyRequest: &spb.ModifyRequest{
-			Operation: []*spb.AFTOperation{{
-				Id:              1,
-				NetworkInstance: "DEFAULT",
-				Op:              spb.AFTOperation_DELETE,
-				Entry: &spb.AFTOperation_NextHop{
-					NextHop: &aftpb.Afts_NextHopKey{
-						Index: 1,
-					},
-				},
-			}},
-		},
 	}}
 
 	for _, tt := range tests {

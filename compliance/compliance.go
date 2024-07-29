@@ -42,7 +42,7 @@ func init() {
 	electionID.Store(1)
 }
 
-// electionID is a atomically updated uint64 that we use for the election ID in the tests
+// electionID is an atomically updated uint64 that we use for the election ID in the tests
 // this ensures that we do not have tests that specify an election ID that is older than
 // the last tests', and thus fail due to the state of the server.
 var electionID = &atomic.Uint64{}
@@ -83,7 +83,7 @@ func SetNonDefaultVRFName(n string) {
 // Test describes a test within the compliance library.
 type Test struct {
 	// Fn is the function to be run for a test. Tests must not error if additional
-	// TestOpt arguments are supplied to them, but silently ignore them so as to allow
+	// TestOpt arguments are supplied to them, but silently ignore them to allow
 	// a consistent set of options to be passed to the test suite.
 	Fn func(*fluent.GRIBIClient, testing.TB, ...TestOpt)
 	// Description is a longer description of what the test does such that it can
@@ -101,7 +101,7 @@ type Test struct {
 	// RequiresServerReordering marks a test that requires the implementation of server-side
 	// reordering of transactions rather than an immediate NACK. Currently, some implementations
 	// immediately NACK forward references, which causes some tests to fail. The reference
-	// implementation handles reodering.
+	// implementation handles reordering.
 	RequiresServerReordering bool
 	// RequiresImplicitReplace marks a test that requires the implementation of AFTOperation
 	// ADD for entries that already exist.
@@ -557,14 +557,34 @@ var (
 			ShortName:                           "Add a forward reference to a server that disallows it",
 			RequiresDisallowedForwardReferences: true,
 		},
+	}, {
+		In: Test{
+			Fn:        IPv4EntryInvalidPrefix,
+			Reference: "TE-3.1.1",
+			ShortName: "Error: Invalid prefix for the IPv4Entry",
+		},
+	}, {
+		In: Test{
+			Fn:                                  IPv4EntryMissingNextHopGroup,
+			Reference:                           "TE-3.1.2",
+			ShortName:                           "Error: Missing NextHopGroup for the IPv4Entry",
+			RequiresDisallowedForwardReferences: true,
+		},
+	}, {
+		In: Test{
+			Fn:                                  IPv4EntryEmptyNextHopGroup,
+			Reference:                           "TE-3.1.3",
+			ShortName:                           "Error: Empty NextHopGroup for the IPv4Entry",
+			RequiresDisallowedForwardReferences: true,
+		},
 	}}
 )
 
 // awaitTimeout calls a fluent client Await, adding a timeout to the context.
 func awaitTimeout(ctx context.Context, c *fluent.GRIBIClient, t testing.TB, timeout time.Duration) error {
-	subctx, cancel := context.WithTimeout(ctx, timeout)
+	subCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return c.Await(subctx, t)
+	return c.Await(subCtx, t)
 }
 
 // ModifyConnection is a test that opens a Modify RPC. It determines
@@ -635,7 +655,7 @@ func ModifyConnectionSinglePrimaryPreserve(c *fluent.GRIBIClient, t testing.TB, 
 }
 
 // InvalidElectionIDAndAFTOperation ensures that the server returns an error when the client
-// attempts to update the election ID whilst simultaenously specifying an operation.
+// attempts to update the election ID whilst simultaneously specifying an operation.
 func InvalidElectionIDAndAFTOperation(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer electionID.Inc()
 	c.Connection().WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence().WithInitialElectionID(electionID.Load(), 0)
@@ -644,7 +664,7 @@ func InvalidElectionIDAndAFTOperation(c *fluent.GRIBIClient, t testing.TB, _ ...
 
 	c.StartSending(context.Background(), t)
 
-	// Inject a specfic invalid entry that specifies election ID in two places along
+	// Inject a specific invalid entry that specifies election ID in two places along
 	// with an entry.
 	c.Modify().InjectRequest(t, &spb.ModifyRequest{
 		ElectionId: &spb.Uint128{
@@ -691,7 +711,7 @@ func InvalidElectionIDAndParams(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 
 	c.StartSending(context.Background(), t)
 
-	// Inject a specfic invalid entry that specifies election ID in two places along
+	// Inject a specific invalid entry that specifies election ID in two places along
 	// with the session parameters.
 	c.Modify().InjectRequest(t, &spb.ModifyRequest{
 		ElectionId: &spb.Uint128{
@@ -716,9 +736,9 @@ func InvalidElectionIDAndParams(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 	chk.HasRecvClientErrorWithStatus(t, err, want, chk.IgnoreDetails())
 }
 
-// InvalidElectionIDAndAFTOperation validates that the server returns an error when a client
+// InvalidParamsAndAFTOperation validates that the server returns an error when a client
 // specifies session parameters (which must be the first message in the stream) and an AFTOperation
-// simulateously.
+// simultaneously.
 func InvalidParamsAndAFTOperation(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer electionID.Inc()
 	c.Connection().WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence().WithInitialElectionID(electionID.Load(), 0)
@@ -805,7 +825,7 @@ func AddIPv4Entry(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 	)
 }
 
-// addIPv4Random adds an IPv4 Entry, shuffling the order of the entries, and
+// AddIPv4EntryRandom adds an IPv4 Entry, shuffling the order of the entries, and
 // validating those entries are ACKed.
 func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
@@ -1612,7 +1632,7 @@ func AddIPv4ToMultipleNHsSingleRequest(c *fluent.GRIBIClient, wantACK fluent.Pro
 }
 
 // AddIPv4ToMultipleNHsMultipleRequests creates an IPv4 entry which references a NHG containing
-// 2 NHs within multiple ModifyReqests, validating that they are installed in the specified RIB
+// 2 NHs within multiple ModifyRequests, validating that they are installed in the specified RIB
 // or FIB according to wantACK.
 func AddIPv4ToMultipleNHsMultipleRequests(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
@@ -1673,7 +1693,7 @@ func DeleteReferencedNHGFailure(c *fluent.GRIBIClient, wantACK fluent.Programmin
 		chk.IgnoreOperationID())
 }
 
-// DeleteReferencedNHFailure attempts to delete a NH entry that is referened from the RIB
+// DeleteReferencedNHFailure attempts to delete a NH entry that is referenced from the RIB
 // and expects a failure.
 func DeleteReferencedNHFailure(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
@@ -1784,7 +1804,7 @@ func DeleteNextHop(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t te
 
 // AddDeleteAdd tests that when a single ModifyRequest contains a sequence of operations,
 // each is acknowledged separately by the server. Note that this does not imply that the
-// transactions cannot be coaesced when writing to hardware, but in order to prevent
+// transactions cannot be coalesced when writing to hardware, but in order to prevent
 // pending transactions at the client, all must be acknowledged.
 func AddDeleteAdd(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
@@ -1952,7 +1972,7 @@ func AddToNonexistentNetworkInstance(c *fluent.GRIBIClient, t testing.TB, _ ...T
 	)
 }
 
-// Tests a case where two nexthops with duplicate contents are temporarily programmed.
+// AddDuplicateNexthop tests a case where two nexthops with duplicate contents are temporarily programmed.
 func AddDuplicateNexthop(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
 	ops := []func(){
@@ -2008,6 +2028,117 @@ func ForwardReferencesDisallowed(c *fluent.GRIBIClient, t testing.TB, _ ...TestO
 	chk.HasResult(t, res,
 		fluent.OperationResult().
 			WithNextHopGroupOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// IPv4EntryInvalidPrefix - Replace 203.0.113.1/32 with a syntatically invalid IP address.
+func IPv4EntryInvalidPrefix(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(11).AddNextHop(1, 1))
+			// NB: 203.0.113.1 IPv4Entry should include a CIDR mask
+			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(11).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("203.0.113.1").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// IPv4EntryMissingNextHopGroup - Missing NextHopGroup for the IPv4Entry 203.0.113.1/32.
+func IPv4EntryMissingNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
+			// NB: NHG 11 has not been defined
+			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("203.0.113.1/32").
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID())
+}
+
+// IPv4EntryEmptyNextHopGroup - Empty NextHopGroup for the IPv4Entry 203.0.113.1/32.
+func IPv4EntryEmptyNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+
+	ops := []func(){
+		func() {
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
+			// // NB: NHG is specified to not include any NHs
+			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(11))
+			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
+		},
+	}
+
+	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(11).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithIPv4Operation("203.0.113.1/32").
 			WithOperationType(constants.Add).
 			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult(),

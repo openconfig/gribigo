@@ -2040,6 +2040,22 @@ func IPv4EntryInvalidPrefix(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(11).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
 			WithIPv4Operation("203.0.113.1").
 			WithOperationType(constants.Add).
 			WithProgrammingResult(fluent.ProgrammingFailed).
@@ -2060,6 +2076,14 @@ func IPv4EntryMissingNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...Test
 	}
 
 	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().
@@ -2084,6 +2108,22 @@ func IPv4EntryEmptyNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 	}
 
 	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopOperation(1).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.InstalledInFIB).
+			AsResult(),
+		chk.IgnoreOperationID())
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithNextHopGroupOperation(11).
+			WithOperationType(constants.Add).
+			WithProgrammingResult(fluent.ProgrammingFailed).
+			AsResult(),
+		chk.IgnoreOperationID())
 
 	chk.HasResult(t, res,
 		fluent.OperationResult().

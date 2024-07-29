@@ -796,9 +796,7 @@ type nextHopEntry struct {
 // gRIBI.
 func NextHopEntry() *nextHopEntry {
 	return &nextHopEntry{
-		pb: &aftpb.Afts_NextHopKey{
-			NextHop: &aftpb.Afts_NextHop{},
-		},
+		pb: &aftpb.Afts_NextHopKey{},
 	}
 }
 
@@ -818,12 +816,19 @@ func (n *nextHopEntry) WithNetworkInstance(ni string) *nextHopEntry {
 // WithIPAddress specifies an IP address to be used for the next-hop. The IP
 // address is resolved within the network instance specified by WithNextHopNetworkInstance.
 func (n *nextHopEntry) WithIPAddress(addr string) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.IpAddress = &wpb.StringValue{Value: addr}
+
 	return n
 }
 
 // WithInterfaceRef specifies an interface to be used for the next-hop.
 func (n *nextHopEntry) WithInterfaceRef(name string) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.InterfaceRef = &aftpb.Afts_NextHop_InterfaceRef{
 		Interface: &wpb.StringValue{Value: name},
 	}
@@ -833,6 +838,9 @@ func (n *nextHopEntry) WithInterfaceRef(name string) *nextHopEntry {
 // WithSubinterfaceRef specifies both an interface and a specific
 // subinterface to be used for the next-hop.
 func (n *nextHopEntry) WithSubinterfaceRef(name string, subinterface uint64) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.InterfaceRef = &aftpb.Afts_NextHop_InterfaceRef{
 		Interface:    &wpb.StringValue{Value: name},
 		Subinterface: &wpb.UintValue{Value: subinterface},
@@ -842,6 +850,9 @@ func (n *nextHopEntry) WithSubinterfaceRef(name string, subinterface uint64) *ne
 
 // WithMacAddress specifies a MAC address to be used for the next-hop.
 func (n *nextHopEntry) WithMacAddress(mac string) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.MacAddress = &wpb.StringValue{Value: mac}
 	return n
 }
@@ -850,6 +861,9 @@ func (n *nextHopEntry) WithMacAddress(mac string) *nextHopEntry {
 // the next-hop, and the source and destination IP addresses for the
 // packet.
 func (n *nextHopEntry) WithIPinIP(srcIP, dstIP string) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.IpInIp = &aftpb.Afts_NextHop_IpInIp{
 		SrcIp: &wpb.StringValue{Value: srcIP},
 		DstIp: &wpb.StringValue{Value: dstIP},
@@ -863,6 +877,9 @@ func (n *nextHopEntry) WithIPinIP(srcIP, dstIP string) *nextHopEntry {
 // lookup uses the input packet within the specified network instance to determine the
 // next-hop.
 func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.NetworkInstance = &wpb.StringValue{Value: ni}
 	return n
 }
@@ -871,6 +888,9 @@ func (n *nextHopEntry) WithNextHopNetworkInstance(ni string) *nextHopEntry {
 // packet. In this case, the exact value of the label to be popped need not be
 // specified.
 func (n *nextHopEntry) WithPopTopLabel() *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.PopTopLabel = &wpb.BoolValue{Value: true}
 	return n
 }
@@ -880,6 +900,9 @@ func (n *nextHopEntry) WithPopTopLabel() *nextHopEntry {
 // in the inner-most to the outer-most such that the first label is the closest to the
 // bottom of the stack.
 func (n *nextHopEntry) WithPushedLabelStack(labels ...uint32) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.PushedMplsLabelStack = []*aftpb.Afts_NextHop_PushedMplsLabelStackUnion{}
 	for _, v := range labels {
 		lbl := &aftpb.Afts_NextHop_PushedMplsLabelStackUnion{
@@ -913,6 +936,9 @@ var (
 // WithDecapsulateHeader specifies that the next-hop should apply an action to decapsulate
 // the packet from the specified header, h.
 func (n *nextHopEntry) WithDecapsulateHeader(h Header) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.DecapsulateHeader = encapMap[h]
 	return n
 }
@@ -920,6 +946,9 @@ func (n *nextHopEntry) WithDecapsulateHeader(h Header) *nextHopEntry {
 // WithEncapsulateHeader specifies that the next-hop should apply an action to encapsulate
 // the packet with the specified header, h.
 func (n *nextHopEntry) WithEncapsulateHeader(h Header) *nextHopEntry {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
 	n.pb.NextHop.EncapsulateHeader = encapMap[h]
 	return n
 }

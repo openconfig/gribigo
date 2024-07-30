@@ -91,7 +91,14 @@ func TestGRIBIClient(t *testing.T) {
 			c.Modify().AddEntry(t, NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(1).AddNextHop(1, 1))
 			c.Modify().AddEntry(t, IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(1))
 			c.StartSending(context.Background(), t)
-			c.Await(context.Background(), t)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer func() {
+				cancel()
+				t.Fatalf("context was cancelled")
+			}()
+
+			c.Await(ctx, t)
 			c.Stop(t)
 		},
 	}, {

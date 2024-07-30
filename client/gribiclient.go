@@ -218,14 +218,13 @@ func (c *Client) Dial(ctx context.Context, addr string, opts ...DialOpt) error {
 	// TODO(robjs): translate any options within the dial options here, we may
 	// want to consider just accepting some gRPC dialoptions directly.
 
-	dialOpts := []grpc.DialOption{grpc.WithBlock()}
-
+	dialOpts := []grpc.DialOption{}
 	tlsc := credentials.NewTLS(&tls.Config{
 		InsecureSkipVerify: true,
 	})
 	dialOpts = append(dialOpts, grpc.WithTransportCredentials(tlsc))
 
-	conn, err := grpc.DialContext(ctx, addr, dialOpts...)
+	conn, err := grpc.NewClient(addr, dialOpts...)
 	if err != nil {
 		return fmt.Errorf("cannot dial remote system, %v", err)
 	}
@@ -679,6 +678,9 @@ type OpResult struct {
 	// ClientError describes an error that is internal to the client.
 	ClientError string
 
+	// ServerError describes an error provided from the gRIBI server.
+	ServerError string
+
 	// ProgrammingResult stores the result of an AFT operation on the server.
 	ProgrammingResult spb.AFTResult_Status
 
@@ -711,7 +713,11 @@ func (o *OpResult) String() string {
 	}
 
 	if v := o.ClientError; v != "" {
-		buf.WriteString(fmt.Sprintf(" With Error: %s", v))
+		buf.WriteString(fmt.Sprintf(" With Client Error: %s", v))
+	}
+
+	if v := o.ServerError; v != "" {
+		buf.WriteString(fmt.Sprintf(" With Server Error: %s", v))
 	}
 	buf.WriteString(">")
 
@@ -1026,6 +1032,7 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 		Latency:           n - v.Timestamp,
 		OperationID:       op.GetId(),
 		ProgrammingResult: op.GetStatus(),
+		ServerError:       op.GetErrorDetails().GetErrorMessage(),
 		Details:           det,
 	}, nil
 }

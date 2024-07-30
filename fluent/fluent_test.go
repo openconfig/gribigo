@@ -62,7 +62,7 @@ func TestGRIBIClient(t *testing.T) {
 		desc: "simple connection to invalid server",
 		inFn: func(_ string, t testing.TB) {
 			c := NewClient()
-			c.Connection().WithTarget("some.failing.dns.name:noport")
+			c.Connection().WithTarget("http\r://foo.com/")
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			c.Start(ctx, t)
@@ -590,24 +590,6 @@ func TestEntriesToModifyRequest(t *testing.T) {
 								Value: 15169,
 							},
 						},
-					},
-				},
-			}},
-		},
-	}, {
-		desc: "one NH entry delete with only index",
-		inOp: spb.AFTOperation_DELETE,
-		inEntries: []GRIBIEntry{
-			NextHopEntry().WithNetworkInstance("DEFAULT").WithIndex(1),
-		},
-		wantModifyRequest: &spb.ModifyRequest{
-			Operation: []*spb.AFTOperation{{
-				Id:              1,
-				NetworkInstance: "DEFAULT",
-				Op:              spb.AFTOperation_DELETE,
-				Entry: &spb.AFTOperation_NextHop{
-					NextHop: &aftpb.Afts_NextHopKey{
-						Index: 1,
 					},
 				},
 			}},

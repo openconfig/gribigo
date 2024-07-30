@@ -15,6 +15,7 @@
 package compliance
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -42,8 +43,15 @@ func TestCompliance(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot load credentials, got err: %v", err)
 			}
+			fmt.Printf("%s\n", jsonConfig)
 
-			d, err := lemming.New("DUT", "", creds, lemming.WithInitialConfig(jsonConfig), lemming.WithGNMIAddr(":0"), lemming.WithGRIBIAddr(":0"))
+			lemmingOpts := []lemming.Option{creds, lemming.WithInitialConfig(jsonConfig), lemming.WithGNMIAddr(":0"), lemming.WithGRIBIAddr(":0")}
+
+			if tt.In.RequiresDisallowedForwardReferences {
+				lemmingOpts = append(lemmingOpts, lemming.WithGRIBIOpts(server.WithNoRIBForwardReferences()))
+			}
+
+			d, err := lemming.New("DUT", "", lemmingOpts...)
 			if err != nil {
 				t.Fatalf("cannot start server, %v", err)
 			}

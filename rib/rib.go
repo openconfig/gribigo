@@ -29,7 +29,6 @@ import (
 	"github.com/openconfig/goyang/pkg/yang"
 	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/gribigo/constants"
-	wpb "github.com/openconfig/ygot/proto/ywrapper"
 	"github.com/openconfig/ygot/protomap"
 	"github.com/openconfig/ygot/ygot"
 	"github.com/openconfig/ygot/ytypes"
@@ -41,6 +40,7 @@ import (
 	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
 
 // Schema for the AFT model used by the RIB -- we set a global to ensure that
@@ -61,7 +61,7 @@ func init() {
 var unixTS = time.Now().UnixNano
 
 // RIBHookFn is a function that is used as a hook following a change. It takes:
-//   - an OpType deterining whether an add, remove, or modify operation was sent.
+//   - an OpType determining whether an add, remove, or modify operation was sent.
 //   - the timestamp in nanoseconds since the unix epoch that a function was performed.
 //   - a string indicating the name of the network instance
 //   - a ygot.ValidatedGoStruct containing the entry that has been changed.
@@ -121,8 +121,11 @@ type RIB struct {
 	defaultName string
 	// ribCheck indicates whether this RIB is running the RIB check function.
 	ribCheck bool
+	// disableForwardReferences indicates whether this RIB and the VRF RIBs it
+	// contains allow for entries that are pending since they have unsatifisied dependencies.
+	disableForwardReferences bool
 
-	// pendMu protects the pendingCandidates.
+	// pendMu protects the pendingEntries map.
 	pendMu sync.RWMutex
 	// pendingEntries is the set of entries that have been requested by
 	// the AddXXX methods that cannot yet be installed in the RIB because they do
@@ -186,8 +189,12 @@ type RIBHolder struct {
 
 	// refCounts is used to store counters for the number of references to next-hop
 	// groups and next-hops within the RIB. It is used to ensure that referenced NHs
-	// and NHGs cnanot be removed from the RIB.
+	// and NHGs cannot be removed from the RIB.
 	refCounts *niRefCounter
+
+	// disableForwardRef indicates that this RIB should not allow
+	// references to entities that do not yet exist.
+	disableForwardRef bool
 }
 
 // niRefCounter stores reference counters for a particular network instance.
@@ -227,7 +234,7 @@ func DisableRIBCheckFn() *disableCheckFn { return &disableCheckFn{} }
 // disableCheckFn is the internal implementation of DisableRIBCheckFn.
 type disableCheckFn struct{}
 
-// isRIBOpt implements the RIBOpt interface
+// isRIBOpt implements the RIBOpt interface.
 func (*disableCheckFn) isRIBOpt() {}
 
 // hasDisableCheckFn checks whether the RIBOpt slice supplied contains the
@@ -235,6 +242,46 @@ func (*disableCheckFn) isRIBOpt() {}
 func hasDisableCheckFn(opt []RIBOpt) bool {
 	for _, o := range opt {
 		if _, ok := o.(*disableCheckFn); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// DisableForwardReferences specifies that forward references should be
+// disallowed in this RIB -- for example, an NHG cannot reference a NH
+// that does not exist.
+//
+// If set for a RIB then it is applied across all network instances within the
+// RIB. If set for a RIB holder, it is set only for that network instance.
+func DisableForwardReferences() *disableForwardRef { return &disableForwardRef{} }
+
+// disableForwardRef is the internal implementation of DisableForwardReferences.
+type disableForwardRef struct{}
+
+// isRIBOpt implements the RIBOpt interface.
+func (*disableForwardRef) isRIBOpt() {}
+
+// isRHOpt indicates that this option can be used for RIBHolders (individual VRF)
+// RIBs.
+func (*disableForwardRef) isRHOpt() {}
+
+// hasDisableForwardRef checks whether the RIBOpt slice supplied contains the
+// disableForwardRef option.
+func hasDisableForwardRef(opt []RIBOpt) bool {
+	for _, o := range opt {
+		if _, ok := o.(*disableForwardRef); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// hasRHDisableForwardRef checks whether the RHOpt slice supplied contains
+// the disableForwardRef option.
+func hasRHDisableForwardRef(opt []ribHolderOpt) bool {
+	for _, o := range opt {
+		if _, ok := o.(*disableForwardRef); ok {
 			return true
 		}
 	}
@@ -250,11 +297,17 @@ func New(dn string, opt ...RIBOpt) *RIB {
 	}
 
 	rhOpt := []ribHolderOpt{}
+
 	checkRIB := !hasDisableCheckFn(opt)
 	if checkRIB {
 		rhOpt = append(rhOpt, RIBHolderCheckFn(r.checkFn))
 	}
 	r.ribCheck = checkRIB
+
+	if hasDisableForwardRef(opt) {
+		rhOpt = append(rhOpt, DisableForwardReferences())
+		r.disableForwardReferences = true
+	}
 
 	r.niRIB[dn] = NewRIBHolder(dn, rhOpt...)
 
@@ -293,7 +346,7 @@ func (r *RIB) SetPostChangeHook(fn RIBHookFn) {
 	}
 }
 
-// SetResolvedEntryHook asssigns the supplied hook to all network instance RIBs within
+// SetResolvedEntryHook assigns the supplied hook to all network instance RIBs within
 // the RIB structure.
 func (r *RIB) SetResolvedEntryHook(fn ResolvedEntryFn) {
 	r.resolvedEntryHook = fn
@@ -320,6 +373,9 @@ func (r *RIB) AddNetworkInstance(name string) error {
 	rhOpt := []ribHolderOpt{}
 	if r.ribCheck {
 		rhOpt = append(rhOpt, RIBHolderCheckFn(r.checkFn))
+	}
+	if r.disableForwardReferences {
+		rhOpt = append(rhOpt, DisableForwardReferences())
 	}
 
 	r.niRIB[name] = NewRIBHolder(name, rhOpt...)
@@ -370,7 +426,7 @@ type OpResult struct {
 	Error string
 }
 
-// String returns the OpResult as a human readable string.
+// String returns the OpResult as a human-readable string.
 func (o *OpResult) String() string {
 	return fmt.Sprintf("ID: %d, Type: %s, Error: %v", o.ID, prototext.Format(o.Op), o.Error)
 }
@@ -448,7 +504,7 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 		}
 	case *spb.AFTOperation_Ipv6:
 		v6Prefix = t.Ipv6.GetPrefix()
-		log.V(2).Info("[op %d] attempting to add IPv6 prefix %s", op.GetId(), t.Ipv6.GetPrefix())
+		log.V(2).Infof("[op %d] attempting to add IPv6 prefix %s", op.GetId(), t.Ipv6.GetPrefix())
 		done, orig, err := niR.AddIPv6(t.Ipv6, explicitReplace)
 		switch {
 		case err != nil:
@@ -545,10 +601,19 @@ func (r *RIB) addEntryInternal(ni string, op *spb.AFTOperation, oks, fails *[]*O
 			}
 		}
 	default:
-		r.addPending(op.GetId(), &pendingEntry{
-			ni: ni,
-			op: op,
-		})
+		switch r.disableForwardReferences {
+		case false:
+			r.addPending(op.GetId(), &pendingEntry{
+				ni: ni,
+				op: op,
+			})
+		default:
+			*fails = append(*fails, &OpResult{
+				ID:    op.GetId(),
+				Op:    op,
+				Error: fmt.Sprintf("operation %d has unresolved dependencies", op.GetId()),
+			})
+		}
 	}
 
 	return nil
@@ -670,7 +735,7 @@ func (r *RIB) copyRIBs() (map[string]*aft.RIB, error) {
 	rib := map[string]*aft.RIB{}
 	for name, niR := range r.niRIB {
 		niR.mu.RLock()
-		// this is likely expensive on very large RIBs, but with today's implementatiom
+		// this is likely expensive on very large RIBs, but with today's implementation
 		// it seems acceptable, since we then allow the caller not to have to figure out
 		// any locking since they have their own RIB to work on.
 		dupRIB, err := ygot.DeepCopy(niR.r)
@@ -887,6 +952,9 @@ func (r *RIB) canResolve(netInst string, candidate *aft.RIB) (bool, error) {
 		if g.GetId() == 0 {
 			return false, fmt.Errorf("invalid zero-index NHG")
 		}
+		if len(g.NextHop) == 0 {
+			return false, fmt.Errorf("empty next-hop-group")
+		}
 		for _, n := range g.NextHop {
 			// Zero is an invalid value for a next-hop index. GetIndex() will also return 0
 			// if the NH index is nil, which is also invalid - so handle them together.
@@ -1084,6 +1152,11 @@ func NewRIBHolder(name string, opts ...ribHolderOpt) *RIBHolder {
 		}
 		r.checkFn = checkFn
 	}
+
+	if hasRHDisableForwardRef(opts) {
+		r.disableForwardRef = true
+	}
+
 	return r
 }
 
@@ -1207,7 +1280,7 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey, explicitReplace bool) (b
 		if !ok {
 			// The checkFn validated the entry and found it to be OK, but
 			// indicated that we should not merge it into the RIB because
-			// some prerequisite was not satisifed. Based on this, we
+			// some prerequisite was not satisfied. Based on this, we
 			// return false (we didn't install it), but indicate with err == nil
 			// that the caller can retry this entry at some later point, and we'll
 			// run the checkFn again to see whether it can now be installed.
@@ -1395,7 +1468,7 @@ func (r *RIBHolder) ipv6Exists(prefix string) bool {
 }
 
 // doAddIPv6 implements the addition of the prefix pfx to the RIB using the supplied
-// newRIB as the the entries that should be merged into this RIB.
+// newRIB as the entries that should be merged into this RIB.
 func (r *RIBHolder) doAddIPv6(pfx string, newRIB *aft.RIB) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1523,7 +1596,7 @@ func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (
 		if !ok {
 			// The checkFn validated the entry and found it to be OK, but
 			// indicated that we should not merge it into the RIB because
-			// some prerequisite was not satisifed. Based on this, we
+			// some prerequisite was not satisfied. Based on this, we
 			// return false (we didn't install it), but indicate with err == nil
 			// that the caller can retry this entry at some later point, and we'll
 			// run the checkFn again to see whether it can now be installed.
@@ -1986,7 +2059,7 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey, explicitReplace bool) (
 	return true, replaced, nil
 }
 
-// nhExists returns true if the next-hop with index index exists within the RIBHolder.
+// nhExists returns true if the next-hop with index exists within the RIBHolder.
 func (r *RIBHolder) nhExists(index uint64) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -2206,7 +2279,7 @@ func (r *RIBHolder) GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetRespo
 	//    for any other entity than that individual entry.
 	//
 	// The latter is a better choice for a high-performance implementation, but
-	// its not clear that we need to worry about this for this implementation *yet*.
+	// it's not clear that we need to worry about this for this implementation *yet*.
 	// In the future we should consider a fine-grained per-entry lock.
 	r.mu.RLock()
 	defer r.mu.RUnlock()

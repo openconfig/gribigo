@@ -71,6 +71,32 @@ func hasIgnoreOperationID(opt []resultOpt) bool {
 	return false
 }
 
+// includeServerError is an option that specifies that the server
+// error message field should be compared in an OpResult.
+type includeServerError struct{}
+
+// isHasResultOpt implements the resultOpt interface.
+func (*includeServerError) isHasResultOpt() {}
+
+// IncludeServerError specifies that the comparison of OpResult structs
+// should include the ServerError field, which includes a text error
+// that the server supplied. Typically, such comparisons should not be
+// used since they are likely to be implementation specific.
+func IncludeServerError() *includeServerError {
+	return &includeServerError{}
+}
+
+// hasIncludeServerError checks whether the supplied resultOpt slide contains
+// the IncludeServerError option.
+func hasIncludeServerError(opt []resultOpt) bool {
+	for _, v := range opt {
+		if _, ok := v.(*includeServerError); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // HasResult checks whether the specified res slice contains a result containing
 // with the value of want.
 func HasResult(t testing.TB, res []*client.OpResult, want *client.OpResult, opt ...resultOpt) {
@@ -85,6 +111,9 @@ func HasResult(t testing.TB, res []*client.OpResult, want *client.OpResult, opt 
 	}
 	if hasIgnoreOperationID(opt) {
 		ignoreFields = append(ignoreFields, "OperationID")
+	}
+	if !hasIncludeServerError(opt) {
+		ignoreFields = append(ignoreFields, "ServerError")
 	}
 
 	opts := []cmp.Option{

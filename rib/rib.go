@@ -1948,7 +1948,7 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey, explicitReplace bool) (
 		NextHop: []*aftpb.Afts_NextHopKey{e},
 	})
 	if err != nil {
-		return false, nil, fmt.Errorf("invalid NextHopGroup, %v", err)
+		return false, nil, fmt.Errorf("invalid NextHop, %v", err)
 	}
 
 	if explicitReplace && !r.nhExists(e.GetIndex()) {

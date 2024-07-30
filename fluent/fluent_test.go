@@ -93,12 +93,16 @@ func TestGRIBIClient(t *testing.T) {
 			c.StartSending(context.Background(), t)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer func() {
-				cancel()
-				t.Fatalf("context was cancelled")
-			}()
+			defer cancel()
 
 			c.Await(ctx, t)
+
+			for _, op := range c.Status(t).Results {
+				if op.ProgrammingResult == spb.AFTResult_FAILED {
+					t.Errorf("got unexpected failed programming, %v", op)
+				}
+			}
+
 			c.Stop(t)
 		},
 	}, {
@@ -107,17 +111,28 @@ func TestGRIBIClient(t *testing.T) {
 			c := NewClient()
 			c.Connection().WithTarget(addr).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
 			c.Start(context.Background(), t)
-			nh := NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1)
+			nh := NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("1.1.1.1")
 			c.Modify().AddEntry(t, nh)
 			c.Modify().DeleteEntry(t, nh)
 			c.StartSending(context.Background(), t)
+
 			// NB: we don't actually check any of the return values here, we
 			// just check that we are marked converged.
-			c.Await(context.Background(), t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			c.Await(ctx, t)
+
 			s := c.Status(t)
 			if len(s.SendErrs) != 0 || len(s.ReadErrs) != 0 {
 				t.Fatalf("got unexpected errors, %+v", s)
 			}
+
+			for _, op := range s.Results {
+				if op.ProgrammingResult == spb.AFTResult_FAILED {
+					t.Errorf("got unexpected failed programming, %v", op)
+				}
+			}
+
 			c.Stop(t)
 		},
 	}}

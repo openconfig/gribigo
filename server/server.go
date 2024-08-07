@@ -364,6 +364,8 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 				return
 			}
 
+			// update that we have received at least one message, to detect that we cannot
+			// now re-set the parameters of the RPC.
 			gotmsg = true
 			// write the results to result channel.
 			if !skipWrite {
@@ -377,7 +379,6 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		for {
 			select {
 			case res := <-resultChan:
-				// update that we have received at least one message.
 				if err := ms.Send(res); err != nil {
 					errCh <- status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
 					return

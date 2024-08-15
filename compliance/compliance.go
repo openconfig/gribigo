@@ -833,7 +833,7 @@ func AddIPv4EntryRandom(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	defer flushServer(c, t)
 	ops := []func(){
 		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1))
+			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("1.1.1.1"))
 		},
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))

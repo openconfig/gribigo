@@ -87,11 +87,22 @@ func TestGRIBIClient(t *testing.T) {
 			c := NewClient()
 			c.Connection().WithTarget(addr).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
 			c.Start(context.Background(), t)
-			c.Modify().AddEntry(t, NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1))
+			c.Modify().AddEntry(t, NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("2.2.2.2"))
 			c.Modify().AddEntry(t, NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(1).AddNextHop(1, 1))
 			c.Modify().AddEntry(t, IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(server.DefaultNetworkInstanceName).WithNextHopGroup(1))
 			c.StartSending(context.Background(), t)
-			c.Await(context.Background(), t)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			c.Await(ctx, t)
+
+			for _, op := range c.Status(t).Results {
+				if op.ProgrammingResult == spb.AFTResult_FAILED {
+					t.Errorf("got unexpected failed programming, %v", op)
+				}
+			}
+
 			c.Stop(t)
 		},
 	}, {
@@ -100,17 +111,28 @@ func TestGRIBIClient(t *testing.T) {
 			c := NewClient()
 			c.Connection().WithTarget(addr).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
 			c.Start(context.Background(), t)
-			nh := NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1)
+			nh := NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("1.1.1.1")
 			c.Modify().AddEntry(t, nh)
 			c.Modify().DeleteEntry(t, nh)
 			c.StartSending(context.Background(), t)
+
 			// NB: we don't actually check any of the return values here, we
 			// just check that we are marked converged.
-			c.Await(context.Background(), t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			c.Await(ctx, t)
+
 			s := c.Status(t)
 			if len(s.SendErrs) != 0 || len(s.ReadErrs) != 0 {
 				t.Fatalf("got unexpected errors, %+v", s)
 			}
+
+			for _, op := range s.Results {
+				if op.ProgrammingResult == spb.AFTResult_FAILED {
+					t.Errorf("got unexpected failed programming, %v", op)
+				}
+			}
+
 			c.Stop(t)
 		},
 	}}
@@ -568,6 +590,24 @@ func TestEntriesToModifyRequest(t *testing.T) {
 								Value: 15169,
 							},
 						},
+					},
+				},
+			}},
+		},
+	}, {
+		desc: "one NH entry delete with only index",
+		inOp: spb.AFTOperation_DELETE,
+		inEntries: []GRIBIEntry{
+			NextHopEntry().WithNetworkInstance("DEFAULT").WithIndex(1),
+		},
+		wantModifyRequest: &spb.ModifyRequest{
+			Operation: []*spb.AFTOperation{{
+				Id:              1,
+				NetworkInstance: "DEFAULT",
+				Op:              spb.AFTOperation_DELETE,
+				Entry: &spb.AFTOperation_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 1,
 					},
 				},
 			}},

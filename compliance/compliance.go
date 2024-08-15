@@ -368,8 +368,9 @@ var (
 		},
 	}, {
 		In: Test{
-			Fn:        makeTestWithACK(GetIPv6, fluent.InstalledInRIB),
-			ShortName: "Get for installed IPv6 Entry - RIB ACK",
+			Fn:           makeTestWithACK(GetIPv6, fluent.InstalledInRIB),
+			ShortName:    "Get for installed IPv6 Entry - RIB ACK",
+			RequiresIPv6: true,
 		},
 	}, {
 		In: Test{
@@ -404,6 +405,7 @@ var (
 			Fn:             makeTestWithACK(GetIPv6, fluent.InstalledInFIB),
 			ShortName:      "Get for installed IPv6 Entry - FIB ACK",
 			RequiresFIBACK: true,
+			RequiresIPv6:   true,
 		},
 	}, {
 		In: Test{

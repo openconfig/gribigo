@@ -2558,7 +2558,7 @@ func TestRIBAddEntry(t *testing.T) {
 		inRIB: func() *RIB {
 			r := New(defName)
 			if err := r.AddNetworkInstance("VRF-1"); err != nil {
-				t.Fatalf(fmt.Sprintf("cannot add network instance, %v", err))
+				t.Fatalf("cannot add network instance, %v", err)
 			}
 
 			_, fails, err := r.AddEntry(defName, &spb.AFTOperation{
@@ -2571,7 +2571,7 @@ func TestRIBAddEntry(t *testing.T) {
 				},
 			})
 			if err != nil || len(fails) != 0 {
-				t.Fatalf(fmt.Sprintf("cannot build test case, cannot add NH, got: %v or failed ops %d", err, len(fails)))
+				t.Fatalf("cannot build test case, cannot add NH, got: %v or failed ops %d", err, len(fails))
 			}
 
 			_, fails, err = r.AddEntry(defName, &spb.AFTOperation{

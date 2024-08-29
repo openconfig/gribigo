@@ -456,7 +456,7 @@ func TestCheckParams(t *testing.T) {
 				}
 
 				if errS := chkErrDetails(st, tt.wantErrDetails); errS != "" {
-					t.Fatalf(errS)
+					t.Fatal(errS)
 				}
 
 				return
@@ -659,7 +659,7 @@ func TestRunElection(t *testing.T) {
 				}
 
 				if errS := chkErrDetails(st, tt.wantErrDetails); errS != "" {
-					t.Fatalf(errS)
+					t.Fatal(errS)
 				}
 
 				return

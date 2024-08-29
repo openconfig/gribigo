@@ -133,7 +133,7 @@ func HasResult(t testing.TB, res []*client.OpResult, want *client.OpResult, opt 
 		for _, r := range res {
 			buf.WriteString(fmt.Sprintf("\t%s\n", r))
 		}
-		t.Fatalf(buf.String())
+		t.Fatal(buf.String())
 	}
 }
 

@@ -579,6 +579,11 @@ var (
 			ShortName:                           "Error: Empty NextHopGroup for the IPv4Entry",
 			RequiresDisallowedForwardReferences: true,
 		},
+	}, {
+		In: Test{
+			Fn:        ClientWithNoParametersACKMode,
+			ShortName: "Default to RIB_ACK when no SessionParameters sent",
+		},
 	}}
 )
 
@@ -2114,7 +2119,7 @@ func IPv4EntryEmptyNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 	ops := []func(){
 		func() {
 			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
-			// // NB: NHG is specified to not include any NHs
+			// NB: NHG is specified to not include any NHs
 			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(11))
 			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
 		},
@@ -2145,4 +2150,48 @@ func IPv4EntryEmptyNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...TestOp
 			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult(),
 		chk.IgnoreOperationID())
+}
+
+// ClientWithNoParametersACKMode ensures that a server complies with using RIB_ACK by default
+// when no session parameters are sent.
+func ClientWithNoParametersACKMode(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer flushServer(c, t)
+	defer electionID.Inc()
+
+	ctx := context.Background()
+	c.Start(ctx, t)
+	defer c.Stop(t)
+	c.StartSending(ctx, t)
+
+	c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.1"))
+	c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(42).AddNextHop(1, 1))
+	c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("1.1.1.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(42))
+
+	if err := awaitTimeout(ctx, c, t, time.Minute); err != nil {
+		t.Fatalf("got unexpected error from server - entries, got: %v, want: nil", err)
+	}
+
+	res := c.Results(t)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(1).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(2).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+	)
+
+	chk.HasResult(t, res,
+		fluent.OperationResult().
+			WithOperationID(3).
+			WithProgrammingResult(fluent.InstalledInRIB).
+			AsResult(),
+	)
+
 }

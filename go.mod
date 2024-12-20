@@ -5,7 +5,7 @@ go 1.21
 toolchain go1.22.4
 
 require (
-	github.com/golang/glog v1.2.1
+	github.com/golang/glog v1.2.2
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/openconfig/gnmi v0.11.0
@@ -13,7 +13,7 @@ require (
 	github.com/openconfig/gribi v1.0.0
 	github.com/openconfig/lemming v0.4.1-0.20240731191322-a759a5e931a6
 	github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07
-	github.com/openconfig/ygot v0.29.19
+	github.com/openconfig/ygot v0.29.20
 	go.uber.org/atomic v1.10.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240604185151-ef581f913117
 	google.golang.org/grpc v1.64.1

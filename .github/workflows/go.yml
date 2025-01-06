@@ -9,7 +9,7 @@ on:
 
 jobs:
   go:
-    uses: openconfig/common-ci/.github/workflows/basic_go.yml@5d5a381b0232af9476933b650db2dc30718f1b06
+    uses: openconfig/common-ci/.github/workflows/basic_go.yml@487096953fb96b1b31e52fc629fa35e1aa82613c
     with:
       race-tests-excludes-regex: github.com/openconfig/gribigo/compliance
       static-analysis-excludes-regex: github.com/openconfig/gribigo/aft

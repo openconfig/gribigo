@@ -469,7 +469,7 @@ func (s *Server) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 		// Always use codes.Internal here since any error (not being able to flush, or
 		// not finding an NI that we already checked existed is some internal logic
 		// error).
-		return nil, status.Errorf(codes.Internal, det.String())
+		return nil, status.Errorf(codes.Internal, "%s", det.String())
 	}
 
 	return &spb.FlushResponse{
@@ -1157,6 +1157,11 @@ type FakeServer struct {
 // the server without a need to use the public APIs.
 func NewFake(opt ...ServerOpt) (*FakeServer, error) {
 	s, err := New(opt...)
+	// Because we embed the unimplemented gRIBI server in the Server, and
+	// then further embed this, then we need to initialise it to make sure that
+	// it is not nil. This keeps checks on unimplemented methods happy. gRPC
+	// checks this itself so will cause panics even if we do implement all methods.
+	s.UnimplementedGRIBIServer = &spb.UnimplementedGRIBIServer{}
 	if err != nil {
 		return nil, err
 	}

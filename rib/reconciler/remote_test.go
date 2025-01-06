@@ -112,7 +112,7 @@ func TestNewRemoteRIBWithStub(t *testing.T) {
 }
 
 type badGRIBI struct {
-	*spb.UnimplementedGRIBIServer
+	spb.UnimplementedGRIBIServer
 }
 
 func (b *badGRIBI) Get(_ *spb.GetRequest, _ spb.GRIBI_GetServer) error {
@@ -138,7 +138,7 @@ func newBadServer(t *testing.T, r *rib.RIB) (string, func()) {
 }
 
 type hangingGRIBI struct {
-	*spb.UnimplementedGRIBIServer
+	spb.UnimplementedGRIBIServer
 }
 
 func (h *hangingGRIBI) Get(_ *spb.GetRequest, _ spb.GRIBI_GetServer) error {

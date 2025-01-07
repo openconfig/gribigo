@@ -1875,7 +1875,7 @@ func (d disconnectMode) String() string {
 }
 
 type disconnectingGRIBI struct {
-	*spb.UnimplementedGRIBIServer
+	spb.UnimplementedGRIBIServer
 	mode disconnectMode
 	// Set to true if we should also read the channel.
 	receiver bool

@@ -21,7 +21,7 @@ jobs:
 
       - name: Install apt dependencies
         run: |
-          sudo apt-get install libpcap-dev libnl-genl-3-dev libnl-3-dev
+          sudo apt-get install libpcap-dev
 
       - name: Log in to the Container registry
         uses: docker/login-action@v1

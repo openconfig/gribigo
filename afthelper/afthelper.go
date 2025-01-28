@@ -31,6 +31,8 @@ type NextHopSummary struct {
 	Address string `json:"address"`
 	// NetworkInstance is the network instance within which the address was resolved.
 	NetworkInstance string `json:"network-instance"`
+	// Index is the gRIBI index of the next hop.
+	Index uint64 `json:"index"`
 }
 
 // NextHopAddrsForPrefix unrolls the prefix specified within the network-instance netInst from the
@@ -96,6 +98,7 @@ func NextHopAddrsForPrefix(rib map[string]*aft.RIB, netinst, prefix string) (map
 			Address:         nh,
 			Weight:          weights[nhID],
 			NetworkInstance: nhNI,
+			Index:           nhID,
 		}
 	}
 

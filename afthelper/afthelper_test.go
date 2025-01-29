@@ -52,6 +52,7 @@ func TestNextHopAddrsForPrefix(t *testing.T) {
 				Weight:          1,
 				Address:         "1.1.1.1",
 				NetworkInstance: defName,
+				Index:           1,
 			},
 		},
 	}, {
@@ -74,11 +75,13 @@ func TestNextHopAddrsForPrefix(t *testing.T) {
 				Address:         "1.1.1.1",
 				Weight:          1,
 				NetworkInstance: defName,
+				Index:           1,
 			},
 			"2.2.2.2": {
 				Address:         "2.2.2.2",
 				Weight:          1,
 				NetworkInstance: defName,
+				Index:           2,
 			},
 		},
 	}, {
@@ -101,11 +104,13 @@ func TestNextHopAddrsForPrefix(t *testing.T) {
 				Address:         "1000:10:10::10",
 				Weight:          1,
 				NetworkInstance: defName,
+				Index:           1,
 			},
 			"2.2.2.2": {
 				Address:         "2.2.2.2",
 				Weight:          1,
 				NetworkInstance: defName,
+				Index:           2,
 			},
 		},
 	}, {
@@ -144,6 +149,7 @@ func TestNextHopAddrsForPrefix(t *testing.T) {
 				Weight:          2,
 				Address:         "2.2.2.2",
 				NetworkInstance: "VRF-1",
+				Index:           2,
 			},
 		},
 	}, {
@@ -172,11 +178,13 @@ func TestNextHopAddrsForPrefix(t *testing.T) {
 				Address:         "1000:10:10::10",
 				Weight:          1,
 				NetworkInstance: "VRF-1",
+				Index:           1,
 			},
 			"2.2.2.2": {
 				Address:         "2.2.2.2",
 				Weight:          1,
 				NetworkInstance: "VRF-1",
+				Index:           2,
 			},
 		},
 	}}

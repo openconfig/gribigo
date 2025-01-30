@@ -527,6 +527,8 @@ type ipv4Entry struct {
 	// electionID is an explicit election ID to be used for an
 	// operation using the entry.
 	electionID *spb.Uint128
+	// fibStatus is the FIB programming status of the entry.
+	fibStatus spb.AFTEntry_Status
 }
 
 // IPv4Entry returns a new gRIBI IPv4Entry builder.
@@ -583,6 +585,15 @@ func (i *ipv4Entry) WithElectionID(low, high uint64) *ipv4Entry {
 	return i
 }
 
+// WithFIBProgrammed sets the FIB programming status of the entry to PROGRAMMED if 
+// the specified operation programming result is InstalledInFIB.
+func (i *ipv4Entry) WithFIBProgrammed(r ProgrammingResult) *ipv4Entry {
+	if r == InstalledInFIB {
+		i.fibStatus = spb.AFTEntry_PROGRAMMED
+	}
+	return i
+}
+
 // OpProto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
 // is explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
@@ -603,6 +614,7 @@ func (i *ipv4Entry) EntryProto() (*spb.AFTEntry, error) {
 		Entry: &spb.AFTEntry_Ipv4{
 			Ipv4: proto.Clone(i.pb).(*aftpb.Afts_Ipv4EntryKey),
 		},
+		FibStatus: i.fibStatus,
 	}, nil
 }
 
@@ -615,6 +627,8 @@ type ipv6Entry struct {
 	// electionID is an explicit election ID to be used for an
 	// operation using the entry.
 	electionID *spb.Uint128
+	// fibStatus is the FIB programming status of the entry.
+	fibStatus spb.AFTEntry_Status
 }
 
 // IPv6Entry returns a new gRIBI IPv6Entry builder.
@@ -671,6 +685,15 @@ func (i *ipv6Entry) WithElectionID(low, high uint64) *ipv6Entry {
 	return i
 }
 
+// WithFIBProgrammed sets the FIB programming status of the entry to PROGRAMMED if 
+// the specified operation programming result is InstalledInFIB.
+func (i *ipv6Entry) WithFIBProgrammed(r ProgrammingResult) *ipv6Entry {
+	if r == InstalledInFIB {
+		i.fibStatus = spb.AFTEntry_PROGRAMMED
+	}
+	return i
+}
+
 // OpProto implements the gRIBIEntry interface, returning a gRIBI AFTOperation. ID
 // is explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
@@ -691,6 +714,7 @@ func (i *ipv6Entry) EntryProto() (*spb.AFTEntry, error) {
 		Entry: &spb.AFTEntry_Ipv6{
 			Ipv6: proto.Clone(i.pb).(*aftpb.Afts_Ipv6EntryKey),
 		},
+		FibStatus: i.fibStatus,
 	}, nil
 }
 
@@ -790,6 +814,8 @@ type nextHopEntry struct {
 	// electionID is an explicit electionID to be used when the next-hop entry
 	// is programmed.
 	electionID *spb.Uint128
+	// fibStatus is the FIB programming status of the entry.
+	fibStatus spb.AFTEntry_Status
 }
 
 // NextHopEntry returns a builder that can be used to build up a NextHop within
@@ -963,6 +989,15 @@ func (n *nextHopEntry) WithElectionID(low, high uint64) *nextHopEntry {
 	return n
 }
 
+// WithFIBProgrammed sets the FIB programming status of the entry to PROGRAMMED if
+// the specified operation programming result is InstalledInFIB.
+func (n *nextHopEntry) WithFIBProgrammed(r ProgrammingResult) *nextHopEntry {
+	if r == InstalledInFIB {
+		n.fibStatus = spb.AFTEntry_PROGRAMMED
+	}
+	return n
+}
+
 // TODO(robjs): add additional NextHopEntry fields.
 
 // OpProto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
@@ -985,6 +1020,7 @@ func (n *nextHopEntry) EntryProto() (*spb.AFTEntry, error) {
 		Entry: &spb.AFTEntry_NextHop{
 			NextHop: proto.Clone(n.pb).(*aftpb.Afts_NextHopKey),
 		},
+		FibStatus: n.fibStatus,
 	}, nil
 }
 
@@ -998,6 +1034,8 @@ type nextHopGroupEntry struct {
 	// electionID is the explicit election ID to be used when this entry is used
 	// in an AFTOperation.
 	electionID *spb.Uint128
+	// fibStatus is the FIB programming status of the entry.
+	fibStatus spb.AFTEntry_Status
 }
 
 // NextHopGroupEntry returns a builder that can be used to build up a NextHopGroup within
@@ -1052,6 +1090,15 @@ func (n *nextHopGroupEntry) WithElectionID(low, high uint64) *nextHopGroupEntry 
 	return n
 }
 
+// WithFIBProgrammed sets the FIB programming status of the entry to PROGRAMMED if
+// the specified operation programming result is InstalledInFIB.
+func (n *nextHopGroupEntry) WithFIBProgrammed(r ProgrammingResult) *nextHopGroupEntry {
+	if r == InstalledInFIB {
+		n.fibStatus = spb.AFTEntry_PROGRAMMED
+	}
+	return n
+}
+
 // OpProto implements the GRIBIEntry interface, building a gRIBI AFTOperation. ID
 // and ElectionID are explicitly not populated such that they can be populated by
 // the function (e.g., AddEntry) to which they are an argument.
@@ -1072,6 +1119,7 @@ func (n *nextHopGroupEntry) EntryProto() (*spb.AFTEntry, error) {
 		Entry: &spb.AFTEntry_NextHopGroup{
 			NextHopGroup: proto.Clone(n.pb).(*aftpb.Afts_NextHopGroupKey),
 		},
+		FibStatus: n.fibStatus,
 	}, nil
 }
 

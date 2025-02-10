@@ -913,24 +913,55 @@ func (n *nextHopEntry) WithPushedLabelStack(labels ...uint32) *nextHopEntry {
 
 }
 
+// AddEncapHeader adds the encapsulation headers to the next-hop entry in order with automatically increasing indexes.
+func (n *nextHopEntry) AddEncapHeader(ehs ...encapHeader) *nextHopEntry {
+	for _, eh := range ehs {
+		ehk := &aftpb.Afts_NextHop_EncapHeaderKey{
+			Index:       n.nextEncapHeaderKeyIndex(),
+			EncapHeader: eh.EncapProto(),
+		}
+		n.pb.NextHop.EncapHeader = append(n.pb.NextHop.EncapHeader, ehk)
+	}
+	return n
+}
+
 // Header represents the enumerated set of headers that a packet can be encapsulated or
 // decapsulated from.
 type Header int64
+
+// encapHeader represents a generic encapsulation header.
+type encapHeader interface {
+	EncapProto() *aftpb.Afts_NextHop_EncapHeader
+}
+
+// mplsEncapHeader represents an MPLS encapsulation header.
+type mplsEncapHeader struct {
+	pb *aftpb.Afts_NextHop_EncapHeader
+}
+
+// UDPEncapHeader represents a UDP encapsulation header.
+type udpv6EncapHeader struct {
+	pb *aftpb.Afts_NextHop_EncapHeader
+}
 
 const (
 	_ Header = iota
 	// IPinIP specifies that the header to be decpsulated is an IPv4 header, and is typically
 	// used when IP-in-IP tunnels are created.
 	IPinIP
+	// MPLS specifies that the header to be decapsulated is an MPLS header.
+	MPLS
+	// UDPV6 specifies that the header to be decapsulated is a UDPv6 header.
+	UDPV6
 )
 
-var (
-	// encapMap translates between the fluent DecapsulateHeader type and the generated
-	// protobuf name.
-	encapMap = map[Header]enums.OpenconfigAftTypesEncapsulationHeaderType{
-		IPinIP: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
-	}
-)
+// encapMap translates between the fluent DecapsulateHeader type and the generated
+// protobuf name.
+var encapMap = map[Header]enums.OpenconfigAftTypesEncapsulationHeaderType{
+	IPinIP: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
+	MPLS:   enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_MPLS,
+	UDPV6:  enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UDPV6,
+}
 
 // WithDecapsulateHeader specifies that the next-hop should apply an action to decapsulate
 // the packet from the specified header, h.
@@ -943,13 +974,97 @@ func (n *nextHopEntry) WithDecapsulateHeader(h Header) *nextHopEntry {
 }
 
 // WithEncapsulateHeader specifies that the next-hop should apply an action to encapsulate
-// the packet with the specified header, h.
+// the packet with the specified header, h. This method only sets the encapsulate_header field and
+// does not operate on the EncapHeader field. For that, use AddEncapHeader.
 func (n *nextHopEntry) WithEncapsulateHeader(h Header) *nextHopEntry {
 	if n.pb.NextHop == nil {
 		n.pb.NextHop = &aftpb.Afts_NextHop{}
 	}
 	n.pb.NextHop.EncapsulateHeader = encapMap[h]
 	return n
+}
+
+func (n *nextHopEntry) nextEncapHeaderKeyIndex() uint64 {
+	if n.pb.NextHop == nil {
+		n.pb.NextHop = &aftpb.Afts_NextHop{}
+	}
+	return uint64(len(n.pb.NextHop.EncapHeader)) + 1
+}
+
+// MPLSEncapHeader returns a builder that can be used to build up an MPLS encapsulation header.
+func MPLSEncapHeader() *mplsEncapHeader {
+	return &mplsEncapHeader{
+		pb: &aftpb.Afts_NextHop_EncapHeader{
+			Type: encapMap[MPLS],
+			Mpls: &aftpb.Afts_NextHop_EncapHeader_Mpls{},
+		},
+	}
+}
+
+// WithLabels specifies the labels that should be pushed onto the mplsEncapHeader.
+func (eh *mplsEncapHeader) WithLabels(labels ...uint64) *mplsEncapHeader {
+	for _, l := range labels {
+		eh.pb.Mpls.MplsLabelStack = append(eh.pb.Mpls.MplsLabelStack, &aftpb.Afts_NextHop_EncapHeader_Mpls_MplsLabelStackUnion{
+			MplsLabelStackUint64: l,
+		})
+	}
+	return eh
+}
+
+// EncapProto returns the built-up protobuf of the mplsEncapHeader.
+func (eh *mplsEncapHeader) EncapProto() *aftpb.Afts_NextHop_EncapHeader {
+	return eh.pb
+}
+
+// UDPV6EncapHeader returns a builder that can be used to build up a UDPv6 encapsulation header.
+func UDPV6EncapHeader() *udpv6EncapHeader {
+	return &udpv6EncapHeader{
+		pb: &aftpb.Afts_NextHop_EncapHeader{
+			Type:  encapMap[UDPV6],
+			UdpV6: &aftpb.Afts_NextHop_EncapHeader_UdpV6{},
+		},
+	}
+}
+
+// WithDSCP specifies the DSCP value to be used for the UDPv6 header.
+func (eh *udpv6EncapHeader) WithDSCP(dscp uint64) *udpv6EncapHeader {
+	eh.pb.UdpV6.Dscp = &wpb.UintValue{Value: dscp}
+	return eh
+}
+
+// WithDstIP specifies the destination IP to be used for the UDPv6 header.
+func (eh *udpv6EncapHeader) WithDstIP(ip string) *udpv6EncapHeader {
+	eh.pb.UdpV6.DstIp = &wpb.StringValue{Value: ip}
+	return eh
+}
+
+// WithDstUDPPort specifies the destination UDP port to be used for the UDPv6 header.
+func (eh *udpv6EncapHeader) WithDstUDPPort(port uint64) *udpv6EncapHeader {
+	eh.pb.UdpV6.DstUdpPort = &wpb.UintValue{Value: port}
+	return eh
+}
+
+// WithIPTTL specifies the IP TTL to be used for the UDPv6 header.
+func (eh *udpv6EncapHeader) WithIPTTL(ttl uint64) *udpv6EncapHeader {
+	eh.pb.UdpV6.IpTtl = &wpb.UintValue{Value: ttl}
+	return eh
+}
+
+// WithSrcIP specifies the source IP to be used for the UDPv6 header.
+func (eh *udpv6EncapHeader) WithSrcIP(ip string) *udpv6EncapHeader {
+	eh.pb.UdpV6.SrcIp = &wpb.StringValue{Value: ip}
+	return eh
+}
+
+// WithSrcUDPPort specifies the source UDP port to be used for the UDPv6 header.
+func (eh *udpv6EncapHeader) WithSrcUDPPort(port uint64) *udpv6EncapHeader {
+	eh.pb.UdpV6.SrcUdpPort = &wpb.UintValue{Value: port}
+	return eh
+}
+
+// EncapProto returns the built-up protobuf of the udpv6EncapHeader.
+func (eh *udpv6EncapHeader) EncapProto() *aftpb.Afts_NextHop_EncapHeader {
+	return eh.pb
 }
 
 // WithElectionID specifies an explicit election ID that is to be used hen the next hop

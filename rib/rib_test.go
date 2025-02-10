@@ -4382,6 +4382,7 @@ func TestResolvedEntryHook(t *testing.T) {
 						Weight:          32,
 						Address:         "1.1.1.1",
 						NetworkInstance: "DEFAULT",
+						Index:           1,
 					},
 				}
 				if diff := cmp.Diff(got, want); diff != "" {
@@ -4429,6 +4430,7 @@ func TestResolvedEntryHook(t *testing.T) {
 						Weight:          32,
 						Address:         "1000:10:10::10",
 						NetworkInstance: "DEFAULT",
+						Index:           10,
 					},
 				}
 				if diff := cmp.Diff(got, want); diff != "" {

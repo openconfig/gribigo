@@ -8,14 +8,14 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/openconfig/gnmi v0.11.0
 	github.com/openconfig/goyang v1.4.5
-	github.com/openconfig/gribi v1.8.1
+	github.com/openconfig/gribi v1.9.0
 	github.com/openconfig/lemming v0.5.1
 	github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07
 	github.com/openconfig/ygot v0.29.20
 	go.uber.org/atomic v1.10.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241209162323-e6fa225c2576
-	google.golang.org/grpc v1.68.1
-	google.golang.org/protobuf v1.35.2
+	google.golang.org/grpc v1.69.4
+	google.golang.org/protobuf v1.36.3
 	lukechampine.com/uint128 v1.3.0
 )
 

@@ -984,6 +984,8 @@ func (n *nextHopEntry) WithEncapsulateHeader(h Header) *nextHopEntry {
 	return n
 }
 
+// nextEncapHeaderKeyIndex returns the index of the next encapsulation to be added to
+// the encap-headers list for the specified next-hop entry.
 func (n *nextHopEntry) nextEncapHeaderKeyIndex() uint64 {
 	if n.pb.NextHop == nil {
 		n.pb.NextHop = &aftpb.Afts_NextHop{}

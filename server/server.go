@@ -815,7 +815,7 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 					},
 				}},
 			}
-			return
+			continue
 		}
 
 		// We do not try and modify entries within the operation in parallel

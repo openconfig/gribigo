@@ -683,6 +683,50 @@ func TestAdd(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc:        "nh with encap headers",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inType:      nh,
+		inEntry: &aftpb.Afts_NextHopKey{
+			Index: 1,
+			NextHop: &aftpb.Afts_NextHop{
+				EncapHeader: []*aftpb.Afts_NextHop_EncapHeaderKey{
+					{
+						Index: 11,
+						EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+							// Type: aftpb.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_MPLS,
+							Mpls: &aftpb.Afts_NextHop_EncapHeader_Mpls{
+								MplsLabelStack: []*aftpb.Afts_NextHop_EncapHeader_Mpls_MplsLabelStackUnion{{
+									MplsLabelStackUint64: 42,
+								}},
+								TrafficClass: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				},
+			},
+		},
+		wantInstalled: true,
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {
+						Index: ygot.Uint64(1),
+						EncapHeader: map[uint8]*aft.Afts_NextHop_EncapHeader{
+							11: {
+								Index: ygot.Uint8(11),
+								Mpls: &aft.Afts_NextHop_EncapHeader_Mpls{
+									MplsLabelStack: []aft.Afts_NextHop_EncapHeader_Mpls_MplsLabelStack_Union{
+										aft.UnionUint32(42),
+									},
+									TrafficClass: ygot.Uint8(1),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {
@@ -4153,6 +4197,63 @@ func TestGetRIB(t *testing.T) {
 						},
 						LabelEntry: &aftpb.Afts_LabelEntry{
 							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc: "next-hop entry with encap headers",
+		inRIB: func() *RIBHolder {
+			r := NewRIBHolder("VRF-42")
+
+			cr := &aft.RIB{}
+			nh := cr.GetOrCreateAfts().GetOrCreateNextHop(1)
+			nh.GetOrCreateEncapHeader(11).GetOrCreateMpls().MplsLabelStack = []aft.Afts_NextHop_EncapHeader_Mpls_MplsLabelStack_Union{aft.UnionUint32(1000)}
+			nh.GetOrCreateEncapHeader(12).GetOrCreateUdpV6().DstIp = ygot.String("2001:4c20::/32")
+			nh.GetOrCreateEncapHeader(12).GetOrCreateUdpV6().SrcIp = ygot.String("2002:4c20::/32")
+			nh.IpAddress = ygot.String("1.1.1.1/32")
+
+			t.Logf("CR: %v", cr.GetAfts().GetNextHop(1).GetEncapHeader(11).GetMpls().GetMplsLabelStack())
+			t.Logf("CR: %v", cr.GetAfts().GetNextHop(1).GetEncapHeader(12).GetUdpV6().GetDstIp())
+			t.Logf("CR: %v", cr.GetAfts().GetNextHop(1).GetEncapHeader(12).GetUdpV6().GetSrcIp())
+			if _, err := r.doAddNH(1, cr); err != nil {
+				t.Fatalf("cannot build RIB, %v", err)
+			}
+			return r
+		}(),
+		inFilter: map[spb.AFTType]bool{
+			spb.AFTType_ALL: true,
+		},
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-42",
+				Entry: &spb.AFTEntry_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 1,
+						NextHop: &aftpb.Afts_NextHop{
+							IpAddress: &wpb.StringValue{Value: "1.1.1.1/32"},
+							EncapHeader: []*aftpb.Afts_NextHop_EncapHeaderKey{
+								{
+									Index: 11,
+									EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+										Mpls: &aftpb.Afts_NextHop_EncapHeader_Mpls{
+											MplsLabelStack: []*aftpb.Afts_NextHop_EncapHeader_Mpls_MplsLabelStackUnion{{
+												MplsLabelStackUint64: 1000,
+											}},
+										},
+									},
+								},
+								{
+									Index: 12,
+									EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+										UdpV6: &aftpb.Afts_NextHop_EncapHeader_UdpV6{
+											DstIp: &wpb.StringValue{Value: "2001:4c20::/32"},
+											SrcIp: &wpb.StringValue{Value: "2002:4c20::/32"},
+										},
+									},
+								},
+							},
 						},
 					},
 				},

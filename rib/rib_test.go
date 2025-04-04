@@ -4214,9 +4214,6 @@ func TestGetRIB(t *testing.T) {
 			nh.GetOrCreateEncapHeader(12).GetOrCreateUdpV6().SrcIp = ygot.String("2002:4c20::/32")
 			nh.IpAddress = ygot.String("1.1.1.1/32")
 
-			t.Logf("CR: %v", cr.GetAfts().GetNextHop(1).GetEncapHeader(11).GetMpls().GetMplsLabelStack())
-			t.Logf("CR: %v", cr.GetAfts().GetNextHop(1).GetEncapHeader(12).GetUdpV6().GetDstIp())
-			t.Logf("CR: %v", cr.GetAfts().GetNextHop(1).GetEncapHeader(12).GetUdpV6().GetSrcIp())
 			if _, err := r.doAddNH(1, cr); err != nil {
 				t.Fatalf("cannot build RIB, %v", err)
 			}

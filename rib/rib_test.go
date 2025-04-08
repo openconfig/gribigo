@@ -3870,6 +3870,23 @@ func TestKnownNetworkInstances(t *testing.T) {
 	}
 }
 
+// sortResponseEncapHeaders sorts all encap headers in a GetResponse by their index to avoid flaky tests.
+func sortResponseEncapHeaders(response *spb.GetResponse) {
+	if response == nil {
+		return
+	}
+
+	for _, entry := range response.GetEntry() {
+		if nhEntry, ok := entry.Entry.(*spb.AFTEntry_NextHop); ok && nhEntry != nil && nhEntry.NextHop != nil && nhEntry.NextHop.NextHop != nil {
+			if encapHeaders := nhEntry.NextHop.NextHop.EncapHeader; len(encapHeaders) > 1 {
+				sort.Slice(encapHeaders, func(i, j int) bool {
+					return encapHeaders[i].Index < encapHeaders[j].Index
+				})
+			}
+		}
+	}
+}
+
 func TestGetRIB(t *testing.T) {
 	// allPopRIB is a RIB with one entry in each table.
 	allPopRIB := func() *RIBHolder {
@@ -4271,6 +4288,7 @@ func TestGetRIB(t *testing.T) {
 				for {
 					select {
 					case r := <-msgCh:
+						sortResponseEncapHeaders(r)
 						got = append(got, r)
 					case <-doneCh:
 						return

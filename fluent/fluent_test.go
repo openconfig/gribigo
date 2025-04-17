@@ -469,6 +469,93 @@ func TestEntry(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc: "next-hop mpls-over-udpv6",
+		in: NextHopEntry().
+			WithNetworkInstance("DEFAULT").
+			WithIndex(1).
+			AddEncapHeader(
+				MPLSEncapHeader().WithLabels(10, 20, 30),
+				UDPV6EncapHeader().WithDSCP(1000).WithDstIP("2001:db8::1").WithDstUDPPort(1234).WithIPTTL(64).WithSrcIP("2001:db8::2").WithSrcUDPPort(4321),
+			),
+		wantOpProto: &spb.AFTOperation{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						EncapHeader: []*aftpb.Afts_NextHop_EncapHeaderKey{
+							{
+								Index: 1,
+								EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+									Type: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_MPLS,
+									Mpls: &aftpb.Afts_NextHop_EncapHeader_Mpls{
+										MplsLabelStack: []*aftpb.Afts_NextHop_EncapHeader_Mpls_MplsLabelStackUnion{
+											{MplsLabelStackUint64: uint64(10)},
+											{MplsLabelStackUint64: uint64(20)},
+											{MplsLabelStackUint64: uint64(30)},
+										},
+									},
+								},
+							},
+							{
+								Index: 2,
+								EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+									Type: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UDPV6,
+									UdpV6: &aftpb.Afts_NextHop_EncapHeader_UdpV6{
+										Dscp:       &wpb.UintValue{Value: uint64(1000)},
+										DstIp:      &wpb.StringValue{Value: "2001:db8::1"},
+										DstUdpPort: &wpb.UintValue{Value: uint64(1234)},
+										IpTtl:      &wpb.UintValue{Value: uint64(64)},
+										SrcIp:      &wpb.StringValue{Value: "2001:db8::2"},
+										SrcUdpPort: &wpb.UintValue{Value: uint64(4321)},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						EncapHeader: []*aftpb.Afts_NextHop_EncapHeaderKey{
+							{
+								Index: 1,
+								EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+									Type: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_MPLS,
+									Mpls: &aftpb.Afts_NextHop_EncapHeader_Mpls{
+										MplsLabelStack: []*aftpb.Afts_NextHop_EncapHeader_Mpls_MplsLabelStackUnion{
+											{MplsLabelStackUint64: uint64(10)},
+											{MplsLabelStackUint64: uint64(20)},
+											{MplsLabelStackUint64: uint64(30)},
+										},
+									},
+								},
+							},
+							{
+								Index: 2,
+								EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+									Type: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UDPV6,
+									UdpV6: &aftpb.Afts_NextHop_EncapHeader_UdpV6{
+										Dscp:       &wpb.UintValue{Value: uint64(1000)},
+										DstIp:      &wpb.StringValue{Value: "2001:db8::1"},
+										DstUdpPort: &wpb.UintValue{Value: uint64(1234)},
+										IpTtl:      &wpb.UintValue{Value: uint64(64)},
+										SrcIp:      &wpb.StringValue{Value: "2001:db8::2"},
+										SrcUdpPort: &wpb.UintValue{Value: uint64(4321)},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {

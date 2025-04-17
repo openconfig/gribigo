@@ -1138,6 +1138,74 @@ func TestDoModify(t *testing.T) {
 				}},
 			},
 		}},
+	}, {
+		desc: "one invalid operation (invalid NI) followed by one valid operation",
+		inServer: func() *Server {
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
+			s.cs["testclient"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+				},
+				lastElecID: &spb.Uint128{High: 42, Low: 42},
+			}
+			s.curElecID = &spb.Uint128{High: 42, Low: 42}
+			s.curMaster = "testclient"
+			return s
+		}(),
+		inCID: "testclient",
+		inOps: []*spb.AFTOperation{{
+			Id:              84,
+			NetworkInstance: "FISH",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						IpAddress: &wpb.StringValue{Value: "192.0.2.1"},
+					},
+				},
+			},
+		}, {
+			Id:              96,
+			NetworkInstance: DefaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						IpAddress: &wpb.StringValue{Value: "192.0.2.1"},
+					},
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     84,
+					Status: spb.AFTResult_FAILED,
+					ErrorDetails: &spb.AFTErrorDetails{
+						ErrorMessage: `unknown network instance "FISH" specified`,
+					},
+				}},
+			},
+		}, {
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     96,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
+					Id:     96,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+			},
+		}},
 	}}
 
 	type recvMsg struct {

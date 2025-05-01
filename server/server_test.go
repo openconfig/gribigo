@@ -827,6 +827,52 @@ func TestDoModify(t *testing.T) {
 			},
 		}},
 	}, {
+		desc: "add to network instance added after server",
+		inServer: func() *Server {
+			s, err := New()
+			if err != nil {
+				t.Fatalf("cannot create server, error: %v", err)
+			}
+			s.cs["testclient"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+				},
+				lastElecID: &spb.Uint128{High: 42, Low: 42},
+			}
+			s.curElecID = &spb.Uint128{High: 42, Low: 42}
+			s.curMaster = "testclient"
+			if err := s.AddNetworkInstance("FISH"); err != nil {
+				t.Fatalf("cannot add network instace: %v", err)
+			}
+			return s
+		}(),
+		inCID: "testclient",
+		inOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: "FISH",
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 42, Low: 42},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     1,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
+					Id:     1,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+			},
+		}},
+	}, {
 		desc: "add to unknown network instance",
 		inServer: func() *Server {
 			s, err := New()

@@ -39,7 +39,7 @@ require (
 	github.com/openconfig/gnsi v1.6.0 // indirect
 	github.com/openconfig/gocloser v0.0.0-20220310182203-c6c950ed3b0b // indirect
 	github.com/openconfig/ygnmi v0.11.1 // indirect
-	github.com/osrg/gobgp/v3 v3.27.1-0.20240614010451-0148e2d22dcf // indirect
+	github.com/osrg/gobgp/v3 v3.35.0 // indirect
 	github.com/p4lang/p4runtime v1.4.0-rc.5.0.20220728214547-13f0d02a521e // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -54,7 +54,7 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/spf13/viper v1.19.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/vishvananda/netlink v1.2.1-beta.2 // indirect
+	github.com/vishvananda/netlink v1.2.1 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	go.opentelemetry.io/otel v1.32.0 // indirect
 	go.opentelemetry.io/otel/metric v1.32.0 // indirect

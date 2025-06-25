@@ -36,24 +36,7 @@ type Device struct {
 	gribiAddr string
 	// gribiSrv is the gRIBI server.
 	gribiSrv *server.Server
-
-	// gnmiAddr is the address that the server is listening on
-	// for gNMI.
-	gnmiAddr string
-	// gnmiSrv is the gNMI collector implementation.
-	// TODO(robjs): implement Set support for gNMI.
-	// gnmiSrv *gnmit.Collector
-
-	// sysRIB is the system RIB that is being programmed.
-	// sysRIB *sysrib.SysRIB
 }
-
-const (
-	// targetName is the name that the device has in gNMI.
-	// TODO(robjs): support dynamic naming so tha twe can run N different
-	// fakes at the same time.
-	targetName string = "DUT"
-)
 
 // DevOpt is an interface that is implemented by options that can be handed to New()
 // for the device.
@@ -209,17 +192,6 @@ func optGRIBIAddr(opts []DevOpt) *gRIBIAddr {
 		}
 	}
 	return &gRIBIAddr{host: "localhost", port: 0}
-}
-
-// optGNMIAddr finds the first occurrence of the GNMIAddr option in opts.
-// If no GNMIAddr option is found, the default of localhost:0 is returned.
-func optGNMIAddr(opts []DevOpt) *gNMIAddr {
-	for _, o := range opts {
-		if v, ok := o.(*gNMIAddr); ok {
-			return v
-		}
-	}
-	return &gNMIAddr{host: "localhost", port: 0}
 }
 
 // optDeviceCfg finds the first occurrence of the DeviceConfig option in opts.

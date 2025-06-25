@@ -57,10 +57,7 @@ func TestDevice(t *testing.T) {
 		devCh <- d.GRIBIAddr()
 
 		for {
-			select {
-			case <-ctx.Done():
-				return
-			}
+			<-ctx.Done()
 		}
 	}()
 	select {

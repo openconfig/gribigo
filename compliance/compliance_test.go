@@ -15,14 +15,15 @@
 package compliance
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/openconfig/gribigo/device"
 	"github.com/openconfig/gribigo/fluent"
+	"github.com/openconfig/gribigo/ocrt"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
-	"github.com/openconfig/lemming"
-	"github.com/openconfig/lemming/gnmi/oc"
 	"github.com/openconfig/testt"
 	"github.com/openconfig/ygot/ygot"
 )
@@ -30,26 +31,28 @@ import (
 func TestCompliance(t *testing.T) {
 	for _, tt := range TestSuite {
 		t.Run(tt.In.ShortName, func(t *testing.T) {
-			cfg := &oc.Root{}
-			cfg.GetOrCreateNetworkInstance(server.DefaultNetworkInstanceName).Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
-			cfg.GetOrCreateNetworkInstance(vrfName).Type = oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_L3VRF
+			cfg := &ocrt.Device{}
+			cfg.GetOrCreateNetworkInstance(server.DefaultNetworkInstanceName).Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE
+			cfg.GetOrCreateNetworkInstance(vrfName).Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_L3VRF
 			jsonConfig, err := ygot.Marshal7951(cfg)
 			if err != nil {
 				t.Fatalf("cannot create configuration for device, error: %v", err)
 			}
 
-			creds, err := lemming.WithTLSCredsFromFile(testcommon.TLSCreds())
+			creds, err := device.TLSCredsFromFile(testcommon.TLSCreds())
 			if err != nil {
 				t.Fatalf("cannot load credentials, got err: %v", err)
 			}
 
-			lemmingOpts := []lemming.Option{creds, lemming.WithInitialConfig(jsonConfig), lemming.WithGNMIAddr(":0"), lemming.WithGRIBIAddr(":0")}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
+			sOpts := []device.DevOpt{creds, device.DeviceConfig(jsonConfig)}
 			if tt.In.RequiresDisallowedForwardReferences {
-				lemmingOpts = append(lemmingOpts, lemming.WithGRIBIOpts(server.WithNoRIBForwardReferences()))
+				sOpts = append(sOpts, device.DisableRIBForwardReferences())
 			}
 
-			d, err := lemming.New("DUT", "", lemmingOpts...)
+			d, err := device.New(ctx, sOpts...)
 			if err != nil {
 				t.Fatalf("cannot start server, %v", err)
 			}
@@ -85,9 +88,6 @@ func TestCompliance(t *testing.T) {
 
 			c.Stop(t)
 			sc.Stop(t)
-			// TODO(robjs): Currnetly, lemming does not return nil errors when stopping successfully, check
-			// error when upstream is fixed.
-			d.Stop()
 		})
 	}
 }

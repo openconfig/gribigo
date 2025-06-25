@@ -294,6 +294,9 @@ func New(opt ...ServerOpt) (*Server, error) {
 		}
 	}
 
+	// Ensure that we embed an unimplemented initialised server.
+	s.UnimplementedGRIBIServer = &spb.UnimplementedGRIBIServer{}
+
 	return s, nil
 }
 

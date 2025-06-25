@@ -22,9 +22,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/openconfig/gribigo/device"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
-	"github.com/openconfig/lemming"
 	"github.com/openconfig/testt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -139,12 +139,15 @@ func TestGRIBIClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			creds, err := lemming.WithTLSCredsFromFile(testcommon.TLSCreds())
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			creds, err := device.TLSCredsFromFile(testcommon.TLSCreds())
 			if err != nil {
 				t.Fatalf("cannot load credentials, got err: %v", err)
 			}
 
-			d, err := lemming.New("DUT", "", creds, lemming.WithGNMIAddr(":0"), lemming.WithGRIBIAddr(":0"))
+			d, err := device.New(ctx, creds)
 			if err != nil {
 				t.Fatalf("cannot start server, %v", err)
 			}
@@ -168,9 +171,6 @@ func TestGRIBIClient(t *testing.T) {
 
 			// Any unexpected error will be caught by being called directly on t from the fluent library.
 			tt.inFn(d.GRIBIAddr(), t)
-
-			// TODO(robjs): check error when https://github.com/openconfig/lemming/pull/226 is submitted.
-			d.Stop()
 		})
 	}
 }

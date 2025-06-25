@@ -9,9 +9,9 @@ on:
 
 jobs:
   go:
-    uses: openconfig/common-ci/.github/workflows/basic_go.yml@487096953fb96b1b31e52fc629fa35e1aa82613c
+    uses: openconfig/common-ci/.github/workflows/basic_go.yml@ec2c8a16094f19f0ec1a26d18a814b80ff7e6a7e
     with:
       race-tests-excludes-regex: github.com/openconfig/gribigo/compliance
       static-analysis-excludes-regex: github.com/openconfig/gribigo/aft
       install-additional-apt-packages:  libpcap-dev libnl-genl-3-dev libnl-3-dev
-      coverage-excludes-regex: github.com/openconfig/gribigo/aft
+      coverage-excludes-regex: github.com/openconfig/gribigo/(aft|ocrt)

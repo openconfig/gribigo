@@ -478,6 +478,11 @@ func (s *Server) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 	}, nil
 }
 
+// AddNetworkInstance adds a new network instance to the RIB.
+func (s *Server) AddNetworkInstance(ni string) error {
+	return s.masterRIB.AddNetworkInstance(ni)
+}
+
 // newClient creates a new client context within the server using the specified string
 // ID.
 func (s *Server) newClient(id string) error {

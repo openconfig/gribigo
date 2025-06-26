@@ -27,15 +27,15 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/openconfig/gribigo/client"
-	"github.com/openconfig/gribigo/fluent"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"github.com/openconfig/gribigo/client"
+	"github.com/openconfig/gribigo/fluent"
 
-	spb "github.com/openconfig/gribi/v1/proto/service"
 	gspb "google.golang.org/genproto/googleapis/rpc/status"
+	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 // resultOpt is an interface implemented by all options that can be
@@ -374,17 +374,31 @@ func GetResponseHasEntries(t testing.TB, getres *spb.GetResponse, wants ...fluen
 
 		switch v := wantProto.Entry.(type) {
 		case *spb.AFTEntry_NextHopGroup:
-			if _, ok := ni.nhg[v.NextHopGroup.GetId()]; !ok {
+			if nhg, ok := ni.nhg[v.NextHopGroup.GetId()]; !ok {
 				t.Fatalf("did not find entry, did not find nexthop group: %s, got:\n%s", v.NextHopGroup, getres)
+			} else {
+				programmedStatusMatch(t, nhg, wantProto)
 			}
 		case *spb.AFTEntry_NextHop:
-			if _, ok := ni.nh[v.NextHop.GetIndex()]; !ok {
+			if nh, ok := ni.nh[v.NextHop.GetIndex()]; !ok {
 				t.Fatalf("did not find entry, did not find nexthop: %s, got:\n%s", v.NextHop, getres)
+			} else {
+				programmedStatusMatch(t, nh, wantProto)
 			}
 		case *spb.AFTEntry_Ipv4:
-			if _, ok := ni.ipv4[v.Ipv4.GetPrefix()]; !ok {
+			if ipv4, ok := ni.ipv4[v.Ipv4.GetPrefix()]; !ok {
 				t.Fatalf("did not find entry, did not find ipv4: %s, got: %s\n", v.Ipv4, getres)
+			} else {
+				programmedStatusMatch(t, ipv4, wantProto)
 			}
 		}
+	}
+}
+
+// programmedStatusMatch checks if the response's AFT entry FIB status matches the expected status.
+// It skips the check if the expected status is UNAVAILABLE (default value).
+func programmedStatusMatch(t testing.TB, resp *spb.AFTEntry, want *spb.AFTEntry) {
+	if want.GetFibStatus() != spb.AFTEntry_UNAVAILABLE && resp.GetFibStatus() != want.GetFibStatus() {
+		t.Fatalf("FIB status mismatch: %s, got: %s\n", want.GetFibStatus(), resp.GetFibStatus())
 	}
 }

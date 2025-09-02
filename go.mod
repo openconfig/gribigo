@@ -5,7 +5,7 @@ go 1.23.4
 toolchain go1.23.10
 
 require (
-	github.com/golang/glog v1.2.4
+	github.com/golang/glog v1.2.5
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/openconfig/gnmi v0.13.0

@@ -28,6 +28,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openconfig/gribigo/constants"
+	rpb "github.com/openconfig/gribigo/proto/result"
 	"github.com/openconfig/gribigo/rib"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
@@ -1451,6 +1452,98 @@ func TestOpResultString(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			if got := tt.inResult.String(); got != tt.want {
 				t.Fatalf("did not get expected string, got: %s, want: %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOpResultProto(t *testing.T) {
+	tests := []struct {
+		desc     string
+		inResult *OpResult
+		want     *rpb.OpResult
+		wantErr  bool
+	}{{
+		desc:     "nil input",
+		inResult: nil,
+		want:     nil,
+		wantErr:  false,
+	}, {
+		desc:     "all fields nil",
+		inResult: &OpResult{},
+		want:     &rpb.OpResult{},
+		wantErr:  false,
+	}, {
+		desc: "nil type in details",
+		inResult: &OpResult{
+			OperationID: 42,
+		},
+		want: &rpb.OpResult{
+			Kind: &rpb.OpResult_Operation_{
+				Operation: &rpb.OpResult_Operation{
+					OperationId: 42,
+				},
+			},
+		},
+		wantErr: false,
+	}, {
+		desc: "with details",
+		inResult: &OpResult{
+			OperationID: 42,
+			Details: &OpDetailsResults{
+				Type:      constants.Add,
+				MPLSLabel: 42,
+			},
+		},
+		want: &rpb.OpResult{
+			Kind: &rpb.OpResult_Operation_{
+				Operation: &rpb.OpResult_Operation{
+					OperationId: 42,
+					Details: &rpb.Details{
+						Type: rpb.Details_T_ADD,
+						Result: &rpb.Details_MplsLabel{
+							MplsLabel: 42,
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "invalid result",
+		inResult: &OpResult{
+			CurrentServerElectionID: &spb.Uint128{
+				High: 1,
+				Low:  2,
+			},
+			OperationID: 42,
+			Details: &OpDetailsResults{
+				Type:       constants.Add,
+				MPLSLabel:  42,
+				IPv4Prefix: "some-prefix",
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "invalid details",
+		inResult: &OpResult{
+			OperationID: 42,
+			Details: &OpDetailsResults{
+				Type:       constants.Add,
+				MPLSLabel:  42,
+				IPv4Prefix: "some-prefix",
+			},
+		},
+		wantErr: true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := tt.inResult.toProto()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(got, tt.want, protocmp.Transform()); diff != "" {
+				t.Fatalf("toProto() returned unexpected diff (-got, +want):\n%s", diff)
 			}
 		})
 	}

@@ -36,6 +36,7 @@ import (
 	"lukechampine.com/uint128"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	rpb "github.com/openconfig/gribigo/proto/result"
 )
 
 var (
@@ -722,6 +723,104 @@ func (o *OpResult) String() string {
 	buf.WriteString(">")
 
 	return buf.String()
+}
+
+func (o *OpResult) toProto() (*rpb.OpResult, error) {
+	if o == nil {
+		return nil, nil
+	}
+
+	ret := &rpb.OpResult{
+		Timestamp:   o.Timestamp,
+		Latency:     o.Latency,
+		ClientError: o.ClientError,
+		ServerError: o.ServerError,
+	}
+
+	if (o.CurrentServerElectionID != nil || o.SessionParameters != nil) && (o.OperationID != 0 || o.ProgrammingResult != spb.AFTResult_UNSET || o.Details != nil) {
+		return nil, fmt.Errorf("cannot set both session parameters and operations")
+	}
+
+	switch {
+	case o.CurrentServerElectionID != nil || o.SessionParameters != nil:
+		ret.Kind = &rpb.OpResult_Session_{
+			Session: &rpb.OpResult_Session{
+				CurrentServerElectionId: o.CurrentServerElectionID,
+				SessionParameters:       o.SessionParameters,
+			},
+		}
+	case o.OperationID != 0 || o.ProgrammingResult != spb.AFTResult_UNSET || o.Details != nil:
+		var details *rpb.Details
+		if o.Details != nil {
+			details = &rpb.Details{}
+			typ := rpb.Details_T_UNKNOWN
+			switch o.Details.Type {
+			case constants.Add:
+				typ = rpb.Details_T_ADD
+			case constants.Replace:
+				typ = rpb.Details_T_REPLACE
+			case constants.Delete:
+				typ = rpb.Details_T_DELETE
+			}
+
+			details.Type = typ
+
+			if o.Details.NextHopIndex != 0 {
+				details.Result = &rpb.Details_NexthopIndex{
+					NexthopIndex: o.Details.NextHopIndex,
+				}
+			}
+
+			if o.Details.NextHopGroupID != 0 && details.Result != nil {
+				return nil, fmt.Errorf("cannot only set one of nextHopIndex, nextHopGroupId, ipv4Prefix, ipv6Prefix or MPLSLabel")
+			}
+
+			if o.Details.NextHopGroupID != 0 {
+				details.Result = &rpb.Details_NexthopGroupId{
+					NexthopGroupId: o.Details.NextHopGroupID,
+				}
+			}
+
+			if o.Details.IPv4Prefix != "" && details.Result != nil {
+				return nil, fmt.Errorf("cannot only set one of nextHopIndex, nextHopGroupId, ipv4Prefix, ipv6Prefix or MPLSLabel")
+			}
+
+			if o.Details.IPv4Prefix != "" {
+				details.Result = &rpb.Details_Ipv4Prefix{
+					Ipv4Prefix: o.Details.IPv4Prefix,
+				}
+			}
+
+			if o.Details.IPv6Prefix != "" && details.Result != nil {
+				return nil, fmt.Errorf("cannot only set one of nextHopIndex, nextHopGroupId, ipv4Prefix, ipv6Prefix or MPLSLabel")
+			}
+
+			if o.Details.IPv6Prefix != "" {
+				details.Result = &rpb.Details_Ipv6Prefix{
+					Ipv6Prefix: o.Details.IPv6Prefix,
+				}
+			}
+
+			if o.Details.MPLSLabel != 0 && details.Result != nil {
+				return nil, fmt.Errorf("cannot only set one of nextHopIndex, nextHopGroupId, ipv4Prefix, ipv6Prefix or MPLSLabel")
+			}
+
+			if o.Details.MPLSLabel != 0 {
+				details.Result = &rpb.Details_MplsLabel{
+					MplsLabel: o.Details.MPLSLabel,
+				}
+			}
+		}
+		ret.Kind = &rpb.OpResult_Operation_{
+			Operation: &rpb.OpResult_Operation{
+				OperationId:       o.OperationID,
+				ProgrammingResult: o.ProgrammingResult,
+				Details:           details,
+			},
+		}
+	}
+
+	return ret, nil
 }
 
 // OpDetailsResults provides details of an operation for use in the results.

@@ -1,0 +1,104 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package gribigo;
+
+import "github.com/openconfig/gribi/v1/proto/service/gribi.proto";
+
+option go_package = "github.com/openconfig/gribigo/proto/result;op_result";
+
+message OpResult {
+  // timestamp is the timestamp that the result was received. This is expressed in nanoseconds.
+  int64 timestamp = 1;
+
+  // latency is the latency of the request from the server. This is calculated
+  // based on the time that the request was sent to the client (became pending)
+  // and the time that the response was received from the server. It is expressed
+  // in nanoseconds.
+  int64 latency = 2;
+
+  message Session {
+    // current_server_election_id indicates that the message that was received from the server
+    // was an ModifyResponse sent in response to an updated election ID, its value is the
+    // current master election ID (maximum election ID seen from any client) reported from
+    // the server.
+    gribi.Uint128 current_server_election_id = 1;
+
+    // session_parameters contains the parameters that were received from the server in
+    // response to the parameters sent to the server.
+    gribi.SessionParametersResult session_parameters = 2;
+  }
+
+  message Operation {
+    // operation_id indicates that the message that was received from the server was a
+    // ModifyResponse sent in response to an AFTOperation, its value is the ID of the
+    // operation to which it corresponds.
+    uint64 operation_id = 1;
+
+    // programming_result stores the result of an AFT operation on the server.
+    gribi.AFTResult.Status programming_result = 2;
+
+    // details stores detailed information about the operation over the ID
+    // and the result.
+    Details details = 3;
+  }
+
+  oneof kind {
+    Session session = 3;
+    Operation operation = 4;
+  }
+
+  // client_error describes an error that is internal to the client.
+  string client_error = 5;
+
+  // server_error describes an error provided from the gRIBI server.
+  string server_error = 6;
+
+
+}
+
+message Details {
+  enum Type {
+    T_UNKNOWN = 0; // unused
+    // T_ADD indicates that the operation called was an Add.
+    T_ADD = 1;
+    // T_DELETE indicates that the operation called was a Delete.
+    T_DELETE = 2;
+    // T_REPLACE indicates that the operation called was a Modify.
+    T_REPLACE = 3;
+  }
+
+  // type is the type of the operation (i.e., T_ADD, T_MODIFY, T_DELETE)
+  Type type = 1;
+
+  oneof result {
+    // nexthop_index is the identifier for a next-hop modified by the operation.
+    uint64 nexthop_index = 2;
+
+    // nexthop_group_id is the identifier for a next-hop-group modified by the
+    // operation.
+    uint64 nexthop_group_id = 3;
+
+    // ipv4_prefix is the IPv4 prefix modified by the operation.
+    string ipv4_prefix = 4;
+
+    // ipv6_prefix is the IPv6 prefix modified by the operation.
+    string ipv6_prefix = 5;
+
+    // MPLSLabel is the MPLS label that was modified by the operation.
+    uint64 mpls_label = 7;
+  }
+}

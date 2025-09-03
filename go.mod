@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/openconfig/gnmi v0.13.0
 	github.com/openconfig/goyang v1.6.0
-	github.com/openconfig/gribi v1.9.0
+	github.com/openconfig/gribi v1.9.1
 	github.com/openconfig/testt v0.0.0-20220311054427-efbb1a32ec07
 	github.com/openconfig/ygot v0.32.0
 	go.uber.org/atomic v1.10.0

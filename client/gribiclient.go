@@ -725,7 +725,7 @@ func (o *OpResult) String() string {
 	return buf.String()
 }
 
-func (o *OpResult) toProto() (*rpb.OpResult, error) {
+func (o *OpResult) Proto() (*rpb.OpResult, error) {
 	if o == nil {
 		return nil, nil
 	}

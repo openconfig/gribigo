@@ -1538,12 +1538,12 @@ func TestOpResultProto(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := tt.inResult.toProto()
+			got, err := tt.inResult.Proto()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
 			}
 			if diff := cmp.Diff(got, tt.want, protocmp.Transform()); diff != "" {
-				t.Fatalf("toProto() returned unexpected diff (-got, +want):\n%s", diff)
+				t.Fatalf("Proto() returned unexpected diff (-got, +want):\n%s", diff)
 			}
 		})
 	}

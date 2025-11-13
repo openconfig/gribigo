@@ -15,7 +15,6 @@ jobs:
     with:
       race-tests-excludes-regex: github.com/openconfig/gribigo/compliance
       static-analysis-excludes-regex: github.com/openconfig/gribigo/aft
-      install-additional-apt-packages:  libpcap-dev libnl-genl-3-dev libnl-3-dev
       coverage-excludes-regex: github.com/openconfig/gribigo/(aft|ocrt)
     permissions:
       contents: read

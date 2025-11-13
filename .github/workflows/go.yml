@@ -7,11 +7,17 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+permissions: {}
+
 jobs:
   go:
-    uses: openconfig/common-ci/.github/workflows/basic_go.yml@ec2c8a16094f19f0ec1a26d18a814b80ff7e6a7e
+    uses: openconfig/common-ci/.github/workflows/basic_go.yml@88a41b190576ebf6d51b5204c1056af2bda19036
     with:
       race-tests-excludes-regex: github.com/openconfig/gribigo/compliance
       static-analysis-excludes-regex: github.com/openconfig/gribigo/aft
-      install-additional-apt-packages:  libpcap-dev libnl-genl-3-dev libnl-3-dev
       coverage-excludes-regex: github.com/openconfig/gribigo/(aft|ocrt)
+    permissions:
+      contents: read
+      packages: read
+      # To report Github Actions status checks
+      statuses: write

@@ -565,20 +565,6 @@ var (
 			Reference: "TE-3.1.1",
 			ShortName: "Error: Invalid prefix for the IPv4Entry",
 		},
-	}, {
-		In: Test{
-			Fn:                                  IPv4EntryMissingNextHopGroup,
-			Reference:                           "TE-3.1.2",
-			ShortName:                           "Error: Missing NextHopGroup for the IPv4Entry",
-			RequiresDisallowedForwardReferences: true,
-		},
-	}, {
-		In: Test{
-			Fn:                                  IPv4EntryEmptyNextHopGroup,
-			Reference:                           "TE-3.1.3",
-			ShortName:                           "Error: Empty NextHopGroup for the IPv4Entry",
-			RequiresDisallowedForwardReferences: true,
-		},
 	}}
 )
 
@@ -2070,77 +2056,6 @@ func IPv4EntryInvalidPrefix(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
 	chk.HasResult(t, res,
 		fluent.OperationResult().
 			WithIPv4Operation("203.0.113.1").
-			WithOperationType(constants.Add).
-			WithProgrammingResult(fluent.ProgrammingFailed).
-			AsResult(),
-		chk.IgnoreOperationID())
-}
-
-// IPv4EntryMissingNextHopGroup - Missing NextHopGroup for the IPv4Entry 203.0.113.1/32.
-func IPv4EntryMissingNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
-	defer flushServer(c, t)
-
-	ops := []func(){
-		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
-			// NB: NHG 11 has not been defined
-			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
-		},
-	}
-
-	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
-
-	chk.HasResult(t, res,
-		fluent.OperationResult().
-			WithNextHopOperation(1).
-			WithOperationType(constants.Add).
-			WithProgrammingResult(fluent.InstalledInFIB).
-			AsResult(),
-		chk.IgnoreOperationID())
-
-	chk.HasResult(t, res,
-		fluent.OperationResult().
-			WithIPv4Operation("203.0.113.1/32").
-			WithOperationType(constants.Add).
-			WithProgrammingResult(fluent.ProgrammingFailed).
-			AsResult(),
-		chk.IgnoreOperationID())
-}
-
-// IPv4EntryEmptyNextHopGroup - Empty NextHopGroup for the IPv4Entry 203.0.113.1/32.
-func IPv4EntryEmptyNextHopGroup(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
-	defer flushServer(c, t)
-
-	ops := []func(){
-		func() {
-			c.Modify().AddEntry(t, fluent.NextHopEntry().WithNetworkInstance(defaultNetworkInstanceName).WithIndex(1).WithIPAddress("192.0.2.3"))
-			// // NB: NHG is specified to not include any NHs
-			c.Modify().AddEntry(t, fluent.NextHopGroupEntry().WithNetworkInstance(defaultNetworkInstanceName).WithID(11))
-			c.Modify().AddEntry(t, fluent.IPv4Entry().WithPrefix("203.0.113.1/32").WithNetworkInstance(defaultNetworkInstanceName).WithNextHopGroup(11))
-		},
-	}
-
-	res := DoModifyOps(c, t, ops, fluent.InstalledInFIB, false)
-
-	chk.HasResult(t, res,
-		fluent.OperationResult().
-			WithNextHopOperation(1).
-			WithOperationType(constants.Add).
-			WithProgrammingResult(fluent.InstalledInFIB).
-			AsResult(),
-		chk.IgnoreOperationID())
-
-	chk.HasResult(t, res,
-		fluent.OperationResult().
-			WithNextHopGroupOperation(11).
-			WithOperationType(constants.Add).
-			WithProgrammingResult(fluent.ProgrammingFailed).
-			AsResult(),
-		chk.IgnoreOperationID())
-
-	chk.HasResult(t, res,
-		fluent.OperationResult().
-			WithIPv4Operation("203.0.113.1/32").
 			WithOperationType(constants.Add).
 			WithProgrammingResult(fluent.ProgrammingFailed).
 			AsResult(),

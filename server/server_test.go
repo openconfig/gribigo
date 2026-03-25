@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	ppb "github.com/openconfig/gribigo/proto/policy"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 	"github.com/openconfig/gribigo/rib"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
@@ -157,6 +158,7 @@ func TestUpdateParams(t *testing.T) {
 			ExpectElecID: true,
 			Persist:      true,
 			FIBAck:       true,
+			Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 		},
 	}, {
 		desc: "new client, all fields default",
@@ -177,6 +179,29 @@ func TestUpdateParams(t *testing.T) {
 			ExpectElecID: false,
 			Persist:      false,
 			FIBAck:       false,
+		},
+	}, {
+		desc: "new client, GROUP_PRIMARY_WITH_OWNERSHIP",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{},
+				},
+			},
+		},
+		inID: "c1",
+		inParams: &spb.SessionParameters{
+			Persistence:     spb.SessionParameters_PRESERVE,
+			Redundancy:      GROUP_PRIMARY_WITH_OWNERSHIP,
+			AckType:         spb.SessionParameters_RIB_AND_FIB_ACK,
+			RedundancyGroup: "group1",
+		},
+		wantState: &clientParams{
+			ExpectElecID: true,
+			Persist:      true,
+			FIBAck:       true,
+			Redundancy:   GROUP_PRIMARY_WITH_OWNERSHIP,
+			Group:        "group1",
 		},
 	}}
 
@@ -231,6 +256,7 @@ func TestCheckClientsConsistent(t *testing.T) {
 				"c1": {
 					params: &clientParams{
 						ExpectElecID: true,
+						Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 					},
 				},
 			},
@@ -245,12 +271,14 @@ func TestCheckClientsConsistent(t *testing.T) {
 				"c1": {
 					params: &clientParams{
 						ExpectElecID: true,
+						Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 					},
 				},
 			},
 		},
 		inParams: &clientParams{
 			ExpectElecID: true,
+			Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 		},
 		inID: "c2",
 		want: true,
@@ -399,6 +427,7 @@ func TestCheckParams(t *testing.T) {
 					params: &clientParams{
 						FIBAck:       true,
 						ExpectElecID: true,
+						Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 						Persist:      true,
 					},
 				},
@@ -424,6 +453,7 @@ func TestCheckParams(t *testing.T) {
 					params: &clientParams{
 						FIBAck:       true,
 						ExpectElecID: true,
+						Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 						Persist:      true,
 					},
 				},
@@ -439,6 +469,66 @@ func TestCheckParams(t *testing.T) {
 		wantErrCode: codes.FailedPrecondition,
 		wantErrDetails: &spb.ModifyRPCErrorDetails{
 			Reason: spb.ModifyRPCErrorDetails_PARAMS_DIFFER_FROM_OTHER_CLIENTS,
+		},
+	}, {
+		desc: "GROUP_PRIMARY_WITH_OWNERSHIP - missing group",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {params: &clientParams{}},
+			},
+		},
+		inID: "c1",
+		inParams: &spb.SessionParameters{
+			Redundancy:  GROUP_PRIMARY_WITH_OWNERSHIP,
+			Persistence: spb.SessionParameters_PRESERVE,
+		},
+		wantErrCode: codes.InvalidArgument,
+		wantErrDetails: &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		},
+	}, {
+		desc: "GROUP_PRIMARY_WITH_OWNERSHIP - valid",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {params: &clientParams{}},
+			},
+		},
+		inID: "c1",
+		inParams: &spb.SessionParameters{
+			Redundancy:      GROUP_PRIMARY_WITH_OWNERSHIP,
+			Persistence:     spb.SessionParameters_PRESERVE,
+			RedundancyGroup: "group1",
+		},
+		wantResponse: &spb.ModifyResponse{
+			SessionParamsResult: &spb.SessionParametersResult{
+				Status: spb.SessionParametersResult_OK,
+			},
+		},
+	}, {
+		desc: "GROUP_PRIMARY_WITH_OWNERSHIP - consistent with other group",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{
+						Redundancy:   GROUP_PRIMARY_WITH_OWNERSHIP,
+						Persist:      true,
+						ExpectElecID: true,
+						Group:        "group1",
+					},
+				},
+				"c2": {params: &clientParams{}},
+			},
+		},
+		inID: "c2",
+		inParams: &spb.SessionParameters{
+			Redundancy:      GROUP_PRIMARY_WITH_OWNERSHIP,
+			Persistence:     spb.SessionParameters_PRESERVE,
+			RedundancyGroup: "group2",
+		},
+		wantResponse: &spb.ModifyResponse{
+			SessionParamsResult: &spb.SessionParametersResult{
+				Status: spb.SessionParametersResult_OK,
+			},
 		},
 	}}
 
@@ -560,6 +650,7 @@ func TestRunElection(t *testing.T) {
 				"c1": {
 					params: &clientParams{
 						ExpectElecID: true,
+						Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 					}},
 			},
 		},
@@ -577,6 +668,7 @@ func TestRunElection(t *testing.T) {
 				"c1": {
 					params: &clientParams{
 						ExpectElecID: true,
+						Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 					}},
 			},
 			curElecID: &spb.Uint128{
@@ -598,6 +690,7 @@ func TestRunElection(t *testing.T) {
 				"c1": {
 					params: &clientParams{
 						ExpectElecID: true,
+						Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 					},
 				},
 			},
@@ -637,12 +730,59 @@ func TestRunElection(t *testing.T) {
 				"c1": {
 					params: &clientParams{
 						ExpectElecID: true,
+						Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 					}},
 			},
 		},
 		inID:        "c1",
 		inElecID:    &spb.Uint128{High: 0, Low: 0},
 		wantErrCode: codes.InvalidArgument,
+	}, {
+		desc: "becomes master for group",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{
+						ExpectElecID: true,
+						Redundancy:   GROUP_PRIMARY_WITH_OWNERSHIP,
+						Group:        "group1",
+					}},
+			},
+			groups: map[string]*groupState{},
+		},
+		inID:     "c1",
+		inElecID: &spb.Uint128{High: 0, Low: 1},
+		wantResponse: &spb.ModifyResponse{
+			ElectionId: &spb.Uint128{High: 0, Low: 1},
+		},
+		wantServerElecID: &spb.Uint128{High: 0, Low: 1},
+		wantServerMaster: "c1",
+	}, {
+		desc: "does not become master for group",
+		inServer: &Server{
+			cs: map[string]*clientState{
+				"c1": {
+					params: &clientParams{
+						ExpectElecID: true,
+						Redundancy:   GROUP_PRIMARY_WITH_OWNERSHIP,
+						Group:        "group1",
+					},
+				},
+			},
+			groups: map[string]*groupState{
+				"group1": {
+					curElecID: &spb.Uint128{High: 0, Low: 10},
+					curMaster: "existing",
+				},
+			},
+		},
+		inID:     "c1",
+		inElecID: &spb.Uint128{High: 0, Low: 1},
+		wantResponse: &spb.ModifyResponse{
+			ElectionId: &spb.Uint128{High: 0, Low: 10},
+		},
+		wantServerElecID: &spb.Uint128{High: 0, Low: 10},
+		wantServerMaster: "existing",
 	}}
 
 	for _, tt := range tests {
@@ -669,11 +809,27 @@ func TestRunElection(t *testing.T) {
 				t.Errorf("did not get expected response, diff(-got,+want):\n%s", diff)
 			}
 
-			if got, want := s.curElecID, tt.wantServerElecID; !cmp.Equal(got, want, protocmp.Transform()) {
+			var (
+				gotElecID *spb.Uint128
+				gotMaster string
+			)
+			cs, _ := s.getClientState(tt.inID)
+			if cs.params.Redundancy == GROUP_PRIMARY_WITH_OWNERSHIP {
+				g := s.groups[cs.params.Group]
+				if g != nil {
+					gotElecID = g.curElecID
+					gotMaster = g.curMaster
+				}
+			} else {
+				gotElecID = s.curElecID
+				gotMaster = s.curMaster
+			}
+
+			if got, want := gotElecID, tt.wantServerElecID; !cmp.Equal(got, want, protocmp.Transform()) {
 				t.Errorf("did not get expected server ID, got: %s, want: %s", got, want)
 			}
 
-			if got, want := s.curMaster, tt.wantServerMaster; !cmp.Equal(got, want) {
+			if got, want := gotMaster, tt.wantServerMaster; !cmp.Equal(got, want) {
 				t.Errorf("did not get expected master ID, got: %s, want: %s", got, want)
 			}
 		})
@@ -707,9 +863,10 @@ func checkStatusErr(t *testing.T, err error, wantCode codes.Code, wantReason spb
 
 func TestDoModify(t *testing.T) {
 	type expectedMsg struct {
-		result    *spb.ModifyResponse
-		errCode   codes.Code
-		errReason spb.ModifyRPCErrorDetails_Reason
+		result     *spb.ModifyResponse
+		errCode    codes.Code
+		errReason  spb.ModifyRPCErrorDetails_Reason
+		errMessage string
 	}
 	tests := []struct {
 		desc     string
@@ -795,7 +952,9 @@ func TestDoModify(t *testing.T) {
 					Persist:      true,
 					ExpectElecID: true,
 					FIBAck:       true,
+					Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 				},
+
 				lastElecID: &spb.Uint128{High: 42, Low: 42},
 			}
 			s.curElecID = &spb.Uint128{High: 42, Low: 42}
@@ -838,7 +997,9 @@ func TestDoModify(t *testing.T) {
 					Persist:      true,
 					ExpectElecID: true,
 					FIBAck:       true,
+					Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 				},
+
 				lastElecID: &spb.Uint128{High: 42, Low: 42},
 			}
 			s.curElecID = &spb.Uint128{High: 42, Low: 42}
@@ -884,7 +1045,9 @@ func TestDoModify(t *testing.T) {
 					Persist:      true,
 					ExpectElecID: true,
 					FIBAck:       true,
+					Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 				},
+
 				lastElecID: &spb.Uint128{High: 42, Low: 42},
 			}
 			s.curElecID = &spb.Uint128{High: 42, Low: 42}
@@ -929,7 +1092,9 @@ func TestDoModify(t *testing.T) {
 					Persist:      true,
 					ExpectElecID: true,
 					FIBAck:       true,
+					Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 				},
+
 				lastElecID: &spb.Uint128{High: 42, Low: 42},
 			}
 			s.curElecID = &spb.Uint128{High: 42, Low: 42}
@@ -974,7 +1139,9 @@ func TestDoModify(t *testing.T) {
 					Persist:      true,
 					ExpectElecID: true,
 					FIBAck:       true,
+					Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 				},
+
 				lastElecID: &spb.Uint128{High: 42, Low: 42},
 			}
 			s.curElecID = &spb.Uint128{High: 42, Low: 42}
@@ -1016,7 +1183,9 @@ func TestDoModify(t *testing.T) {
 					Persist:      true,
 					ExpectElecID: true,
 					FIBAck:       true,
+					Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 				},
+
 				lastElecID: &spb.Uint128{High: 42, Low: 42},
 			}
 			s.curElecID = &spb.Uint128{High: 42, Low: 42}
@@ -1080,7 +1249,9 @@ func TestDoModify(t *testing.T) {
 					Persist:      true,
 					ExpectElecID: true,
 					FIBAck:       true,
+					Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 				},
+
 				lastElecID: &spb.Uint128{High: 42, Low: 42},
 			}
 			s.curElecID = &spb.Uint128{High: 42, Low: 42}
@@ -1196,7 +1367,9 @@ func TestDoModify(t *testing.T) {
 					Persist:      true,
 					ExpectElecID: true,
 					FIBAck:       true,
+					Redundancy:   spb.SessionParameters_SINGLE_PRIMARY,
 				},
+
 				lastElecID: &spb.Uint128{High: 42, Low: 42},
 			}
 			s.curElecID = &spb.Uint128{High: 42, Low: 42}
@@ -1252,6 +1425,144 @@ func TestDoModify(t *testing.T) {
 				}},
 			},
 		}},
+	}, {
+		desc: "GROUP_PRIMARY_WITH_OWNERSHIP - master success",
+		inServer: func() *Server {
+			s, _ := New()
+			s.cs["c1"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+					Redundancy:   GROUP_PRIMARY_WITH_OWNERSHIP,
+					Group:        "group1",
+				},
+				lastElecID: &spb.Uint128{High: 0, Low: 10},
+			}
+			s.groups["group1"] = &groupState{
+				curElecID: &spb.Uint128{High: 0, Low: 10},
+				curMaster: "c1",
+				masterRIB: rib.New(DefaultNetworkInstanceName),
+			}
+			return s
+		}(),
+		inCID: "c1",
+		inOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: DefaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 0, Low: 10},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     1,
+					Status: spb.AFTResult_RIB_PROGRAMMED,
+				}, {
+					Id:     1,
+					Status: spb.AFTResult_FIB_PROGRAMMED,
+				}},
+			},
+		}},
+	}, {
+		desc: "GROUP_PRIMARY_WITH_OWNERSHIP - non-master failure",
+		inServer: func() *Server {
+			s, _ := New()
+			s.cs["c1"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+					Redundancy:   GROUP_PRIMARY_WITH_OWNERSHIP,
+					Group:        "group1",
+				},
+				lastElecID: &spb.Uint128{High: 0, Low: 1},
+			}
+			s.groups["group1"] = &groupState{
+				curElecID: &spb.Uint128{High: 0, Low: 10},
+				curMaster: "other",
+				masterRIB: rib.New(DefaultNetworkInstanceName),
+			}
+			return s
+		}(),
+		inCID: "c1",
+		inOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: DefaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 0, Low: 1},
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index:   1,
+					NextHop: &aftpb.Afts_NextHop{},
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     1,
+					Status: spb.AFTResult_FAILED,
+				}},
+			},
+		}},
+	}, {
+		desc: "GROUP_PRIMARY_WITH_OWNERSHIP - policy denial",
+		inServer: func() *Server {
+			s, _ := New(WithGroupPolicy("group1", &ppb.GroupPolicy{
+				Ipv4Policy: &ppb.IPv4PrefixPolicy{
+					AllowedPrefixes: []string{"10.0.0.0/8"},
+				},
+			}))
+			s.cs["c1"] = &clientState{
+				params: &clientParams{
+					Persist:      true,
+					ExpectElecID: true,
+					FIBAck:       true,
+					Redundancy:   GROUP_PRIMARY_WITH_OWNERSHIP,
+					Group:        "group1",
+				},
+				lastElecID: &spb.Uint128{High: 0, Low: 10},
+			}
+			// Initialize group state - runElection would normally do this.
+			s.groups["group1"] = &groupState{
+				curElecID: &spb.Uint128{High: 0, Low: 10},
+				curMaster: "c1",
+				masterRIB: rib.New(DefaultNetworkInstanceName),
+				policy:    precompilePolicy(s.groupPolicies["group1"]),
+			}
+			return s
+		}(),
+		inCID: "c1",
+		inOps: []*spb.AFTOperation{{
+			Id:              1,
+			NetworkInstance: DefaultNetworkInstanceName,
+			Op:              spb.AFTOperation_ADD,
+			ElectionId:      &spb.Uint128{High: 0, Low: 10},
+			Entry: &spb.AFTOperation_Ipv4{
+				Ipv4: &aftpb.Afts_Ipv4EntryKey{
+					Prefix: "192.168.1.1/32",
+					Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+						NextHopGroup: &wpb.UintValue{Value: 1},
+					},
+				},
+			},
+		}},
+		wantMsg: []*expectedMsg{{
+			result: &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     1,
+					Status: spb.AFTResult_PERMISSION_DENIED,
+				}},
+			},
+			errMessage: "prefix 192.168.1.1/32 is not allowed by group policy",
+		}},
 	}}
 
 	type recvMsg struct {
@@ -1305,8 +1616,14 @@ func TestDoModify(t *testing.T) {
 					checkStatusErr(t, err, wantMsg.errCode, wantMsg.errReason)
 				}
 				if wantMsg.result != nil {
-					if diff := cmp.Diff(gotMsg.result, wantMsg.result, protocmp.Transform()); diff != "" {
+					if diff := cmp.Diff(gotMsg.result, wantMsg.result, protocmp.Transform(), protocmp.IgnoreFields(&spb.AFTResult{}, "error_details")); diff != "" {
 						t.Fatalf("did not get expected response, diff(-got,+want):\n%s", diff)
+					}
+					if wantMsg.errMessage != "" {
+						gotMsgRes := gotMsg.result.GetResult()
+						if len(gotMsgRes) == 0 || gotMsgRes[0].GetErrorDetails().GetErrorMessage() != wantMsg.errMessage {
+							t.Fatalf("did not get expected error message, got: %s, want: %s", gotMsgRes[0].GetErrorDetails().GetErrorMessage(), wantMsg.errMessage)
+						}
 					}
 				}
 			}
@@ -2171,6 +2488,56 @@ func TestDoGet(t *testing.T) {
 				},
 			}},
 		}},
+	}, {
+		desc: "filter by redundancy group - valid",
+		inReq: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+			Aft:             spb.AFTType_IPV4,
+			RedundancyGroup: "group1",
+		},
+		inServer: func() *Server {
+			s, _ := New(DisableRIBCheckFn())
+			s.groups["group1"] = &groupState{
+				masterRIB: rib.New(DefaultNetworkInstanceName, rib.DisableRIBCheckFn()),
+			}
+			if _, _, err := s.groups["group1"].masterRIB.AddEntry(DefaultNetworkInstanceName, &spb.AFTOperation{
+				Id:              1,
+				NetworkInstance: DefaultNetworkInstanceName,
+				Op:              spb.AFTOperation_ADD,
+				Entry: &spb.AFTOperation_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}); err != nil {
+				panic(err)
+			}
+			return s
+		}(),
+		wantResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: DefaultNetworkInstanceName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}},
+	}, {
+		desc: "filter by redundancy group - unknown group",
+		inReq: &spb.GetRequest{
+			NetworkInstance: &spb.GetRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+			Aft:             spb.AFTType_IPV4,
+			RedundancyGroup: "unknown",
+		},
+		wantErr: true,
 	}}
 
 	for _, tt := range tests {
@@ -2347,6 +2714,65 @@ func TestCheckFlushRequest(t *testing.T) {
 				Name: DefaultNetworkInstanceName,
 			},
 		},
+	}, {
+		desc: "specified group ID is OK",
+		inServer: &Server{
+			groups: map[string]*groupState{
+				"group1": {
+					curElecID: &spb.Uint128{High: 0, Low: 3},
+				},
+			},
+		},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_GroupId{
+				GroupId: &spb.RedundancyGroupId{
+					Group: "group1",
+					Id:    &spb.Uint128{High: 0, Low: 3},
+				},
+			},
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+		},
+	}, {
+		desc: "specified group ID is not master",
+		inServer: &Server{
+			groups: map[string]*groupState{
+				"group1": {
+					curElecID: &spb.Uint128{High: 0, Low: 3},
+				},
+			},
+		},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_GroupId{
+				GroupId: &spb.RedundancyGroupId{
+					Group: "group1",
+					Id:    &spb.Uint128{High: 0, Low: 2},
+				},
+			},
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+		},
+		wantErrCode: codes.FailedPrecondition,
+		wantErrDetails: &spb.FlushResponseError{
+			Status: spb.FlushResponseError_NOT_PRIMARY,
+		},
+	}, {
+		desc:     "group ID specified but group has no state",
+		inServer: &Server{groups: map[string]*groupState{}},
+		inRequest: &spb.FlushRequest{
+			Election: &spb.FlushRequest_GroupId{
+				GroupId: &spb.RedundancyGroupId{
+					Group: "group1",
+					Id:    &spb.Uint128{High: 0, Low: 3},
+				},
+			},
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+		},
+		wantErrCode: codes.FailedPrecondition,
 	}}
 
 	for _, tt := range tests {
@@ -2620,6 +3046,47 @@ func TestFlush(t *testing.T) {
 		wantEntriesInNI: map[string]int{
 			DefaultNetworkInstanceName: 0,
 		},
+	}, {
+		desc: "success, flush group RIB",
+		inServer: func() *Server {
+			s, _ := New(DisableRIBCheckFn())
+			s.groups["group1"] = &groupState{
+				curElecID: &spb.Uint128{High: 0, Low: 10},
+				masterRIB: rib.New(DefaultNetworkInstanceName),
+			}
+			addEntry(s.groups["group1"].masterRIB, DefaultNetworkInstanceName)
+			return s
+		}(),
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+			Election: &spb.FlushRequest_GroupId{
+				GroupId: &spb.RedundancyGroupId{
+					Group: "group1",
+					Id:    &spb.Uint128{High: 0, Low: 10},
+				},
+			},
+		},
+		wantResult: spb.FlushResponse_OK,
+		wantEntriesInNI: map[string]int{
+			DefaultNetworkInstanceName: 0,
+		},
+	}, {
+		desc:     "error, flush group with no state",
+		inServer: &Server{groups: map[string]*groupState{}},
+		inReq: &spb.FlushRequest{
+			NetworkInstance: &spb.FlushRequest_Name{
+				Name: DefaultNetworkInstanceName,
+			},
+			Election: &spb.FlushRequest_GroupId{
+				GroupId: &spb.RedundancyGroupId{
+					Group: "group1",
+					Id:    &spb.Uint128{High: 0, Low: 10},
+				},
+			},
+		},
+		wantErrCode: codes.FailedPrecondition,
 	}}
 
 	for _, tt := range tests {
@@ -2641,7 +3108,14 @@ func TestFlush(t *testing.T) {
 			}
 
 			for ni, wantEntries := range tt.wantEntriesInNI {
-				r, ok := tt.inServer.masterRIB.NetworkInstanceRIB(ni)
+				rib := tt.inServer.masterRIB
+				if gID := tt.inReq.GetGroupId(); gID != nil {
+					if g, ok := tt.inServer.groups[gID.Group]; ok {
+						rib = g.masterRIB
+					}
+				}
+
+				r, ok := rib.NetworkInstanceRIB(ni)
 				if !ok {
 					t.Fatalf("cannot find RIB %s on server", ni)
 				}

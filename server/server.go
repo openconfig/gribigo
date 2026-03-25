@@ -21,28 +21,59 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/netip"
 	"sync"
 	"time"
 
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
+	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	"github.com/openconfig/gribigo/aft"
+	"github.com/openconfig/gribigo/constants"
 	"github.com/openconfig/gribigo/rib"
+	"github.com/openconfig/ygot/ygot"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
 	"lukechampine.com/uint128"
 
+	ppb "github.com/openconfig/gribigo/proto/policy"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 const (
 	// DefaultNetworkInstanceName specifies the name of the default network instance on the system.
 	DefaultNetworkInstanceName = "DEFAULT"
+
+	// GROUP_PRIMARY_WITH_OWNERSHIP is the redundancy mode for GROUP_PRIMARY_WITH_OWNERSHIP.
+	GROUP_PRIMARY_WITH_OWNERSHIP = spb.SessionParameters_ClientRedundancy(2)
 )
 
 // unixTS is used to determine the current unix timestamp in nanoseconds since the
 // epoch. It is defined such that it can be overloaded by unit tests.
 var unixTS = time.Now().UnixNano
+
+// precompiledIPv4Policy stores parsed IPv4 policy constraints.
+type precompiledIPv4Policy struct {
+	allowedPrefixes []netip.Prefix
+}
+
+// precompiledPolicy stores parsed group policy constraints.
+type precompiledPolicy struct {
+	ipv4 *precompiledIPv4Policy
+}
+
+// groupState stores the state for a single redundancy group.
+type groupState struct {
+	// curElecID stores the current electionID for the group.
+	curElecID *spb.Uint128
+	// curMaster stores the current master's UUID for the group.
+	curMaster string
+	// masterRIB is the gRIBI RIB for the group.
+	masterRIB *rib.RIB
+	// policy stores the precompiled constraints for this group.
+	policy *precompiledPolicy
+}
 
 // Server implements the gRIBI service.
 type Server struct {
@@ -74,6 +105,28 @@ type Server struct {
 	// masterRIB is the single gRIBI RIB that is used for a server that runs with
 	// a single elected master, where a single RIB is written to by all clients.
 	masterRIB *rib.RIB
+
+	// groups stores the state for each redundancy group.
+	groups map[string]*groupState
+
+	// ribOpt stores the options that should be used when creating a new RIB.
+	ribOpt []rib.RIBOpt
+	// postChangeRIBHook stores the hook that should be called after a RIB change.
+	postChangeRIBHook rib.RIBHookFn
+	// resolvedEntryHook stores the hook that should be called when an entry is resolved.
+	resolvedEntryHook rib.ResolvedEntryFn
+	// vrfs stores the set of VRFs that should be created in the RIB.
+	vrfs []string
+
+	// groupPolicies stores the policies for each group that should be applied
+	// when the group is initialized.
+	groupPolicies map[string]*ppb.GroupPolicy
+
+	// ownershipMu protects the ownership map.
+	ownershipMu sync.RWMutex
+	// ownership stores which redundancy group owns a particular AFT entry in the masterRIB.
+	// map key is "NetworkInstance/AFT/EntryKey"
+	ownership map[string]string
 }
 
 // clientState stores information that relates to a specific client
@@ -112,12 +165,18 @@ type clientParams struct {
 	Persist bool
 
 	// ExpectElecID indicates whether the client expects to send
-	// election IDs (i.e., the ClientRedundancy is SINGLE_PRIMARY).
+	// election IDs (i.e., the ClientRedundancy is SINGLE_PRIMARY or GROUP_PRIMARY_WITH_OWNERSHIP).
 	ExpectElecID bool
 
 	// FIBAck indicates whether the client expects FIB-level
 	// acknowledgements.
 	FIBAck bool
+
+	// Redundancy stores the redundancy mode of the client.
+	Redundancy spb.SessionParameters_ClientRedundancy
+
+	// Group stores the redundancy group of the client.
+	Group string
 }
 
 // DeepCopy returns a copy of the clientParams struct.
@@ -126,12 +185,17 @@ func (cp *clientParams) DeepCopy() *clientParams {
 		Persist:      cp.Persist,
 		ExpectElecID: cp.ExpectElecID,
 		FIBAck:       cp.FIBAck,
+		Redundancy:   cp.Redundancy,
+		Group:        cp.Group,
 	}
 }
 
 // Equal returns true if the candidate clientParams n is equal to the receiver cp.
 func (cp *clientParams) Equal(n *clientParams) bool {
-	return cp.Persist == n.Persist && cp.FIBAck == n.FIBAck && cp.ExpectElecID == n.ExpectElecID
+	if cp.Redundancy == GROUP_PRIMARY_WITH_OWNERSHIP && n.Redundancy == GROUP_PRIMARY_WITH_OWNERSHIP {
+		return cp.Persist == n.Persist && cp.FIBAck == n.FIBAck && cp.ExpectElecID == n.ExpectElecID
+	}
+	return cp.Persist == n.Persist && cp.FIBAck == n.FIBAck && cp.ExpectElecID == n.ExpectElecID && cp.Redundancy == n.Redundancy && cp.Group == n.Group
 }
 
 // ServerOpt is an interface that is implemented by any options to the gRIBI server.
@@ -260,6 +324,31 @@ func hasWithNoRIBForwardReferences(opt []ServerOpt) bool {
 	return false
 }
 
+// WithGroupPolicy specifies a policy that should be applied to a particular group.
+func WithGroupPolicy(group string, policy *ppb.GroupPolicy) *groupPolicyOpt {
+	return &groupPolicyOpt{policies: map[string]*ppb.GroupPolicy{group: policy}}
+}
+
+// WithGroupPolicies specifies a set of policies that should be applied to groups.
+func WithGroupPolicies(policies map[string]*ppb.GroupPolicy) *groupPolicyOpt {
+	return &groupPolicyOpt{policies: policies}
+}
+
+type groupPolicyOpt struct {
+	policies map[string]*ppb.GroupPolicy
+}
+
+func (*groupPolicyOpt) isServerOpt() {}
+
+func hasWithGroupPolicies(opt []ServerOpt) map[string]*ppb.GroupPolicy {
+	for _, o := range opt {
+		if v, ok := o.(*groupPolicyOpt); ok {
+			return v.policies
+		}
+	}
+	return nil
+}
+
 // New creates a new gRIBI server.
 func New(opt ...ServerOpt) (*Server, error) {
 	ribOpt := []rib.RIBOpt{}
@@ -275,18 +364,31 @@ func New(opt ...ServerOpt) (*Server, error) {
 		cs: map[string]*clientState{},
 		// TODO(robjs): when we implement support for ALL_PRIMARY then we might not
 		// want to create a new RIB by default.
-		masterRIB: rib.New(DefaultNetworkInstanceName, ribOpt...),
+		masterRIB:     rib.New(DefaultNetworkInstanceName, ribOpt...),
+		groups:        map[string]*groupState{},
+		ribOpt:        ribOpt,
+		groupPolicies: map[string]*ppb.GroupPolicy{},
+		ownership:     map[string]string{},
+	}
+
+	if v := hasWithGroupPolicies(opt); v != nil {
+		for g, p := range v {
+			s.groupPolicies[g] = p
+		}
 	}
 
 	if v := hasPostChangeRIBHook(opt); v != nil {
 		s.masterRIB.SetPostChangeHook(v.fn)
+		s.postChangeRIBHook = v.fn
 	}
 
 	if v := hasResolvedEntryHook(opt); v != nil {
 		s.masterRIB.SetResolvedEntryHook(v.fn)
+		s.resolvedEntryHook = v.fn
 	}
 
 	if vrfs := hasWithVRFs(opt); vrfs != nil {
+		s.vrfs = vrfs
 		for _, n := range vrfs {
 			if err := s.masterRIB.AddNetworkInstance(n); err != nil {
 				return nil, fmt.Errorf("cannot create network instance %s, %v", n, err)
@@ -445,12 +547,23 @@ func (s *Server) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 		return nil, err
 	}
 
+	r := s.masterRIB
+	if gID := req.GetGroupId(); gID != nil {
+		s.elecMu.RLock()
+		g, ok := s.groups[gID.Group]
+		s.elecMu.RUnlock()
+		if !ok || g.masterRIB == nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "redundancy group %s has no RIB state", gID.Group)
+		}
+		r = g.masterRIB
+	}
+
 	nis := []string{}
 	switch t := req.GetNetworkInstance().(type) {
 	case *spb.FlushRequest_All:
-		nis = s.masterRIB.KnownNetworkInstances()
+		nis = r.KnownNetworkInstances()
 	case *spb.FlushRequest_Name:
-		if _, ok := s.masterRIB.NetworkInstanceRIB(t.Name); !ok {
+		if _, ok := r.NetworkInstanceRIB(t.Name); !ok {
 			return nil, addFlushErrDetailsOrReturn(status.Newf(codes.InvalidArgument, "could not find network instance %s", t.Name), &spb.FlushResponseError{
 				Status: spb.FlushResponseError_INVALID_NETWORK_INSTANCE,
 			})
@@ -458,7 +571,7 @@ func (s *Server) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 		nis = []string{t.Name}
 	}
 
-	if err := s.masterRIB.Flush(nis); err != nil {
+	if err := r.Flush(nis); err != nil {
 		fErr, ok := err.(*rib.FlushErr)
 		det := &bytes.Buffer{}
 		switch ok {
@@ -519,9 +632,11 @@ func (s *Server) deleteClient(id string) {
 func (s *Server) updateParams(id string, params *spb.SessionParameters) error {
 	cparam := &clientParams{}
 
-	cparam.ExpectElecID = (params.Redundancy == spb.SessionParameters_SINGLE_PRIMARY)
+	cparam.ExpectElecID = (params.Redundancy == spb.SessionParameters_SINGLE_PRIMARY || params.Redundancy == GROUP_PRIMARY_WITH_OWNERSHIP)
 	cparam.Persist = (params.Persistence == spb.SessionParameters_PRESERVE)
 	cparam.FIBAck = (params.AckType == spb.SessionParameters_RIB_AND_FIB_ACK)
+	cparam.Redundancy = params.Redundancy
+	cparam.Group = params.RedundancyGroup
 
 	s.csMu.Lock()
 	defer s.csMu.Unlock()
@@ -593,10 +708,18 @@ func (s *Server) checkParams(id string, p *spb.SessionParameters, gotMsg bool) (
 		})
 	}
 
+	if p.Redundancy == GROUP_PRIMARY_WITH_OWNERSHIP && p.RedundancyGroup == "" {
+		return nil, addModifyErrDetailsOrReturn(status.New(codes.InvalidArgument, "redundancy group must be specified for GROUP_PRIMARY_WITH_OWNERSHIP"), &spb.ModifyRPCErrorDetails{
+			Reason: spb.ModifyRPCErrorDetails_UNSUPPORTED_PARAMS,
+		})
+	}
+
 	cp := &clientParams{
 		FIBAck:       p.GetAckType() == spb.SessionParameters_RIB_AND_FIB_ACK,
-		ExpectElecID: p.GetRedundancy() == spb.SessionParameters_SINGLE_PRIMARY,
+		ExpectElecID: p.GetRedundancy() == spb.SessionParameters_SINGLE_PRIMARY || p.GetRedundancy() == GROUP_PRIMARY_WITH_OWNERSHIP,
 		Persist:      p.GetPersistence() == spb.SessionParameters_PRESERVE,
+		Redundancy:   p.GetRedundancy(),
+		Group:        p.GetRedundancyGroup(),
 	}
 
 	consistent, err := s.checkClientsConsistent(id, cp)
@@ -746,30 +869,104 @@ func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyRespons
 		return nil, status.Newf(codes.Internal, "cannot store election ID %s for client %s", elecID, id).Err()
 	}
 
-	s.elecMu.RLock()
-	defer s.elecMu.RUnlock()
-	nm, _, err := isNewMaster(elecID, s.curElecID)
+	s.elecMu.Lock()
+	defer s.elecMu.Unlock()
+
+	var (
+		curElecID *spb.Uint128
+		newMaster bool
+	)
+
+	switch cs.params.Redundancy {
+	case GROUP_PRIMARY_WITH_OWNERSHIP:
+		g, ok := s.groups[cs.params.Group]
+		if !ok {
+			// Initialize the group if it doesn't exist.
+			g = &groupState{
+				// Each group has its own masterRIB.
+				// We reuse the same options as the server.
+				masterRIB: rib.New(DefaultNetworkInstanceName, s.ribOpt...),
+			}
+			gn := cs.params.Group
+			g.masterRIB.SetPostChangeHook(func(optype constants.OpType, ts int64, ni string, entry ygot.ValidatedGoStruct) {
+				s.updateMasterRIB(gn, optype, ni, entry)
+				if s.postChangeRIBHook != nil {
+					s.postChangeRIBHook(optype, ts, ni, entry)
+				}
+			})
+			if s.resolvedEntryHook != nil {
+				g.masterRIB.SetResolvedEntryHook(s.resolvedEntryHook)
+			}
+			for _, vrf := range s.vrfs {
+				if err := g.masterRIB.AddNetworkInstance(vrf); err != nil {
+					return nil, status.Errorf(codes.Internal, "cannot initialize group RIB for group %s, vrf %s: %v", cs.params.Group, vrf, err)
+				}
+			}
+			g.policy = precompilePolicy(s.groupPolicies[cs.params.Group])
+			s.groups[cs.params.Group] = g
+		}
+		curElecID = g.curElecID
+		nm, _, err := isNewMaster(elecID, curElecID)
+		if err != nil {
+			return nil, err
+		}
+		if nm {
+			g.curElecID = elecID
+			g.curMaster = id
+			newMaster = true
+		}
+		curElecID = g.curElecID
+	case spb.SessionParameters_SINGLE_PRIMARY:
+		curElecID = s.curElecID
+		nm, _, err := isNewMaster(elecID, curElecID)
+		if err != nil {
+			return nil, err
+		}
+		if nm {
+			s.curElecID = elecID
+			s.curMaster = id
+			newMaster = true
+		}
+		curElecID = s.curElecID
+	default:
+		return nil, status.Errorf(codes.Internal, "invalid redundancy mode %v", cs.params.Redundancy)
+	}
+
+	_ = newMaster // we might want to log this or trigger other actions
+
+	return &spb.ModifyResponse{
+		ElectionId: curElecID,
+	}, nil
+}
+
+// getElection returns the details of the current election on the server for the
+// specified client.
+func (s *Server) getElection(id string) (*electionDetails, error) {
+	cs, err := s.getClientStateCopy(id)
 	if err != nil {
 		return nil, err
 	}
 
-	if nm {
-		s.curElecID = elecID
-		s.curMaster = id
-	}
-
-	return &spb.ModifyResponse{
-		ElectionId: s.curElecID,
-	}, nil
-}
-
-// getElection returns the details of the current election on the server.
-func (s *Server) getElection() *electionDetails {
 	s.elecMu.RLock()
 	defer s.elecMu.RUnlock()
-	return &electionDetails{
-		master: s.curMaster,
-		ID:     s.curElecID,
+
+	switch cs.params.Redundancy {
+	case GROUP_PRIMARY_WITH_OWNERSHIP:
+		g, ok := s.groups[cs.params.Group]
+		if !ok {
+			return nil, status.Errorf(codes.FailedPrecondition, "client redundancy group %s has no state", cs.params.Group)
+		}
+		return &electionDetails{
+			master: g.curMaster,
+			ID:     g.curElecID,
+		}, nil
+	case spb.SessionParameters_SINGLE_PRIMARY:
+		return &electionDetails{
+			master: s.curMaster,
+			ID:     s.curElecID,
+		}, nil
+	default:
+		return nil, status.Errorf(codes.Internal, "invalid redundancy mode %v", cs.params.Redundancy)
 	}
 }
 
@@ -792,12 +989,64 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 		return
 	}
 
-	elec := s.getElection()
+	elec, err := s.getElection(cid)
+	if err != nil {
+		errCh <- err
+		return
+	}
 	elec.clientLatest = cs.lastElecID
 	elec.client = cid
 
+	r := s.masterRIB
+	var policy *precompiledPolicy
+	if cs.params.Redundancy == GROUP_PRIMARY_WITH_OWNERSHIP {
+		s.elecMu.RLock()
+		g, ok := s.groups[cs.params.Group]
+		s.elecMu.RUnlock()
+		if !ok || g.masterRIB == nil {
+			errCh <- status.Errorf(codes.FailedPrecondition, "client redundancy group %s has no RIB state", cs.params.Group)
+			return
+		}
+		r = g.masterRIB
+		policy = g.policy
+	}
+
 	for _, o := range ops {
+		if err := validateOperationPolicy(o, policy); err != nil {
+			resCh <- &spb.ModifyResponse{
+				Result: []*spb.AFTResult{{
+					Id:     o.Id,
+					Status: spb.AFTResult_PERMISSION_DENIED,
+					ErrorDetails: &spb.AFTErrorDetails{
+						ErrorMessage: err.Error(),
+					},
+				}},
+			}
+			continue
+		}
+
 		ni := o.GetNetworkInstance()
+		ek, err := entryKeyFromOp(ni, o)
+		if err == nil && cs.params.Redundancy == GROUP_PRIMARY_WITH_OWNERSHIP {
+			s.ownershipMu.RLock()
+			owner, ok := s.ownership[ek]
+			s.ownershipMu.RUnlock()
+
+			if ok && owner != cs.params.Group {
+				log.Errorf("group %s: rejected operation %s since it is owned by group %s", cs.params.Group, ek, owner)
+				resCh <- &spb.ModifyResponse{
+					Result: []*spb.AFTResult{{
+						Id:     o.Id,
+						Status: spb.AFTResult_FAILED,
+						ErrorDetails: &spb.AFTErrorDetails{
+							ErrorMessage: fmt.Sprintf("entry %s is owned by group %s", ek, owner),
+						},
+					}},
+				}
+				continue
+			}
+		}
+
 		if ni == "" {
 			resCh <- &spb.ModifyResponse{
 				Result: []*spb.AFTResult{{
@@ -809,7 +1058,7 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 				}},
 			}
 		}
-		if _, ok := s.masterRIB.NetworkInstanceRIB(ni); !ok {
+		if _, ok := r.NetworkInstanceRIB(ni); !ok {
 			// this is an unknown network instance, we should not return
 			// an error to the client since we do not want the connection
 			// to be torn down.
@@ -837,7 +1086,7 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 		// for ALL_PRIMARY this situation will need to handled likely by creating
 		// some form of lock on each transaction as it is attempted, or building
 		// a more intelligent RIB structure to track missing dependencies.
-		res, err := modifyEntry(s.masterRIB, ni, o, cs.params.FIBAck, elec)
+		res, err := modifyEntry(r, ni, o, cs.params.FIBAck, elec)
 		switch {
 		case err != nil:
 			errCh <- err
@@ -845,6 +1094,59 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 			resCh <- res
 		}
 	}
+}
+
+// precompilePolicy converts a protobuf GroupPolicy into a precompiledPolicy.
+func precompilePolicy(p *ppb.GroupPolicy) *precompiledPolicy {
+	if p == nil {
+		return nil
+	}
+	pp := &precompiledPolicy{}
+	if p.Ipv4Policy != nil && len(p.Ipv4Policy.AllowedPrefixes) > 0 {
+		pp.ipv4 = &precompiledIPv4Policy{}
+		for _, prefixStr := range p.Ipv4Policy.AllowedPrefixes {
+			prefix, err := netip.ParsePrefix(prefixStr)
+			if err != nil {
+				log.Errorf("invalid allowed prefix %s in policy", prefixStr)
+				continue
+			}
+			pp.ipv4.allowedPrefixes = append(pp.ipv4.allowedPrefixes, prefix)
+		}
+	}
+	return pp
+}
+
+// validateOperationPolicy checks whether the specified operation is allowed by the group policy.
+// It returns an error if the operation is not allowed.
+func validateOperationPolicy(op *spb.AFTOperation, policy *precompiledPolicy) error {
+	if policy == nil {
+		return nil
+	}
+
+	ipv4 := op.GetIpv4()
+	if ipv4 == nil {
+		return nil
+	}
+
+	if policy.ipv4 == nil || len(policy.ipv4.allowedPrefixes) == 0 {
+		return nil
+	}
+
+	opPrefix, err := netip.ParsePrefix(ipv4.Prefix)
+	if err != nil {
+		return fmt.Errorf("invalid prefix %s", ipv4.Prefix)
+	}
+
+	for _, allowed := range policy.ipv4.allowedPrefixes {
+		// If the operation prefix is within the allowed prefix, or equal to it.
+		// A prefix A is contained in prefix B if B contains the first address of A
+		// and A's prefix length is greater than or equal to B's.
+		if allowed.Contains(opPrefix.Addr()) && opPrefix.Bits() >= allowed.Bits() {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("prefix %s is not allowed by group policy", ipv4.Prefix)
 }
 
 // electionDetails provides a summary of a single election from the perspective of one client.
@@ -1057,6 +1359,18 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 		return
 	}
 
+	r := s.masterRIB
+	if req.RedundancyGroup != "" {
+		s.elecMu.RLock()
+		g, ok := s.groups[req.RedundancyGroup]
+		s.elecMu.RUnlock()
+		if !ok || g.masterRIB == nil {
+			errCh <- status.Errorf(codes.InvalidArgument, "invalid redundancy group %s specified", req.RedundancyGroup)
+			return
+		}
+		r = g.masterRIB
+	}
+
 	netInstances := []string{}
 	switch nireq := req.NetworkInstance.(type) {
 	case *spb.GetRequest_Name:
@@ -1066,7 +1380,7 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 		}
 		netInstances = append(netInstances, nireq.Name)
 	case *spb.GetRequest_All:
-		netInstances = s.masterRIB.KnownNetworkInstances()
+		netInstances = r.KnownNetworkInstances()
 	}
 
 	filter := map[spb.AFTType]bool{}
@@ -1078,7 +1392,7 @@ func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh,
 	}
 
 	for _, ni := range netInstances {
-		netInst, ok := s.masterRIB.NetworkInstanceRIB(ni)
+		netInst, ok := r.NetworkInstanceRIB(ni)
 		if !ok {
 			errCh <- status.Errorf(codes.InvalidArgument, "invalid network instance %s specified", ni)
 			return
@@ -1114,6 +1428,34 @@ func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
 	case req.GetOverride() != nil:
 		// The election ID should not be compared, regardless of whether
 		// there are SINGLE_PRIMARY clients on the server.
+		return nil
+	}
+
+	if gID := req.GetGroupId(); gID != nil {
+		s.elecMu.RLock()
+		defer s.elecMu.RUnlock()
+		g, ok := s.groups[gID.Group]
+		if !ok {
+			return status.Errorf(codes.FailedPrecondition, "redundancy group %s has no state", gID.Group)
+		}
+
+		candidate := uint128.New(gID.Id.Low, gID.Id.High)
+		if uint128.New(0, 0).Equals(candidate) {
+			return addFlushErrDetailsOrReturn(status.Newf(codes.InvalidArgument, "zero is an invalid election ID"), &spb.FlushResponseError{
+				Status: spb.FlushResponseError_INVALID_ELECTION_ID,
+			})
+		}
+
+		if g.curElecID == nil {
+			return nil // No election ID set yet, any ID is fine? (matching runElection)
+		}
+
+		existing := uint128.New(g.curElecID.Low, g.curElecID.High)
+		if candidate.Cmp(existing) < 0 {
+			return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "election ID specified (%v) is not primary for group %s", candidate, gID.Group), &spb.FlushResponseError{
+				Status: spb.FlushResponseError_NOT_PRIMARY,
+			})
+		}
 		return nil
 	}
 
@@ -1154,6 +1496,147 @@ func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
 	return nil
 }
 
+// updateMasterRIB synchronizes a change from a group RIB to the server's master RIB.
+func (s *Server) updateMasterRIB(group string, optype constants.OpType, ni string, entry ygot.ValidatedGoStruct) {
+	ek, err := entryKeyFromStruct(ni, entry)
+	if err != nil {
+		log.Errorf("group %s: cannot determine entry key for %T: %v", group, entry, err)
+		return
+	}
+
+	s.ownershipMu.Lock()
+	defer s.ownershipMu.Unlock()
+
+	mr := s.masterRIB
+	niR, ok := mr.NetworkInstanceRIB(ni)
+	if !ok {
+		log.Errorf("group %s: network instance %s not found in master RIB", group, ni)
+		return
+	}
+
+	switch optype {
+	case constants.Add, constants.Replace:
+		s.ownership[ek] = group
+		// We use MergeStructInto to bypass resolution checks in master RIB,
+		// since it's already resolved in the group RIB.
+		// However, MergeStructInto needs a *aft.RIB.
+		cr := &aft.RIB{}
+		switch t := entry.(type) {
+		case *aft.Afts_Ipv4Entry:
+			if optype == constants.Replace {
+				niR.DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{Prefix: t.GetPrefix()})
+			}
+			cr.GetOrCreateAfts().Ipv4Entry = map[string]*aft.Afts_Ipv4Entry{t.GetPrefix(): t}
+		case *aft.Afts_Ipv6Entry:
+			if optype == constants.Replace {
+				niR.DeleteIPv6(&aftpb.Afts_Ipv6EntryKey{Prefix: t.GetPrefix()})
+			}
+			cr.GetOrCreateAfts().Ipv6Entry = map[string]*aft.Afts_Ipv6Entry{t.GetPrefix(): t}
+		case *aft.Afts_NextHop:
+			if optype == constants.Replace {
+				niR.DeleteNextHop(&aftpb.Afts_NextHopKey{Index: t.GetIndex()})
+			}
+			cr.GetOrCreateAfts().NextHop = map[uint64]*aft.Afts_NextHop{t.GetIndex(): t}
+		case *aft.Afts_NextHopGroup:
+			if optype == constants.Replace {
+				niR.DeleteNextHopGroup(&aftpb.Afts_NextHopGroupKey{Id: t.GetId()})
+			}
+			cr.GetOrCreateAfts().NextHopGroup = map[uint64]*aft.Afts_NextHopGroup{t.GetId(): t}
+		case *aft.Afts_LabelEntry:
+			if optype == constants.Replace {
+				if v, ok := t.Label.(aft.UnionUint32); ok {
+					niR.DeleteMPLS(&aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: uint64(v)},
+					})
+				}
+			}
+			cr.GetOrCreateAfts().LabelEntry = map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry{t.Label: t}
+		}
+		if err := niR.Merge(cr); err != nil {
+			log.Errorf("group %s: cannot merge entry %s into master RIB: %v", group, ek, err)
+		}
+	case constants.Delete:
+		delete(s.ownership, ek)
+		switch t := entry.(type) {
+		case *aft.Afts_Ipv4Entry:
+			niR.DeleteIPv4(&aftpb.Afts_Ipv4EntryKey{Prefix: t.GetPrefix()})
+		case *aft.Afts_Ipv6Entry:
+			niR.DeleteIPv6(&aftpb.Afts_Ipv6EntryKey{Prefix: t.GetPrefix()})
+		case *aft.Afts_NextHop:
+			niR.DeleteNextHop(&aftpb.Afts_NextHopKey{Index: t.GetIndex()})
+		case *aft.Afts_NextHopGroup:
+			niR.DeleteNextHopGroup(&aftpb.Afts_NextHopGroupKey{Id: t.GetId()})
+		case *aft.Afts_LabelEntry:
+			if v, ok := t.Label.(aft.UnionUint32); ok {
+				niR.DeleteMPLS(&aftpb.Afts_LabelEntryKey{
+					Label: &aftpb.Afts_LabelEntryKey_LabelUint64{LabelUint64: uint64(v)},
+				})
+			}
+		}
+	}
+}
+
+// entryKeyFromStruct returns a unique key for an AFT entry struct.
+func entryKeyFromStruct(ni string, entry ygot.ValidatedGoStruct) (string, error) {
+	var aftName, key string
+	switch t := entry.(type) {
+	case *aft.Afts_Ipv4Entry:
+		aftName = "ipv4"
+		key = t.GetPrefix()
+	case *aft.Afts_Ipv6Entry:
+		aftName = "ipv6"
+		key = t.GetPrefix()
+	case *aft.Afts_NextHop:
+		aftName = "nh"
+		key = fmt.Sprintf("%d", t.GetIndex())
+	case *aft.Afts_NextHopGroup:
+		aftName = "nhg"
+		key = fmt.Sprintf("%d", t.GetId())
+	case *aft.Afts_LabelEntry:
+		aftName = "mpls"
+		switch v := t.Label.(type) {
+		case aft.UnionUint32:
+			key = fmt.Sprintf("%d", v)
+		default:
+			return "", fmt.Errorf("unsupported MPLS label type %T", v)
+		}
+	default:
+		return "", fmt.Errorf("unknown AFT entry type %T", entry)
+	}
+	return fmt.Sprintf("%s/%s/%s", ni, aftName, key), nil
+}
+
+// entryKeyFromOp returns a unique key for an AFT operation.
+func entryKeyFromOp(ni string, op *spb.AFTOperation) (string, error) {
+	var aftName, key string
+	switch t := op.Entry.(type) {
+	case *spb.AFTOperation_Ipv4:
+		aftName = "ipv4"
+		key = t.Ipv4.GetPrefix()
+	case *spb.AFTOperation_Ipv6:
+		aftName = "ipv6"
+		key = t.Ipv6.GetPrefix()
+	case *spb.AFTOperation_NextHop:
+		aftName = "nh"
+		key = fmt.Sprintf("%d", t.NextHop.GetIndex())
+	case *spb.AFTOperation_NextHopGroup:
+		aftName = "nhg"
+		key = fmt.Sprintf("%d", t.NextHopGroup.GetId())
+	case *spb.AFTOperation_Mpls:
+		aftName = "mpls"
+		l := t.Mpls.GetLabel()
+		switch v := l.(type) {
+		case *aftpb.Afts_LabelEntryKey_LabelUint64:
+			key = fmt.Sprintf("%d", v.LabelUint64)
+		case *aftpb.Afts_LabelEntryKey_LabelOpenconfigmplstypesmplslabelenum:
+			key = fmt.Sprintf("%d", v.LabelOpenconfigmplstypesmplslabelenum)
+		}
+	default:
+		return "", fmt.Errorf("unknown AFT operation type %T", t)
+	}
+	return fmt.Sprintf("%s/%s/%s", ni, aftName, key), nil
+}
+
 // FakeServer is a wrapper around the server with functions to enable testing
 // to be performed more easily, for example, injecting specific state.
 type FakeServer struct {
@@ -1186,4 +1669,15 @@ func (f *FakeServer) InjectRIB(r *rib.RIB) {
 // though it was received from the client.
 func (f *FakeServer) InjectElectionID(id *spb.Uint128) {
 	f.Server.curElecID = id
+}
+
+// InjectGroupState allows a client to set the state for a particular group.
+func (f *FakeServer) InjectGroupState(group string, id *spb.Uint128, master string, r *rib.RIB) {
+	f.Server.elecMu.Lock()
+	defer f.Server.elecMu.Unlock()
+	f.Server.groups[group] = &groupState{
+		curElecID: id,
+		curMaster: master,
+		masterRIB: r,
+	}
 }

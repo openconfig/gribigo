@@ -98,6 +98,18 @@ func TestHandleParams(t *testing.T) {
 				Persistence: spb.SessionParameters_PRESERVE,
 			},
 		},
+	}, {
+		desc: "GROUP_PRIMARY_WITH_OWNERSHIP client",
+		inOpts: []Opt{
+			GroupPrimaryWithOwnership("group1", &spb.Uint128{High: 0, Low: 1}),
+		},
+		wantState: &clientState{
+			SessParams: &spb.SessionParameters{
+				Redundancy:      spb.SessionParameters_GROUP_PRIMARY_WITH_OWNERSHIP,
+				RedundancyGroup: "group1",
+			},
+			ElectionID: &spb.Uint128{High: 0, Low: 1},
+		},
 	}}
 
 	for _, tt := range tests {
@@ -796,6 +808,43 @@ func TestHandleModifyResponse(t *testing.T) {
 			Timestamp:         42,
 			OperationID:       1,
 			ProgrammingResult: spb.AFTResult_RIB_PROGRAMMED,
+		}},
+	}, {
+		desc: "receive AFTResult_PERMISSION_DENIED",
+		inClient: &Client{
+			qs: &clientQs{
+				pendq: &pendingQueue{
+					Ops: map[uint64]*PendingOp{
+						1: {
+							Timestamp: 42,
+							Op:        &spb.AFTOperation{Id: 1},
+						},
+					},
+				},
+				sending: &atomic.Bool{},
+			},
+			state: &clientState{
+				SessParams: &spb.SessionParameters{
+					AckType: spb.SessionParameters_RIB_ACK,
+				},
+			},
+		},
+		inResponse: &spb.ModifyResponse{
+			Result: []*spb.AFTResult{
+				{
+					Id:     1,
+					Status: spb.AFTResult_PERMISSION_DENIED,
+					ErrorDetails: &spb.AFTErrorDetails{
+						ErrorMessage: "denied",
+					},
+				}},
+		},
+		wantResults: []*OpResult{{
+			Timestamp:         42,
+			OperationID:       1,
+			ProgrammingResult: spb.AFTResult_PERMISSION_DENIED,
+			ServerError:       "denied",
+			Details:           &OpDetailsResults{},
 		}},
 	}}
 
@@ -1551,13 +1600,15 @@ func TestOpResultProto(t *testing.T) {
 
 func TestFlush(t *testing.T) {
 	tests := []struct {
-		desc         string
-		inClient     *Client
-		inReq        *spb.FlushRequest
-		inRIB        *rib.RIB
-		inElectionID *spb.Uint128
-		wantResponse *spb.FlushResponse
-		wantErr      bool
+		desc               string
+		inClient           *Client
+		inReq              *spb.FlushRequest
+		inRIB              *rib.RIB
+		inElectionID       *spb.Uint128
+		inGroup            string
+		inGroupElectionID  *spb.Uint128
+		wantResponse       *spb.FlushResponse
+		wantErr            bool
 	}{{
 		desc: "missing election ID when client is SINGLE_PRIMARY",
 		inClient: func() *Client {
@@ -1624,6 +1675,43 @@ func TestFlush(t *testing.T) {
 			},
 		},
 		inElectionID: &spb.Uint128{High: 0, Low: 1},
+	}, {
+		desc: "GROUP_PRIMARY_WITH_OWNERSHIP - valid group ID",
+		inClient: func() *Client {
+			c, _ := New(GroupPrimaryWithOwnership("group1", &spb.Uint128{High: 0, Low: 1}))
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			Election: &spb.FlushRequest_GroupId{
+				GroupId: &spb.RedundancyGroupId{
+					Group: "group1",
+					Id:    &spb.Uint128{High: 0, Low: 1},
+				},
+			},
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+		},
+		inGroup:           "group1",
+		inGroupElectionID: &spb.Uint128{High: 0, Low: 1},
+	}, {
+		desc: "GROUP_PRIMARY_WITH_OWNERSHIP - invalid group ID (mode mismatch)",
+		inClient: func() *Client {
+			c, _ := New(ElectedPrimaryClient(&spb.Uint128{High: 0, Low: 1}))
+			return c
+		}(),
+		inReq: &spb.FlushRequest{
+			Election: &spb.FlushRequest_GroupId{
+				GroupId: &spb.RedundancyGroupId{
+					Group: "group1",
+					Id:    &spb.Uint128{High: 0, Low: 1},
+				},
+			},
+			NetworkInstance: &spb.FlushRequest_All{
+				All: &spb.Empty{},
+			},
+		},
+		wantErr: true,
 	}, {
 		desc: "named NI - exists",
 		inClient: func() *Client {
@@ -1741,6 +1829,10 @@ func TestFlush(t *testing.T) {
 
 			if tt.inElectionID != nil {
 				s.InjectElectionID(tt.inElectionID)
+			}
+
+			if tt.inGroup != "" {
+				s.InjectGroupState(tt.inGroup, tt.inGroupElectionID, "testmaster", rib.New(server.DefaultNetworkInstanceName))
 			}
 
 			l, err := net.Listen("tcp", "localhost:0")

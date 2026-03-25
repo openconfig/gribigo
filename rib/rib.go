@@ -197,6 +197,45 @@ type RIBHolder struct {
 	disableForwardRef bool
 }
 
+// Merge merges the entries in inRIB into the RIBHolder, returning an error if
+// there is a conflicting entry.
+func (r *RIBHolder) Merge(inRIB *aft.RIB) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if inRIB.GetAfts() == nil {
+		return nil
+	}
+
+	for k := range inRIB.GetAfts().Ipv4Entry {
+		if _, ok := r.r.GetAfts().Ipv4Entry[k]; ok {
+			return fmt.Errorf("conflict for IPv4 entry %s", k)
+		}
+	}
+	for k := range inRIB.GetAfts().Ipv6Entry {
+		if _, ok := r.r.GetAfts().Ipv6Entry[k]; ok {
+			return fmt.Errorf("conflict for IPv6 entry %s", k)
+		}
+	}
+	for k := range inRIB.GetAfts().NextHop {
+		if _, ok := r.r.GetAfts().NextHop[k]; ok {
+			return fmt.Errorf("conflict for NextHop %d", k)
+		}
+	}
+	for k := range inRIB.GetAfts().NextHopGroup {
+		if _, ok := r.r.GetAfts().NextHopGroup[k]; ok {
+			return fmt.Errorf("conflict for NextHopGroup %d", k)
+		}
+	}
+	for k := range inRIB.GetAfts().LabelEntry {
+		if _, ok := r.r.GetAfts().LabelEntry[k]; ok {
+			return fmt.Errorf("conflict for MPLS label %v", k)
+		}
+	}
+
+	return ygot.MergeStructInto(r.r, inRIB)
+}
+
 // niRefCounter stores reference counters for a particular network instance.
 type niRefCounter struct {
 	// mu protects the contents of niRefCounter

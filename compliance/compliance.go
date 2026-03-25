@@ -579,6 +579,41 @@ var (
 			ShortName:                           "Error: Empty NextHopGroup for the IPv4Entry",
 			RequiresDisallowedForwardReferences: true,
 		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(AddToGroup, fluent.InstalledInRIB),
+			ShortName: "Add entry to redundancy group",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(DeleteFromGroup, fluent.InstalledInRIB),
+			ShortName: "Delete entry from redundancy group",
+		},
+	}, {
+		In: Test{
+			Fn:        GroupIsolation,
+			ShortName: "Isolation between redundancy groups",
+		},
+	}, {
+		In: Test{
+			Fn:        makeTestWithACK(FlushGroup, fluent.InstalledInRIB),
+			ShortName: "Flush a specific redundancy group",
+		},
+	}, {
+		In: Test{
+			Fn:        MultipleClientsInGroup,
+			ShortName: "Multiple clients in a redundancy group",
+		},
+	}, {
+		In: Test{
+			Fn:        GroupOwnershipConflict,
+			ShortName: "Conflict between redundancy groups for the same entry",
+		},
+	}, {
+		In: Test{
+			Fn:        MergedRIBGet,
+			ShortName: "Get from merged RIB",
+		},
 	}}
 )
 

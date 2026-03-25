@@ -5785,3 +5785,113 @@ func TestRIBContents(t *testing.T) {
 	}
 
 }
+
+func TestMerge(t *testing.T) {
+	tests := []struct {
+		desc        string
+		inRIBHolder *RIBHolder
+		inMergeRIB  *aft.RIB
+		wantErr     bool
+		wantRIB     *aft.RIB
+	}{{
+		desc:        "merge into empty RIB",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inMergeRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+					"1.1.1.1/32": {Prefix: ygot.String("1.1.1.1/32")},
+				},
+			},
+		},
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+					"1.1.1.1/32": {Prefix: ygot.String("1.1.1.1/32")},
+				},
+			},
+		},
+	}, {
+		desc: "conflict - ipv4",
+		inRIBHolder: func() *RIBHolder {
+			rh := NewRIBHolder("DEFAULT")
+			rh.r.GetOrCreateAfts().GetOrCreateIpv4Entry("1.1.1.1/32")
+			return rh
+		}(),
+		inMergeRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
+					"1.1.1.1/32": {Prefix: ygot.String("1.1.1.1/32")},
+				},
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "conflict - next-hop",
+		inRIBHolder: func() *RIBHolder {
+			rh := NewRIBHolder("DEFAULT")
+			rh.r.GetOrCreateAfts().GetOrCreateNextHop(1)
+			return rh
+		}(),
+		inMergeRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {Index: ygot.Uint64(1)},
+				},
+			},
+		},
+		wantErr: true,
+	}, {
+		desc: "merge multiple types",
+		inRIBHolder: NewRIBHolder("DEFAULT"),
+		inMergeRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {Index: ygot.Uint64(1)},
+				},
+				NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
+					1: {Id: ygot.Uint64(1)},
+				},
+			},
+		},
+		wantRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				NextHop: map[uint64]*aft.Afts_NextHop{
+					1: {Index: ygot.Uint64(1)},
+				},
+				NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
+					1: {Id: ygot.Uint64(1)},
+				},
+			},
+		},
+	}, {
+		desc: "conflict - mpls",
+		inRIBHolder: func() *RIBHolder {
+			rh := NewRIBHolder("DEFAULT")
+			rh.r.GetOrCreateAfts().GetOrCreateLabelEntry(aft.UnionUint32(42))
+			return rh
+		}(),
+		inMergeRIB: &aft.RIB{
+			Afts: &aft.Afts{
+				LabelEntry: map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry{
+					aft.UnionUint32(42): {Label: aft.UnionUint32(42)},
+				},
+			},
+		},
+		wantErr: true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			err := tt.inRIBHolder.Merge(tt.inMergeRIB)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Merge(): did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr {
+				if diff := cmp.Diff(tt.inRIBHolder.r, tt.wantRIB); diff != "" {
+					t.Fatalf("Merge(): did not get expected RIB, diff(-got,+want):\n%s", diff)
+				}
+			}
+		})
+	}
+}

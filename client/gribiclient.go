@@ -197,6 +197,10 @@ func handleParams(opts ...Opt) (*clientState, error) {
 		case *electedPrimaryClient:
 			s.SessParams.Redundancy = spb.SessionParameters_SINGLE_PRIMARY
 			s.ElectionID = v.electionID
+		case *groupPrimaryWithOwnership:
+			s.SessParams.Redundancy = spb.SessionParameters_GROUP_PRIMARY_WITH_OWNERSHIP
+			s.SessParams.RedundancyGroup = v.group
+			s.ElectionID = v.electionID
 		case *persistEntries:
 			s.SessParams.Persistence = spb.SessionParameters_PRESERVE
 		case *fibACK:
@@ -353,6 +357,20 @@ type electedPrimaryClient struct {
 }
 
 func (electedPrimaryClient) isClientOpt() {}
+
+// GroupPrimaryWithOwnership is an option used when creating a new client that
+// specifies that this client will be part of a group of clients that are
+// considered primary sources of routing information for a particular group.
+func GroupPrimaryWithOwnership(group string, initialID *spb.Uint128) *groupPrimaryWithOwnership {
+	return &groupPrimaryWithOwnership{group: group, electionID: initialID}
+}
+
+type groupPrimaryWithOwnership struct {
+	group      string
+	electionID *spb.Uint128
+}
+
+func (groupPrimaryWithOwnership) isClientOpt() {}
 
 // PersistEntries indicates that the client should request that the server
 // persists entries after it has disconnected. By default, a gRIBI server will
@@ -1101,7 +1119,7 @@ func (c *Client) clearPendingOp(op *spb.AFTResult) (*OpResult, error) {
 		default:
 			// We're in FIB_ACK mode and this is a RIB_ACK, so the transaction is not complete.
 		}
-	case spb.AFTResult_FAILED:
+	case spb.AFTResult_FAILED, spb.AFTResult_PERMISSION_DENIED:
 		delete(c.qs.pendq.Ops, op.Id)
 	}
 
@@ -1465,7 +1483,7 @@ func (c *Client) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 	}
 
 	if req.GetElection() == nil && c.state.ElectionID != nil {
-		return nil, fmt.Errorf("must specify an election behaviour for a SINGLE_PRIMARY client")
+		return nil, fmt.Errorf("must specify an election behaviour for a SINGLE_PRIMARY or GROUP_PRIMARY_WITH_OWNERSHIP client")
 	}
 
 	switch req.GetElection().(type) {
@@ -1473,8 +1491,12 @@ func (c *Client) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 		if c.state.SessParams == nil || c.state.SessParams.Redundancy != spb.SessionParameters_SINGLE_PRIMARY {
 			return nil, fmt.Errorf("invalid to specify an election ID when the client is not in SINGLE_PRIMARY mode")
 		}
+	case *spb.FlushRequest_GroupId:
+		if c.state.SessParams == nil || c.state.SessParams.Redundancy != spb.SessionParameters_GROUP_PRIMARY_WITH_OWNERSHIP {
+			return nil, fmt.Errorf("invalid to specify a group ID when the client is not in GROUP_PRIMARY_WITH_OWNERSHIP mode")
+		}
 	case *spb.FlushRequest_Override:
-		if c.state.SessParams == nil || c.state.SessParams.Redundancy != spb.SessionParameters_SINGLE_PRIMARY {
+		if c.state.SessParams == nil || (c.state.SessParams.Redundancy != spb.SessionParameters_SINGLE_PRIMARY && c.state.SessParams.Redundancy != spb.SessionParameters_GROUP_PRIMARY_WITH_OWNERSHIP) {
 			return nil, fmt.Errorf("cannot override election ID when the client is in ALL_PRIMARY mode")
 		}
 	}

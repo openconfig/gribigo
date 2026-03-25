@@ -70,6 +70,8 @@ type gRIBIConnection struct {
 	// fibACK indicates whether the client requests that the server sends
 	// a FIB ACK rather than a RIB ACK.
 	fibACK bool
+	// groupName specifies the name of the redundancy group for the client.
+	groupName string
 
 	// parent is a pointer to the parent of the gRIBIConnection.
 	parent *GRIBIClient
@@ -136,6 +138,11 @@ const (
 	// elected set of clients that have an external election process that assigns
 	// a uint128 election ID.
 	ElectedPrimaryClient
+	// ElectedPrimaryWithOwnership indicates that this client is treated as part
+	// of an elected set of clients that have an external election process
+	// that assigns a uint128 election ID, and that the client belongs to a
+	// redundancy group.
+	ElectedPrimaryWithOwnership
 )
 
 // WithRedundancyMode specifies the redundancy mode that is to be used by the client
@@ -159,6 +166,13 @@ func (g *gRIBIConnection) WithInitialElectionID(low, high uint64) *gRIBIConnecti
 	return g
 }
 
+// WithInitialElectionIDForGroup specifies the election ID that is to be used
+// for the connection and the redundancy group to which the client belongs.
+func (g *gRIBIConnection) WithInitialElectionIDForGroup(group string, low, high uint64) *gRIBIConnection {
+	g.groupName = group
+	return g.WithInitialElectionID(low, high)
+}
+
 // Start connects the gRIBI client to the target using the specified context as
 // the connection parameters. The dial to the target is blocking, so Start() will
 // not return until a connection is successfully made. Any error in parsing the
@@ -179,6 +193,14 @@ func (g *GRIBIClient) Start(ctx context.Context, t testing.TB) {
 			t.Fatalf("client must specify Election ID in elected primary mode")
 		}
 		opts = append(opts, client.ElectedPrimaryClient(g.connection.electionID))
+	case ElectedPrimaryWithOwnership:
+		if g.connection.electionID == nil {
+			t.Fatalf("client must specify Election ID in group primary with ownership mode")
+		}
+		if g.connection.groupName == "" {
+			t.Fatalf("client must specify group name in group primary with ownership mode")
+		}
+		opts = append(opts, client.GroupPrimaryWithOwnership(g.connection.groupName, g.connection.electionID))
 	}
 
 	if g.connection.persist {
@@ -299,6 +321,13 @@ func (g *gRIBIGet) WithNetworkInstance(ni string) *gRIBIGet {
 	return g
 }
 
+// WithRedundancyGroup specifies the redundancy group from which entries should
+// be retrieved.
+func (g *gRIBIGet) WithRedundancyGroup(name string) *gRIBIGet {
+	g.pb.RedundancyGroup = name
+	return g
+}
+
 // AFT is an enumerated type describing the AFTs available within gRIBI.
 type AFT int64
 
@@ -365,6 +394,21 @@ func (g *gRIBIFlush) WithElectionID(low, high uint64) *gRIBIFlush {
 		Id: &spb.Uint128{
 			Low:  low,
 			High: high,
+		},
+	}
+	return g
+}
+
+// WithRedundancyGroup specifies the redundancy group and its election ID for
+// the flush operation.
+func (g *gRIBIFlush) WithRedundancyGroup(group string, low, high uint64) *gRIBIFlush {
+	g.pb.Election = &spb.FlushRequest_GroupId{
+		GroupId: &spb.RedundancyGroupId{
+			Group: group,
+			Id: &spb.Uint128{
+				Low:  low,
+				High: high,
+			},
 		},
 	}
 	return g
@@ -500,7 +544,7 @@ func (g *gRIBIModify) entriesToModifyRequest(op spb.AFTOperation_Operation, entr
 
 		// If the election ID wasn't explicitly set then write the current one
 		// to the message if this is a client that requires it.
-		if g.parent.connection != nil && g.parent.connection.redundMode == ElectedPrimaryClient && ep.ElectionId == nil {
+		if g.parent.connection != nil && (g.parent.connection.redundMode == ElectedPrimaryClient || g.parent.connection.redundMode == ElectedPrimaryWithOwnership) && ep.ElectionId == nil {
 			ep.ElectionId = g.parent.currentElectionID
 		}
 
@@ -1370,6 +1414,9 @@ const (
 	// indicates that the system is using the entry and it is installed in
 	// hardware.
 	InstalledInFIB
+	// PermissionDenied indicates that the entry was not installed because of
+	// a policy violation.
+	PermissionDenied
 )
 
 // programmingResultMap maps the fluent-style programming result to the
@@ -1378,6 +1425,7 @@ var programmingResultMap = map[ProgrammingResult]spb.AFTResult_Status{
 	ProgrammingFailed: spb.AFTResult_FAILED,
 	InstalledInRIB:    spb.AFTResult_RIB_PROGRAMMED,
 	InstalledInFIB:    spb.AFTResult_FIB_PROGRAMMED,
+	PermissionDenied:  spb.AFTResult_PERMISSION_DENIED,
 }
 
 // WithProgrammingResult specifies an expected programming result for

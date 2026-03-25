@@ -92,6 +92,17 @@ func DeviceConfig(c []byte) *deviceConfig {
 	return &deviceConfig{json: c}
 }
 
+type serverOpts struct {
+	opts []server.ServerOpt
+}
+
+func (*serverOpts) isDevOpt() {}
+
+// ServerOpts specifies a set of gRIBI server options that should be used.
+func ServerOpts(o ...server.ServerOpt) *serverOpts {
+	return &serverOpts{opts: o}
+}
+
 // tlsCreds returns TLS credentials that can be used for a device.
 type tlsCreds struct {
 	c credentials.TransportCredentials
@@ -166,6 +177,10 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 		server.WithVRFs(networkInstances),
 	}
 
+	for _, o := range optServerOpts(opts) {
+		sOpts = append(sOpts, o)
+	}
+
 	if optDisableFwdRefs(opts) {
 		sOpts = append(sOpts, server.WithNoRIBForwardReferences())
 	}
@@ -181,6 +196,16 @@ func New(ctx context.Context, opts ...DevOpt) (*Device, error) {
 	}()
 
 	return d, nil
+}
+
+// optServerOpts finds the server options in the device options.
+func optServerOpts(opts []DevOpt) []server.ServerOpt {
+	for _, o := range opts {
+		if v, ok := o.(*serverOpts); ok {
+			return v.opts
+		}
+	}
+	return nil
 }
 
 // optGRIBIAddr finds the first occurrence of the GRIBIAddr option in opts.

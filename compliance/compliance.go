@@ -158,6 +158,11 @@ var (
 		},
 	}, {
 		In: Test{
+			Fn:        ModifyConnectionRepeatedSessionParameters,
+			ShortName: "Modify RPC Connection with repeated SessionParameters",
+		},
+	}, {
+		In: Test{
 			Fn:        InvalidElectionIDAndAFTOperation,
 			ShortName: "Invalid updated election ID and AFTOperation in same ModifyRequest",
 		},
@@ -780,6 +785,37 @@ func InvalidParamsAndAFTOperation(c *fluent.GRIBIClient, t testing.TB, _ ...Test
 
 	want := fluent.ModifyError().
 		WithCode(codes.InvalidArgument).
+		AsStatus(t)
+
+	chk.HasRecvClientErrorWithStatus(t, err, want, chk.IgnoreDetails())
+}
+
+// ModifyConnectionRepeatedSessionParameters validates that the server returns an error when a client
+// specifies session parameters more than once on a stream.
+func ModifyConnectionRepeatedSessionParameters(c *fluent.GRIBIClient, t testing.TB, _ ...TestOpt) {
+	defer electionID.Inc()
+	c.Connection().WithRedundancyMode(fluent.ElectedPrimaryClient).WithPersistence().WithInitialElectionID(electionID.Load(), 0)
+	c.Start(context.Background(), t)
+	defer c.Stop(t)
+
+	c.StartSending(context.Background(), t)
+
+	// Inject a second session parameters message.
+	c.Modify().InjectRequest(t, &spb.ModifyRequest{
+		Params: &spb.SessionParameters{
+			Redundancy:  spb.SessionParameters_SINGLE_PRIMARY,
+			Persistence: spb.SessionParameters_PRESERVE,
+		},
+	})
+
+	err := awaitTimeout(context.Background(), c, t, time.Minute)
+	if err == nil {
+		t.Fatal("did not get expected error from server, got: nil")
+	}
+	t.Logf("Received error from server: %v", err)
+
+	want := fluent.ModifyError().
+		WithCode(codes.FailedPrecondition).
 		AsStatus(t)
 
 	chk.HasRecvClientErrorWithStatus(t, err, want, chk.IgnoreDetails())

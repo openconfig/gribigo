@@ -113,6 +113,26 @@ func (f *fakeRIB) InjectIPv4(ni, pfx string, nhg uint64) error {
 	return nil
 }
 
+// InjectIPv6 adds an IPv6 entry to network instance ni, with the specified
+// prefix (pfx), and referencing the specified next-hop-group with index nhg.
+// It returns an error if the entry cannot be injected.
+func (f *fakeRIB) InjectIPv6(ni, pfx string, nhg uint64) error {
+	niR, ok := f.r.NetworkInstanceRIB(ni)
+	if !ok {
+		return fmt.Errorf("unknown NI, %s", ni)
+	}
+	if _, _, err := niR.AddIPv6(&aftpb.Afts_Ipv6EntryKey{
+		Prefix: pfx,
+		Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+			NextHopGroup: &wpb.UintValue{Value: nhg},
+		},
+	}, false); err != nil {
+		return fmt.Errorf("cannot add IPv6 entry, err: %v", err)
+	}
+
+	return nil
+}
+
 // InjectNHG adds a next-hop-group entry to network instance ni, with the specified
 // ID (nhgID). The next-hop-group contains the next hops specified in the nhs map,
 // with the key of the map being the next-hop ID and the value being the weight within

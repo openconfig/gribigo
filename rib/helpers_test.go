@@ -357,6 +357,30 @@ func TestFakeRIB(t *testing.T) {
 			},
 		},
 	}, {
+		desc: "ipv6 only",
+		inBuild: func() *fakeRIB {
+			f := NewFake(dn, DisableRIBCheckFn())
+			if err := f.InjectIPv6(dn, "2001:db8::1/128", 1); err != nil {
+				t.Fatalf("cannot add IPv6, err: %v", err)
+			}
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							Ipv6Entry: map[string]*aft.Afts_Ipv6Entry{
+								"2001:db8::1/128": {Prefix: ygot.String("2001:db8::1/128"), NextHopGroup: ygot.Uint64(1)},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
 		desc: "mpls only",
 		inBuild: func() *fakeRIB {
 			f := NewFake(dn, DisableRIBCheckFn())
@@ -454,6 +478,53 @@ func TestFakeRIB(t *testing.T) {
 							Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{
 								"192.0.2.1/32": {
 									Prefix:       ygot.String("192.0.2.1/32"),
+									NextHopGroup: ygot.Uint64(1),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "full ipv6 chain",
+		inBuild: func() *fakeRIB {
+			f := NewFake(dn)
+			// Discard the errors, since the test will check whether the entries are there.
+			f.InjectNH(dn, 1, "int42")
+			f.InjectNHG(dn, 1, map[uint64]uint64{1: 1})
+			f.InjectIPv6(dn, "2001:db8::1/128", 1)
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &aft.RIB{
+						Afts: &aft.Afts{
+							NextHop: map[uint64]*aft.Afts_NextHop{
+								1: {
+									Index: ygot.Uint64(1),
+									InterfaceRef: &aft.Afts_NextHop_InterfaceRef{
+										Interface: ygot.String("int42"),
+									},
+								},
+							},
+							NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{
+								1: {
+									Id: ygot.Uint64(1),
+									NextHop: map[uint64]*aft.Afts_NextHopGroup_NextHop{
+										1: {
+											Index:  ygot.Uint64(1),
+											Weight: ygot.Uint64(1),
+										},
+									},
+								},
+							},
+							Ipv6Entry: map[string]*aft.Afts_Ipv6Entry{
+								"2001:db8::1/128": {
+									Prefix:       ygot.String("2001:db8::1/128"),
 									NextHopGroup: ygot.Uint64(1),
 								},
 							},

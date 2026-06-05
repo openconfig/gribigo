@@ -240,6 +240,7 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 	if _, ok := explicitReplace[spb.AFTType_ALL]; ok {
 		explicitReplace = map[spb.AFTType]bool{
 			spb.AFTType_IPV4:          true,
+			spb.AFTType_IPV6:          true,
 			spb.AFTType_MPLS:          true,
 			spb.AFTType_NEXTHOP:       true,
 			spb.AFTType_NEXTHOP_GROUP: true,
@@ -276,6 +277,28 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 				}
 				id.Add(1)
 				op, err := v4Operation(opType, srcNI, id, srcE)
+				if err != nil {
+					return nil, err
+				}
+
+				// If this entry already exists then this is an addition rather than a replace.
+				switch ok {
+				case true:
+					ops.Replace.TopLevel = append(ops.Replace.TopLevel, op)
+				case false:
+					ops.Add.TopLevel = append(ops.Add.TopLevel, op)
+				}
+			}
+		}
+
+		for pfx, srcE := range srcNIEntries.GetAfts().Ipv6Entry {
+			if dstE, ok := dstNIEntries.GetAfts().Ipv6Entry[pfx]; !ok || !reflect.DeepEqual(srcE, dstE) {
+				opType := spb.AFTOperation_ADD
+				if ok && explicitReplace[spb.AFTType_IPV6] {
+					opType = spb.AFTOperation_REPLACE
+				}
+				id.Add(1)
+				op, err := v6Operation(opType, srcNI, id, srcE)
 				if err != nil {
 					return nil, err
 				}
@@ -368,6 +391,17 @@ func diff(src, dst *rib.RIB, explicitReplace map[spb.AFTType]bool, id *atomic.Ui
 			}
 		}
 
+		for pfx, dstE := range dstNIEntries.GetAfts().Ipv6Entry {
+			if _, ok := srcNIEntries.GetAfts().Ipv6Entry[pfx]; !ok {
+				id.Add(1)
+				op, err := v6Operation(spb.AFTOperation_DELETE, srcNI, id, dstE)
+				if err != nil {
+					return nil, err
+				}
+				ops.Delete.TopLevel = append(ops.Delete.TopLevel, op)
+			}
+		}
+
 		for lbl, dstE := range dstNIEntries.GetAfts().LabelEntry {
 			if _, ok := srcNIEntries.GetAfts().LabelEntry[lbl]; !ok {
 				id.Add(1)
@@ -419,6 +453,24 @@ func v4Operation(method spb.AFTOperation_Operation, ni string, id *atomic.Uint64
 		Op:              method,
 		Entry: &spb.AFTOperation_Ipv4{
 			Ipv4: p,
+		},
+	}, nil
+}
+
+// v6Operation builds a gRIBI IPv6 operation with the specified method corresponding to a
+// prefix in the network instance ni, using the specified ID for the operation. The contents
+// of the operation are the entry e.
+func v6Operation(method spb.AFTOperation_Operation, ni string, id *atomic.Uint64, e *aft.Afts_Ipv6Entry) (*spb.AFTOperation, error) {
+	p, err := rib.ConcreteIPv6Proto(e)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create operation for prefix %s, %v", e.GetPrefix(), err)
+	}
+	return &spb.AFTOperation{
+		Id:              id.Load(),
+		NetworkInstance: ni,
+		Op:              method,
+		Entry: &spb.AFTOperation_Ipv6{
+			Ipv6: p,
 		},
 	}, nil
 }

@@ -2,7 +2,7 @@ module github.com/openconfig/gribigo
 
 go 1.25.0
 
-toolchain go1.26.1
+toolchain go1.26.4
 
 require (
 	github.com/golang/glog v1.2.5
@@ -14,8 +14,8 @@ require (
 	github.com/openconfig/testt v0.0.0-20251119232631-fbbd49c39452
 	github.com/openconfig/ygot v0.34.0
 	go.uber.org/atomic v1.11.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260319201613-d00831a3d3e7
-	google.golang.org/grpc v1.79.3
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260608224507-4308a22a1bab
+	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 	lukechampine.com/uint128 v1.3.0
 )
@@ -26,7 +26,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa // indirect
-	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/net v0.51.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 )

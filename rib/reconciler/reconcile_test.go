@@ -119,6 +119,66 @@ func TestDiff(t *testing.T) {
 			},
 		},
 	}, {
+		desc: "default NI with added and removed IPv6 entries",
+		inSrc: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1, "int42"); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG, %v", err)
+			}
+			if err := r.InjectIPv6(dn, "2001:db8::1/128", 1); err != nil {
+				t.Fatalf("cannot add IPv6, %v", err)
+			}
+			return r.RIB()
+		}(),
+		inDst: func() *rib.RIB {
+			r := rib.NewFake(dn)
+			if err := r.InjectNH(dn, 1, "int42"); err != nil {
+				t.Fatalf("cannot add NH, %v", err)
+			}
+			if err := r.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG, %v", err)
+			}
+			if err := r.InjectIPv6(dn, "2001:db8::2/128", 1); err != nil {
+				t.Fatalf("cannot add IPv6, %v", err)
+			}
+			return r.RIB()
+		}(),
+		wantOps: &ReconcileOps{
+			Add: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id:              1,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_ADD,
+					Entry: &spb.AFTOperation_Ipv6{
+						Ipv6: &aftpb.Afts_Ipv6EntryKey{
+							Prefix: "2001:db8::1/128",
+							Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				}},
+			},
+			Delete: &Ops{
+				TopLevel: []*spb.AFTOperation{{
+					Id:              2,
+					NetworkInstance: dn,
+					Op:              spb.AFTOperation_DELETE,
+					Entry: &spb.AFTOperation_Ipv6{
+						Ipv6: &aftpb.Afts_Ipv6EntryKey{
+							Prefix: "2001:db8::2/128",
+							Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+								NextHopGroup: &wpb.UintValue{Value: 1},
+							},
+						},
+					},
+				}},
+			},
+		},
+	}, {
 		desc: "default NI with added and removed IPv4 entries",
 		inSrc: func() *rib.RIB {
 			r := rib.NewFake(dn)

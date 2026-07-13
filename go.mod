@@ -2,7 +2,7 @@ module github.com/openconfig/gribigo
 
 go 1.25.0
 
-toolchain go1.26.1
+toolchain go1.26.5
 
 require (
 	github.com/golang/glog v1.2.5
@@ -14,8 +14,8 @@ require (
 	github.com/openconfig/testt v0.0.0-20251119232631-fbbd49c39452
 	github.com/openconfig/ygot v0.34.0
 	go.uber.org/atomic v1.11.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260319201613-d00831a3d3e7
-	google.golang.org/grpc v1.79.3
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800
+	google.golang.org/grpc v1.82.0
 	google.golang.org/protobuf v1.36.11
 	lukechampine.com/uint128 v1.3.0
 )

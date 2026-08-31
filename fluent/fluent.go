@@ -939,7 +939,7 @@ type mplsEncapHeader struct {
 	pb *aftpb.Afts_NextHop_EncapHeader
 }
 
-// UDPEncapHeader represents a UDP encapsulation header.
+// udpv6EncapHeader represents a UDP encapsulation header.
 type udpv6EncapHeader struct {
 	pb *aftpb.Afts_NextHop_EncapHeader
 }

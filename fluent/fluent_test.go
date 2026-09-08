@@ -556,6 +556,91 @@ func TestEntry(t *testing.T) {
 				},
 			},
 		},
+	}, {
+		desc: "next-hop mpls-over-udpv4",
+		in: NextHopEntry().
+			WithNetworkInstance("DEFAULT").
+			WithIndex(1).
+			AddEncapHeader(
+				MPLSEncapHeader().WithLabels(100, 200),
+				UDPV4EncapHeader().WithDSCP(10).WithDstIP("192.0.2.1").WithDstUDPPort(5678).WithIPTTL(32).WithSrcIP("192.0.2.2").WithSrcUDPPort(8765),
+			),
+		wantOpProto: &spb.AFTOperation{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTOperation_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						EncapHeader: []*aftpb.Afts_NextHop_EncapHeaderKey{
+							{
+								Index: 1,
+								EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+									Type: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_MPLS,
+									Mpls: &aftpb.Afts_NextHop_EncapHeader_Mpls{
+										MplsLabelStack: []*aftpb.Afts_NextHop_EncapHeader_Mpls_MplsLabelStackUnion{
+											{MplsLabelStackUint64: uint64(100)},
+											{MplsLabelStackUint64: uint64(200)},
+										},
+									},
+								},
+							},
+							{
+								Index: 2,
+								EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+									Type: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UDPV4,
+									UdpV4: &aftpb.Afts_NextHop_EncapHeader_UdpV4{
+										Dscp:       &wpb.UintValue{Value: uint64(10)},
+										DstIp:      &wpb.StringValue{Value: "192.0.2.1"},
+										DstUdpPort: &wpb.UintValue{Value: uint64(5678)},
+										IpTtl:      &wpb.UintValue{Value: uint64(32)},
+										SrcIp:      &wpb.StringValue{Value: "192.0.2.2"},
+										SrcUdpPort: &wpb.UintValue{Value: uint64(8765)},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		wantEntryProto: &spb.AFTEntry{
+			NetworkInstance: "DEFAULT",
+			Entry: &spb.AFTEntry_NextHop{
+				NextHop: &aftpb.Afts_NextHopKey{
+					Index: 1,
+					NextHop: &aftpb.Afts_NextHop{
+						EncapHeader: []*aftpb.Afts_NextHop_EncapHeaderKey{
+							{
+								Index: 1,
+								EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+									Type: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_MPLS,
+									Mpls: &aftpb.Afts_NextHop_EncapHeader_Mpls{
+										MplsLabelStack: []*aftpb.Afts_NextHop_EncapHeader_Mpls_MplsLabelStackUnion{
+											{MplsLabelStackUint64: uint64(100)},
+											{MplsLabelStackUint64: uint64(200)},
+										},
+									},
+								},
+							},
+							{
+								Index: 2,
+								EncapHeader: &aftpb.Afts_NextHop_EncapHeader{
+									Type: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UDPV4,
+									UdpV4: &aftpb.Afts_NextHop_EncapHeader_UdpV4{
+										Dscp:       &wpb.UintValue{Value: uint64(10)},
+										DstIp:      &wpb.StringValue{Value: "192.0.2.1"},
+										DstUdpPort: &wpb.UintValue{Value: uint64(5678)},
+										IpTtl:      &wpb.UintValue{Value: uint64(32)},
+										SrcIp:      &wpb.StringValue{Value: "192.0.2.2"},
+										SrcUdpPort: &wpb.UintValue{Value: uint64(8765)},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}}
 
 	for _, tt := range tests {

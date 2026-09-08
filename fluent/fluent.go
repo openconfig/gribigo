@@ -939,8 +939,13 @@ type mplsEncapHeader struct {
 	pb *aftpb.Afts_NextHop_EncapHeader
 }
 
-// UDPEncapHeader represents a UDP encapsulation header.
+// udpv6EncapHeader represents a UDP encapsulation header.
 type udpv6EncapHeader struct {
+	pb *aftpb.Afts_NextHop_EncapHeader
+}
+
+// udpv4EncapHeader represents a UDP encapsulation header.
+type udpv4EncapHeader struct {
 	pb *aftpb.Afts_NextHop_EncapHeader
 }
 
@@ -951,6 +956,8 @@ const (
 	IPinIP
 	// MPLS specifies that the header to be decapsulated is an MPLS header.
 	MPLS
+	// UDPV4 specifies that the header to be decapsulated is a UDPv4 header.
+	UDPV4
 	// UDPV6 specifies that the header to be decapsulated is a UDPv6 header.
 	UDPV6
 )
@@ -960,6 +967,7 @@ const (
 var encapMap = map[Header]enums.OpenconfigAftTypesEncapsulationHeaderType{
 	IPinIP: enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_IPV4,
 	MPLS:   enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_MPLS,
+	UDPV4:  enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UDPV4,
 	UDPV6:  enums.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UDPV6,
 }
 
@@ -1066,6 +1074,57 @@ func (eh *udpv6EncapHeader) WithSrcUDPPort(port uint64) *udpv6EncapHeader {
 
 // EncapProto returns the built-up protobuf of the udpv6EncapHeader.
 func (eh *udpv6EncapHeader) EncapProto() *aftpb.Afts_NextHop_EncapHeader {
+	return eh.pb
+}
+
+// UDPV4EncapHeader returns a builder that can be used to build up a UDPv4 encapsulation header.
+func UDPV4EncapHeader() *udpv4EncapHeader {
+	return &udpv4EncapHeader{
+		pb: &aftpb.Afts_NextHop_EncapHeader{
+			Type:  encapMap[UDPV4],
+			UdpV4: &aftpb.Afts_NextHop_EncapHeader_UdpV4{},
+		},
+	}
+}
+
+// WithDSCP specifies the DSCP value to be used for the UDPv4 header.
+func (eh *udpv4EncapHeader) WithDSCP(dscp uint64) *udpv4EncapHeader {
+	eh.pb.UdpV4.Dscp = &wpb.UintValue{Value: dscp}
+	return eh
+}
+
+// WithDstIP specifies the destination IP to be used for the UDPv4 header.
+func (eh *udpv4EncapHeader) WithDstIP(ip string) *udpv4EncapHeader {
+	eh.pb.UdpV4.DstIp = &wpb.StringValue{Value: ip}
+	return eh
+}
+
+// WithDstUDPPort specifies the destination UDP port to be used for the UDPv4 header.
+func (eh *udpv4EncapHeader) WithDstUDPPort(port uint64) *udpv4EncapHeader {
+	eh.pb.UdpV4.DstUdpPort = &wpb.UintValue{Value: port}
+	return eh
+}
+
+// WithIPTTL specifies the IP TTL to be used for the UDPv4 header.
+func (eh *udpv4EncapHeader) WithIPTTL(ttl uint64) *udpv4EncapHeader {
+	eh.pb.UdpV4.IpTtl = &wpb.UintValue{Value: ttl}
+	return eh
+}
+
+// WithSrcIP specifies the source IP to be used for the UDPv4 header.
+func (eh *udpv4EncapHeader) WithSrcIP(ip string) *udpv4EncapHeader {
+	eh.pb.UdpV4.SrcIp = &wpb.StringValue{Value: ip}
+	return eh
+}
+
+// WithSrcUDPPort specifies the source UDP port to be used for the UDPv4 header.
+func (eh *udpv4EncapHeader) WithSrcUDPPort(port uint64) *udpv4EncapHeader {
+	eh.pb.UdpV4.SrcUdpPort = &wpb.UintValue{Value: port}
+	return eh
+}
+
+// EncapProto returns the built-up protobuf of the udpv4EncapHeader.
+func (eh *udpv4EncapHeader) EncapProto() *aftpb.Afts_NextHop_EncapHeader {
 	return eh.pb
 }
 

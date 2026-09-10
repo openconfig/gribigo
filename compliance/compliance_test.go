@@ -29,7 +29,12 @@ import (
 )
 
 func TestCompliance(t *testing.T) {
-	for _, tt := range TestSuite {
+	runTests(t, TestSuite)
+	runTests(t, FibAckComplianceTestSuite)
+}
+
+func runTests(t *testing.T, ts []*TestSpec) {
+	for _, tt := range ts {
 		t.Run(tt.In.ShortName, func(t *testing.T) {
 			cfg := &ocrt.Device{}
 			cfg.GetOrCreateNetworkInstance(server.DefaultNetworkInstanceName).Type = ocrt.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_DEFAULT_INSTANCE

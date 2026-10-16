@@ -15,16 +15,17 @@
 package rib
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openconfig/gribigo/aft"
 
-	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
-	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 	"github.com/openconfig/ygot/ygot"
+	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	spb "github.com/openconfig/gribi/v1/proto/service"
 )
 
 func TestFromGetResponses(t *testing.T) {
@@ -545,6 +546,80 @@ func TestFakeRIB(t *testing.T) {
 				cmpopts.IgnoreFields(RIBHolder{}, "mu", "refCounts", "checkFn"),
 			); diff != "" {
 				t.Fatalf("FakeRIB.RIB(...): did not get expected RIB, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func BenchmarkFromGetResponses(b *testing.B) {
+	const defaultNI = "DEFAULT"
+	for _, count := range []int{100, 500, 1000} {
+		b.Run(fmt.Sprintf("entries_per_type_%d", count), func(b *testing.B) {
+			var entries []*spb.AFTEntry
+			for i := 1; i <= count; i++ {
+				id := uint64(i)
+				entries = append(entries,
+					&spb.AFTEntry{
+						NetworkInstance: defaultNI,
+						Entry: &spb.AFTEntry_NextHop{
+							NextHop: &aftpb.Afts_NextHopKey{
+								Index: id,
+								NextHop: &aftpb.Afts_NextHop{
+									IpAddress: &wpb.StringValue{Value: fmt.Sprintf("192.0.2.%d", i%254+1)},
+									InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+										Interface: &wpb.StringValue{Value: fmt.Sprintf("eth%d", i%32)},
+									},
+								},
+							},
+						},
+					},
+					&spb.AFTEntry{
+						NetworkInstance: defaultNI,
+						Entry: &spb.AFTEntry_NextHopGroup{
+							NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+								Id: id,
+								NextHopGroup: &aftpb.Afts_NextHopGroup{
+									NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+										Index: id,
+										NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+											Weight: &wpb.UintValue{Value: 1},
+										},
+									}},
+								},
+							},
+						},
+					},
+					&spb.AFTEntry{
+						NetworkInstance: defaultNI,
+						Entry: &spb.AFTEntry_Ipv4{
+							Ipv4: &aftpb.Afts_Ipv4EntryKey{
+								Prefix: fmt.Sprintf("10.%d.%d.0/24", (i>>8)&0xff, i&0xff),
+								Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+									NextHopGroup: &wpb.UintValue{Value: id},
+								},
+							},
+						},
+					},
+					&spb.AFTEntry{
+						NetworkInstance: defaultNI,
+						Entry: &spb.AFTEntry_Ipv6{
+							Ipv6: &aftpb.Afts_Ipv6EntryKey{
+								Prefix: fmt.Sprintf("2001:db8:%x::/64", i),
+								Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+									NextHopGroup: &wpb.UintValue{Value: id},
+								},
+							},
+						},
+					},
+				)
+			}
+			resps := []*spb.GetResponse{{Entry: entries}}
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := FromGetResponses(defaultNI, resps, DisableRIBCheckFn()); err != nil {
+					b.Fatalf("FromGetResponses failed: %v", err)
+				}
 			}
 		})
 	}

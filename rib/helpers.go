@@ -17,8 +17,6 @@ package rib
 import (
 	"fmt"
 
-	"github.com/openconfig/ygot/ygot"
-
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
@@ -27,7 +25,7 @@ import (
 // FromGetResponses returns a RIB from a slice of gRIBI GetResponse messages.
 // The supplied defaultName is used as the default network instance name.
 func FromGetResponses(defaultName string, responses []*spb.GetResponse, opt ...RIBOpt) (*RIB, error) {
-	r := New(defaultName)
+	r := New(defaultName, opt...)
 	niAFTs := map[string]*aftpb.Afts{}
 
 	for _, resp := range responses {
@@ -67,9 +65,8 @@ func FromGetResponses(defaultName string, responses []*spb.GetResponse, opt ...R
 			}
 		}
 
-		if err := ygot.MergeStructInto(r.niRIB[ni].r, cr); err != nil {
-			return nil, fmt.Errorf("cannot populate network instance RIB for NI %s, err: %v", ni, err)
-		}
+		cr.GetOrCreateAfts()
+		r.niRIB[ni].r = cr
 	}
 
 	return r, nil

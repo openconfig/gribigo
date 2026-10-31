@@ -73,33 +73,35 @@ func NextHopAddrsForPrefix(rib map[string]*aft.RIB, netinst, prefix string) (map
 		nhNI = otherNI
 	}
 
-	if _, ok := rib[nhNI]; !ok {
+	nhRIB, ok := rib[nhNI]
+	if !ok {
 		return nil, fmt.Errorf("got invalid network instance, %s", nhNI)
 	}
 
-	nhg := rib[nhNI].GetAfts().GetNextHopGroup(nhgID)
+	nhAFT := nhRIB.GetAfts()
+	nhg := nhAFT.GetNextHopGroup(nhgID)
 	if nhg == nil {
 		return nil, fmt.Errorf("got unknown NHG %d in NI %s", nhgID, nhNI)
 	}
 
-	// sum is a map of index -> weight.
-	weights := map[uint64]uint64{}
-	for _, nh := range nhg.NextHop {
-		weights[nh.GetIndex()] = nh.GetWeight()
-	}
-
-	ret := map[string]*NextHopSummary{}
-	for nhID := range weights {
-		nh := rib[nhNI].GetAfts().GetNextHop(nhID).GetIpAddress()
+	ret := make(map[string]*NextHopSummary, len(nhg.NextHop))
+	summaries := make([]NextHopSummary, len(nhg.NextHop))
+	i := 0
+	for _, nhEntry := range nhg.NextHop {
+		nhID := nhEntry.GetIndex()
+		nh := nhAFT.GetNextHop(nhID).GetIpAddress()
 		if nh == "" {
 			return nil, fmt.Errorf("invalid next-hop %d", nhID)
 		}
-		ret[nh] = &NextHopSummary{
+		s := &summaries[i]
+		i++
+		*s = NextHopSummary{
 			Address:         nh,
-			Weight:          weights[nhID],
+			Weight:          nhEntry.GetWeight(),
 			NetworkInstance: nhNI,
 			Index:           nhID,
 		}
+		ret[nh] = s
 	}
 
 	return ret, nil

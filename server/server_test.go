@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -30,6 +31,8 @@ import (
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
+	"github.com/openconfig/gribigo/constants"
+	"github.com/openconfig/gribigo/protorib"
 	"github.com/openconfig/gribigo/rib"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
@@ -1881,7 +1884,7 @@ func TestModifyEntry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			got, err := modifyEntry(tt.inRIB, tt.inNI, tt.inOp, tt.inFIBACK, tt.inElection)
+			got, err := modifyEntry(newLegacyServerRIB(tt.inRIB), tt.inNI, tt.inOp, tt.inFIBACK, tt.inElection)
 			if err != nil {
 				checkStatusErr(t, err, tt.wantErrCode, tt.wantErrDetails)
 			}
@@ -2383,7 +2386,7 @@ func TestCheckFlushRequest(t *testing.T) {
 }
 
 func TestFlush(t *testing.T) {
-	addEntry := func(r *rib.RIB, ni string) {
+	addEntry := func(r serverRIB, ni string) {
 		if oks, _, err := r.AddEntry(ni, &spb.AFTOperation{
 			Op: spb.AFTOperation_ADD,
 			Entry: &spb.AFTOperation_NextHop{
@@ -2435,8 +2438,8 @@ func TestFlush(t *testing.T) {
 			t.Fatalf("cannot create server, error: %v", err)
 		}
 		r := rib.New(DefaultNetworkInstanceName)
-		addEntry(r, DefaultNetworkInstanceName)
 		s.InjectRIB(r)
+		addEntry(s.masterRIB, DefaultNetworkInstanceName)
 		return s.Server
 	}
 
@@ -2676,5 +2679,93 @@ func TestFlush(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestProtoRIBServerHooksAndInject verifies WithPostChangeProtoRIBHook,
+// WithProtoRIBResolvedEntryHook, and InjectProtoRIB on Server and FakeServer.
+func TestProtoRIBServerHooksAndInject(t *testing.T) {
+	var postChangeCalls int
+	var resolvedCalls int
+	var resolvedWG sync.WaitGroup
+
+	s, err := NewFake(
+		WithPostChangeProtoRIBHook(func(_ constants.OpType, _ int64, _ string, _ proto.Message) {
+			postChangeCalls++
+		}),
+		WithProtoRIBResolvedEntryHook(func(_ map[string]*protorib.AFTs, _ constants.OpType, _ string, _ constants.AFT, _ any, _ ...protorib.ResolvedDetails) {
+			resolvedCalls++
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewFake(WithPostChangeProtoRIBHook, WithProtoRIBResolvedEntryHook) failed: %v", err)
+	}
+
+	pr := protorib.New(DefaultNetworkInstanceName)
+	s.InjectProtoRIB(pr)
+
+	// Re-apply hooks onto the injected protorib.RIB via server options or direct AddEntry check.
+	resolvedWG.Add(1)
+	s2, err := New(
+		WithPostChangeProtoRIBHook(func(_ constants.OpType, _ int64, _ string, _ proto.Message) {
+			postChangeCalls++
+		}),
+		WithProtoRIBResolvedEntryHook(func(_ map[string]*protorib.AFTs, _ constants.OpType, _ string, _ constants.AFT, _ any, _ ...protorib.ResolvedDetails) {
+			resolvedCalls++
+			resolvedWG.Done()
+		}),
+	)
+	if err != nil {
+		t.Fatalf("New(WithPostChangeProtoRIBHook, WithProtoRIBResolvedEntryHook) failed: %v", err)
+	}
+
+	for _, op := range []*spb.AFTOperation{{
+		Id: 1,
+		Op: spb.AFTOperation_ADD,
+		Entry: &spb.AFTOperation_NextHop{
+			NextHop: &aftpb.Afts_NextHopKey{
+				Index: 1,
+				NextHop: &aftpb.Afts_NextHop{
+					IpAddress: &wpb.StringValue{Value: "192.0.2.1"},
+				},
+			},
+		},
+	}, {
+		Id: 2,
+		Op: spb.AFTOperation_ADD,
+		Entry: &spb.AFTOperation_NextHopGroup{
+			NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+				Id: 1,
+				NextHopGroup: &aftpb.Afts_NextHopGroup{
+					NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+						Index:   1,
+						NextHop: &aftpb.Afts_NextHopGroup_NextHop{},
+					}},
+				},
+			},
+		},
+	}, {
+		Id: 3,
+		Op: spb.AFTOperation_ADD,
+		Entry: &spb.AFTOperation_Ipv4{
+			Ipv4: &aftpb.Afts_Ipv4EntryKey{
+				Prefix: "203.0.113.0/24",
+				Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+					NextHopGroup: &wpb.UintValue{Value: 1},
+				},
+			},
+		},
+	}} {
+		if oks, fails, err := s2.masterRIB.AddEntry(DefaultNetworkInstanceName, op); err != nil || len(oks) != 1 || len(fails) != 0 {
+			t.Fatalf("AddEntry(%v) failed: oks=%v, fails=%v, err=%v", op, oks, fails, err)
+		}
+	}
+
+	resolvedWG.Wait()
+	if postChangeCalls != 3 {
+		t.Errorf("got %d postChangeCalls, want 3", postChangeCalls)
+	}
+	if resolvedCalls != 1 {
+		t.Errorf("got %d resolvedCalls, want 1", resolvedCalls)
 	}
 }

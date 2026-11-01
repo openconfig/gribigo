@@ -19,113 +19,54 @@ import (
 
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
 	spb "github.com/openconfig/gribi/v1/proto/service"
-	"github.com/openconfig/gribigo/aft"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
-
-// niCounts tracks per-AFT entry counts for a network instance when pre-sizing maps in FromGetResponses.
-type niCounts struct {
-	ipv4 int
-	ipv6 int
-	mpls int
-	nhg  int
-	nh   int
-}
 
 // FromGetResponses returns a RIB from a slice of gRIBI GetResponse messages.
 // The supplied defaultName is used as the default network instance name.
 func FromGetResponses(defaultName string, responses []*spb.GetResponse, opt ...RIBOpt) (*RIB, error) {
 	r := New(defaultName, opt...)
-	counts := map[string]*niCounts{}
+	niAFTs := map[string]*aftpb.Afts{}
+
 	for _, resp := range responses {
-		for _, e := range resp.GetEntry() {
+		for _, e := range resp.Entry {
 			ni := e.GetNetworkInstance()
-			c := counts[ni]
-			if c == nil {
-				c = &niCounts{}
-				counts[ni] = c
+			if _, ok := niAFTs[ni]; !ok {
+				niAFTs[ni] = &aftpb.Afts{}
 			}
-			switch e.GetEntry().(type) {
+			switch t := e.GetEntry().(type) {
 			case *spb.AFTEntry_Ipv4:
-				c.ipv4++
+				niAFTs[ni].Ipv4Entry = append(niAFTs[ni].Ipv4Entry, t.Ipv4)
 			case *spb.AFTEntry_Mpls:
-				c.mpls++
+				niAFTs[ni].LabelEntry = append(niAFTs[ni].LabelEntry, t.Mpls)
 			case *spb.AFTEntry_Ipv6:
-				c.ipv6++
+				niAFTs[ni].Ipv6Entry = append(niAFTs[ni].Ipv6Entry, t.Ipv6)
 			case *spb.AFTEntry_NextHopGroup:
-				c.nhg++
+				niAFTs[ni].NextHopGroup = append(niAFTs[ni].NextHopGroup, t.NextHopGroup)
 			case *spb.AFTEntry_NextHop:
-				c.nh++
+				niAFTs[ni].NextHop = append(niAFTs[ni].NextHop, t.NextHop)
 			default:
-				return nil, fmt.Errorf("unknown/unhandled type %T in received GetResponses", e.GetEntry())
+				return nil, fmt.Errorf("unknown/unhandled type %T in received GetResponses", t)
 			}
 		}
 	}
 
-	// Throughout this operation we do not worry about locking the structures in the new
+	// Throughout this operation we don't worry about locking the structures in the new
 	// RIB because we are the only function that can access the newly created data structure.
-	for ni, c := range counts {
+	for ni, niRIB := range niAFTs {
+		cr, err := candidateRIB(niRIB)
+		if err != nil {
+			return nil, fmt.Errorf("cannot build RIB for NI %s, err: %v", ni, err)
+		}
+
 		if ni != defaultName {
 			if err := r.AddNetworkInstance(ni); err != nil {
 				return nil, fmt.Errorf("cannot create network instance RIB for NI %s, err: %v", ni, err)
 			}
 		}
-		afts := &aft.Afts{}
-		if c.ipv4 > 0 {
-			afts.Ipv4Entry = make(map[string]*aft.Afts_Ipv4Entry, c.ipv4)
-		}
-		if c.ipv6 > 0 {
-			afts.Ipv6Entry = make(map[string]*aft.Afts_Ipv6Entry, c.ipv6)
-		}
-		if c.mpls > 0 {
-			afts.LabelEntry = make(map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry, c.mpls)
-		}
-		if c.nhg > 0 {
-			afts.NextHopGroup = make(map[uint64]*aft.Afts_NextHopGroup, c.nhg)
-		}
-		if c.nh > 0 {
-			afts.NextHop = make(map[uint64]*aft.Afts_NextHop, c.nh)
-		}
-		r.niRIB[ni].r = &aft.RIB{Afts: afts}
-	}
 
-	for _, resp := range responses {
-		for _, e := range resp.GetEntry() {
-			ni := e.GetNetworkInstance()
-			afts := r.niRIB[ni].r.Afts
-			switch t := e.GetEntry().(type) {
-			case *spb.AFTEntry_Ipv4:
-				v4, err := ipv4EntryFromProto(t.Ipv4)
-				if err != nil {
-					return nil, fmt.Errorf("cannot build RIB for NI %s, err: %v", ni, err)
-				}
-				afts.Ipv4Entry[t.Ipv4.GetPrefix()] = v4
-			case *spb.AFTEntry_Mpls:
-				lk, mpls, err := mplsEntryFromProto(t.Mpls)
-				if err != nil {
-					return nil, fmt.Errorf("cannot build RIB for NI %s, err: %v", ni, err)
-				}
-				afts.LabelEntry[lk] = mpls
-			case *spb.AFTEntry_Ipv6:
-				v6, err := ipv6EntryFromProto(t.Ipv6)
-				if err != nil {
-					return nil, fmt.Errorf("cannot build RIB for NI %s, err: %v", ni, err)
-				}
-				afts.Ipv6Entry[t.Ipv6.GetPrefix()] = v6
-			case *spb.AFTEntry_NextHopGroup:
-				nhg, err := nhgEntryFromProto(t.NextHopGroup)
-				if err != nil {
-					return nil, fmt.Errorf("cannot build RIB for NI %s, err: %v", ni, err)
-				}
-				afts.NextHopGroup[t.NextHopGroup.GetId()] = nhg
-			case *spb.AFTEntry_NextHop:
-				nh, err := nhEntryFromProto(t.NextHop)
-				if err != nil {
-					return nil, fmt.Errorf("cannot build RIB for NI %s, err: %v", ni, err)
-				}
-				afts.NextHop[t.NextHop.GetIndex()] = nh
-			}
-		}
+		cr.GetOrCreateAfts()
+		r.niRIB[ni].r = cr
 	}
 
 	return r, nil

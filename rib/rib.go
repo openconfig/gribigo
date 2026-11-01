@@ -19,26 +19,42 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"math"
-	"net/netip"
 	"reflect"
 	"sort"
 	"sync"
 	"time"
 
 	log "github.com/golang/glog"
+	"github.com/openconfig/gnmi/value"
+	"github.com/openconfig/goyang/pkg/yang"
 	"github.com/openconfig/gribigo/aft"
 	"github.com/openconfig/gribigo/constants"
+	"github.com/openconfig/ygot/protomap"
 	"github.com/openconfig/ygot/ygot"
+	"github.com/openconfig/ygot/ytypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
+	gpb "github.com/openconfig/gnmi/proto/gnmi"
 	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
-	enumpb "github.com/openconfig/gribi/v1/proto/gribi_aft/enums"
 	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
+
+// Schema for the AFT model used by the RIB -- we set a global to ensure that
+// we only deserialise it once.
+var aftSchema *yang.Entry
+
+func init() {
+	// Unmarshal the YANG schema on startup.
+	r, err := aft.Schema()
+	if err != nil {
+		log.Exitf("cannot unmarshal YANG schema, %v", err)
+	}
+	aftSchema = r.RootSchema()
+}
 
 // unixTS is used to determine the current unix timestamp in nanoseconds since the
 // epoch. It is defined such that it can be overloaded by unit tests.
@@ -1182,641 +1198,40 @@ func (r *RIBHolder) GetNextHopGroup(id uint64) (*aft.Afts_NextHopGroup, bool) {
 	return n, true
 }
 
-// isValidIPv4Prefix reports whether s is a valid IPv4 prefix in CIDR notation.
-func isValidIPv4Prefix(s string) bool {
-	pfx, err := netip.ParsePrefix(s)
-	return err == nil && pfx.Addr().Is4()
-}
-
-// isValidIPv6Prefix reports whether s is a valid IPv6 prefix in CIDR notation without a zone.
-func isValidIPv6Prefix(s string) bool {
-	pfx, err := netip.ParsePrefix(s)
-	return err == nil && pfx.Addr().Is6() && pfx.Addr().Zone() == ""
-}
-
-// isValidIPAddr reports whether s is a valid IPv4 or IPv6 address without a zone.
-func isValidIPAddr(s string) bool {
-	addr, err := netip.ParseAddr(s)
-	return err == nil && addr.Zone() == ""
-}
-
-// isValidMACAddr reports whether s is a valid colon-separated 6-octet MAC address.
-func isValidMACAddr(s string) bool {
-	if len(s) != 17 {
-		return false
-	}
-	for i := 0; i < 17; i++ {
-		c := s[i]
-		if i%3 == 2 {
-			if c != ':' {
-				return false
-			}
-		} else if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-			return false
-		}
-	}
-	return true
-}
-
-// ipv4EntryFromProto converts and validates an Afts_Ipv4EntryKey protobuf into an aft.Afts_Ipv4Entry GoStruct.
-func ipv4EntryFromProto(k *aftpb.Afts_Ipv4EntryKey) (*aft.Afts_Ipv4Entry, error) {
-	if k == nil || k.Ipv4Entry == nil {
-		return nil, errors.New("could not parse a field within the list gribi_aft.Afts.ipv4_entry , nil list member in field gribi_aft.Afts.Ipv4EntryKey.ipv4_entry, <nil>")
-	}
-	if !isValidIPv4Prefix(k.Prefix) {
-		return nil, fmt.Errorf("invalid IPv4 prefix %q", k.Prefix)
-	}
-	p := k.Ipv4Entry
-	e := &aft.Afts_Ipv4Entry{
-		Prefix: ygot.String(k.Prefix),
-	}
-	if p.DecapsulateHeader != enumpb.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UNSET {
-		v := int64(p.DecapsulateHeader)
-		if v < 0 || v > 8 {
-			return nil, fmt.Errorf("invalid DecapsulateHeader %v", p.DecapsulateHeader)
-		}
-		e.DecapsulateHeader = aft.E_AftTypes_EncapsulationHeaderType(v)
-	}
-	if p.EntryMetadata != nil {
-		b := p.EntryMetadata.GetValue()
-		if len(b) > 8 {
-			return nil, fmt.Errorf("EntryMetadata length %d exceeds 8 bytes", len(b))
-		}
-		e.EntryMetadata = aft.Binary(b)
-	}
-	if p.NextHopGroup != nil {
-		e.NextHopGroup = ygot.Uint64(p.NextHopGroup.GetValue())
-	}
-	if p.NextHopGroupNetworkInstance != nil {
-		e.NextHopGroupNetworkInstance = ygot.String(p.NextHopGroupNetworkInstance.GetValue())
-	}
-	return e, nil
-}
-
-// ipv6EntryFromProto converts and validates an Afts_Ipv6EntryKey protobuf into an aft.Afts_Ipv6Entry GoStruct.
-func ipv6EntryFromProto(k *aftpb.Afts_Ipv6EntryKey) (*aft.Afts_Ipv6Entry, error) {
-	if k == nil || k.Ipv6Entry == nil {
-		return nil, errors.New("could not parse a field within the list gribi_aft.Afts.ipv6_entry , nil list member in field gribi_aft.Afts.Ipv6EntryKey.ipv6_entry, <nil>")
-	}
-	if !isValidIPv6Prefix(k.Prefix) {
-		return nil, fmt.Errorf("invalid IPv6 prefix %q", k.Prefix)
-	}
-	p := k.Ipv6Entry
-	e := &aft.Afts_Ipv6Entry{
-		Prefix: ygot.String(k.Prefix),
-	}
-	if p.DecapsulateHeader != enumpb.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UNSET {
-		v := int64(p.DecapsulateHeader)
-		if v < 0 || v > 8 {
-			return nil, fmt.Errorf("invalid DecapsulateHeader %v", p.DecapsulateHeader)
-		}
-		e.DecapsulateHeader = aft.E_AftTypes_EncapsulationHeaderType(v)
-	}
-	if p.EntryMetadata != nil {
-		b := p.EntryMetadata.GetValue()
-		if len(b) > 8 {
-			return nil, fmt.Errorf("EntryMetadata length %d exceeds 8 bytes", len(b))
-		}
-		e.EntryMetadata = aft.Binary(b)
-	}
-	if p.NextHopGroup != nil {
-		e.NextHopGroup = ygot.Uint64(p.NextHopGroup.GetValue())
-	}
-	if p.NextHopGroupNetworkInstance != nil {
-		e.NextHopGroupNetworkInstance = ygot.String(p.NextHopGroupNetworkInstance.GetValue())
-	}
-	return e, nil
-}
-
-// mplsEntryFromProto converts and validates an Afts_LabelEntryKey protobuf into an aft.Afts_LabelEntry GoStruct.
-func mplsEntryFromProto(k *aftpb.Afts_LabelEntryKey) (aft.Afts_LabelEntry_Label_Union, *aft.Afts_LabelEntry, error) {
-	if k == nil || k.LabelEntry == nil {
-		return nil, nil, errors.New("could not parse a field within the list gribi_aft.Afts.label_entry , nil list member in field gribi_aft.Afts.LabelEntryKey.label_entry, <nil>")
-	}
-	var labelKey aft.Afts_LabelEntry_Label_Union
-	switch t := k.Label.(type) {
-	case *aftpb.Afts_LabelEntryKey_LabelUint64:
-		if t.LabelUint64 < 16 || t.LabelUint64 > 1048575 {
-			return nil, nil, fmt.Errorf("invalid MPLS label %d out of range [16..1048575]", t.LabelUint64)
-		}
-		labelKey = aft.UnionUint32(uint32(t.LabelUint64))
-	case *aftpb.Afts_LabelEntryKey_LabelOpenconfigmplstypesmplslabelenum:
-		v := int64(t.LabelOpenconfigmplstypesmplslabelenum)
-		if v < 1 || v > 8 {
-			return nil, nil, fmt.Errorf("invalid MPLS label enum %v", t.LabelOpenconfigmplstypesmplslabelenum)
-		}
-		labelKey = aft.E_MplsTypes_MplsLabel_Enum(v)
-	default:
-		return nil, nil, errors.New("missing or unsupported MPLS label key")
-	}
-	p := k.LabelEntry
-	e := &aft.Afts_LabelEntry{
-		Label: labelKey,
-	}
-	if p.EntryMetadata != nil {
-		b := p.EntryMetadata.GetValue()
-		if len(b) > 8 {
-			return nil, nil, fmt.Errorf("EntryMetadata length %d exceeds 8 bytes", len(b))
-		}
-		e.EntryMetadata = aft.Binary(b)
-	}
-	if p.NextHopGroup != nil {
-		e.NextHopGroup = ygot.Uint64(p.NextHopGroup.GetValue())
-	}
-	if p.NextHopGroupNetworkInstance != nil {
-		e.NextHopGroupNetworkInstance = ygot.String(p.NextHopGroupNetworkInstance.GetValue())
-	}
-	if len(p.PoppedMplsLabelStack) > 0 {
-		stack := make([]aft.Afts_LabelEntry_PoppedMplsLabelStack_Union, 0, len(p.PoppedMplsLabelStack))
-		for _, u := range p.PoppedMplsLabelStack {
-			if u == nil {
-				continue
-			}
-			if u.PoppedMplsLabelStackOpenconfigmplstypesmplslabelenum != enumpb.OpenconfigMplsTypesMplsLabelEnum_OPENCONFIGMPLSTYPESMPLSLABELENUM_UNSET {
-				v := int64(u.PoppedMplsLabelStackOpenconfigmplstypesmplslabelenum)
-				if v < 1 || v > 8 {
-					return nil, nil, fmt.Errorf("invalid PoppedMplsLabelStack enum %v", u.PoppedMplsLabelStackOpenconfigmplstypesmplslabelenum)
-				}
-				stack = append(stack, aft.E_MplsTypes_MplsLabel_Enum(v))
-			} else if u.PoppedMplsLabelStackUint64 != 0 {
-				if u.PoppedMplsLabelStackUint64 < 16 || u.PoppedMplsLabelStackUint64 > 1048575 {
-					return nil, nil, fmt.Errorf("invalid PoppedMplsLabelStack label %d out of range [16..1048575]", u.PoppedMplsLabelStackUint64)
-				}
-				stack = append(stack, aft.UnionUint32(uint32(u.PoppedMplsLabelStackUint64)))
-			}
-		}
-		if len(stack) > 0 {
-			e.PoppedMplsLabelStack = stack
-		}
-	}
-	return labelKey, e, nil
-}
-
-// nhgEntryFromProto converts and validates an Afts_NextHopGroupKey protobuf into an aft.Afts_NextHopGroup GoStruct.
-func nhgEntryFromProto(k *aftpb.Afts_NextHopGroupKey) (*aft.Afts_NextHopGroup, error) {
-	if k == nil || k.NextHopGroup == nil {
-		return nil, errors.New("could not parse a field within the list gribi_aft.Afts.next_hop_group , nil list member in field gribi_aft.Afts.NextHopGroupKey.next_hop_group, <nil>")
-	}
-	p := k.NextHopGroup
-	e := &aft.Afts_NextHopGroup{
-		Id: ygot.Uint64(k.Id),
-	}
-	if p.BackupNextHopGroup != nil {
-		e.BackupNextHopGroup = ygot.Uint64(p.BackupNextHopGroup.GetValue())
-	}
-	if p.Color != nil {
-		e.Color = ygot.Uint64(p.Color.GetValue())
-	}
-	if len(p.NextHop) > 0 {
-		nhs := make(map[uint64]*aft.Afts_NextHopGroup_NextHop, len(p.NextHop))
-		for _, nhk := range p.NextHop {
-			if nhk == nil || nhk.NextHop == nil {
-				return nil, errors.New("could not parse a field within the list gribi_aft.Afts.NextHopGroup.next_hop , nil list member in field gribi_aft.Afts.NextHopGroup.NextHopKey.next_hop, <nil>")
-			}
-			if _, exists := nhs[nhk.Index]; exists {
-				return nil, fmt.Errorf("duplicate NextHop index %d in NextHopGroup %d", nhk.Index, k.Id)
-			}
-			nhEntry := &aft.Afts_NextHopGroup_NextHop{
-				Index: ygot.Uint64(nhk.Index),
-			}
-			if nhk.NextHop.Weight != nil {
-				nhEntry.Weight = ygot.Uint64(nhk.NextHop.Weight.GetValue())
-			}
-			nhs[nhk.Index] = nhEntry
-		}
-		e.NextHop = nhs
-	}
-	return e, nil
-}
-
-// nhEntryFromProto converts and validates an Afts_NextHopKey protobuf into an aft.Afts_NextHop GoStruct.
-func nhEntryFromProto(k *aftpb.Afts_NextHopKey) (*aft.Afts_NextHop, error) {
-	if k == nil || k.NextHop == nil {
-		return nil, errors.New("could not parse a field within the list gribi_aft.Afts.next_hop , nil list member in field gribi_aft.Afts.NextHopKey.next_hop, <nil>")
-	}
-	p := k.NextHop
-	e := &aft.Afts_NextHop{
-		Index: ygot.Uint64(k.Index),
-	}
-	if p.DecapsulateHeader != enumpb.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UNSET {
-		v := int64(p.DecapsulateHeader)
-		if v < 0 || v > 8 {
-			return nil, fmt.Errorf("invalid DecapsulateHeader %v", p.DecapsulateHeader)
-		}
-		e.DecapsulateHeader = aft.E_AftTypes_EncapsulationHeaderType(v)
-	}
-	if p.EncapsulateHeader != enumpb.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UNSET {
-		v := int64(p.EncapsulateHeader)
-		if v < 0 || v > 8 {
-			return nil, fmt.Errorf("invalid EncapsulateHeader %v", p.EncapsulateHeader)
-		}
-		e.EncapsulateHeader = aft.E_AftTypes_EncapsulationHeaderType(v)
-	}
-	if p.IpAddress != nil {
-		ip := p.IpAddress.GetValue()
-		if !isValidIPAddr(ip) {
-			return nil, fmt.Errorf("invalid NextHop IpAddress %q", ip)
-		}
-		e.IpAddress = ygot.String(ip)
-	}
-	if p.MacAddress != nil {
-		mac := p.MacAddress.GetValue()
-		if !isValidMACAddr(mac) {
-			return nil, fmt.Errorf("invalid NextHop MacAddress %q", mac)
-		}
-		e.MacAddress = ygot.String(mac)
-	}
-	if p.NetworkInstance != nil {
-		e.NetworkInstance = ygot.String(p.NetworkInstance.GetValue())
-	}
-	if p.PopTopLabel != nil {
-		e.PopTopLabel = ygot.Bool(p.PopTopLabel.GetValue())
-	}
-	if p.TunnelSrcIpAddress != nil {
-		ip := p.TunnelSrcIpAddress.GetValue()
-		if !isValidIPAddr(ip) {
-			return nil, fmt.Errorf("invalid NextHop TunnelSrcIpAddress %q", ip)
-		}
-		e.TunnelSrcIpAddress = ygot.String(ip)
-	}
-	if p.VniLabel != nil {
-		v := p.VniLabel.GetValue()
-		if v < 1 || v > 16777215 {
-			return nil, fmt.Errorf("invalid NextHop VniLabel %d", v)
-		}
-		e.VniLabel = ygot.Uint32(uint32(v))
-	}
-	if g := p.Gre; g != nil && (g.DstIp != nil || g.SrcIp != nil || g.Ttl != nil) {
-		gre := &aft.Afts_NextHop_Gre{}
-		if g.DstIp != nil {
-			ip := g.DstIp.GetValue()
-			if !isValidIPAddr(ip) {
-				return nil, fmt.Errorf("invalid Gre DstIp %q", ip)
-			}
-			gre.DstIp = ygot.String(ip)
-		}
-		if g.SrcIp != nil {
-			ip := g.SrcIp.GetValue()
-			if !isValidIPAddr(ip) {
-				return nil, fmt.Errorf("invalid Gre SrcIp %q", ip)
-			}
-			gre.SrcIp = ygot.String(ip)
-		}
-		if g.Ttl != nil {
-			ttl := g.Ttl.GetValue()
-			if ttl > math.MaxUint8 {
-				return nil, fmt.Errorf("invalid Gre Ttl %d", ttl)
-			}
-			gre.Ttl = ygot.Uint8(uint8(ttl))
-		}
-		e.Gre = gre
-	}
-	if ipip := p.IpInIp; ipip != nil && (ipip.DstIp != nil || ipip.SrcIp != nil) {
-		ii := &aft.Afts_NextHop_IpInIp{}
-		if ipip.DstIp != nil {
-			ip := ipip.DstIp.GetValue()
-			if !isValidIPAddr(ip) {
-				return nil, fmt.Errorf("invalid IpInIp DstIp %q", ip)
-			}
-			ii.DstIp = ygot.String(ip)
-		}
-		if ipip.SrcIp != nil {
-			ip := ipip.SrcIp.GetValue()
-			if !isValidIPAddr(ip) {
-				return nil, fmt.Errorf("invalid IpInIp SrcIp %q", ip)
-			}
-			ii.SrcIp = ygot.String(ip)
-		}
-		e.IpInIp = ii
-	}
-	if iref := p.InterfaceRef; iref != nil && (iref.Interface != nil || iref.Subinterface != nil) {
-		ir := &aft.Afts_NextHop_InterfaceRef{}
-		if iref.Interface != nil {
-			ir.Interface = ygot.String(iref.Interface.GetValue())
-		}
-		if iref.Subinterface != nil {
-			sub := iref.Subinterface.GetValue()
-			if sub > math.MaxUint32 {
-				return nil, fmt.Errorf("invalid Subinterface %d", sub)
-			}
-			ir.Subinterface = ygot.Uint32(uint32(sub))
-		}
-		e.InterfaceRef = ir
-	}
-	if len(p.PushedMplsLabelStack) > 0 {
-		stack := make([]aft.Afts_NextHop_PushedMplsLabelStack_Union, 0, len(p.PushedMplsLabelStack))
-		for _, u := range p.PushedMplsLabelStack {
-			if u == nil {
-				continue
-			}
-			if u.PushedMplsLabelStackOpenconfigmplstypesmplslabelenum != enumpb.OpenconfigMplsTypesMplsLabelEnum_OPENCONFIGMPLSTYPESMPLSLABELENUM_UNSET {
-				v := int64(u.PushedMplsLabelStackOpenconfigmplstypesmplslabelenum)
-				if v < 1 || v > 8 {
-					return nil, fmt.Errorf("invalid PushedMplsLabelStack enum %v", u.PushedMplsLabelStackOpenconfigmplstypesmplslabelenum)
-				}
-				stack = append(stack, aft.E_MplsTypes_MplsLabel_Enum(v))
-			} else if u.PushedMplsLabelStackUint64 != 0 {
-				if u.PushedMplsLabelStackUint64 < 16 || u.PushedMplsLabelStackUint64 > 1048575 {
-					return nil, fmt.Errorf("invalid PushedMplsLabelStack label %d out of range [16..1048575]", u.PushedMplsLabelStackUint64)
-				}
-				stack = append(stack, aft.UnionUint32(uint32(u.PushedMplsLabelStackUint64)))
-			}
-		}
-		if len(stack) > 0 {
-			e.PushedMplsLabelStack = stack
-		}
-	}
-	if len(p.EncapHeader) > 0 {
-		ehs := make(map[uint8]*aft.Afts_NextHop_EncapHeader, len(p.EncapHeader))
-		for _, ehk := range p.EncapHeader {
-			if ehk == nil || ehk.EncapHeader == nil {
-				return nil, errors.New("could not parse a field within the list gribi_aft.Afts.NextHop.encap_header , nil list member in field gribi_aft.Afts.NextHop.EncapHeaderKey.encap_header, <nil>")
-			}
-			if ehk.Index > math.MaxUint8 {
-				return nil, fmt.Errorf("invalid EncapHeader index %d", ehk.Index)
-			}
-			idx := uint8(ehk.Index)
-			if _, exists := ehs[idx]; exists {
-				return nil, fmt.Errorf("duplicate EncapHeader index %d", idx)
-			}
-			ep := ehk.EncapHeader
-			eh := &aft.Afts_NextHop_EncapHeader{
-				Index: ygot.Uint8(idx),
-			}
-			if ep.Type != enumpb.OpenconfigAftTypesEncapsulationHeaderType_OPENCONFIGAFTTYPESENCAPSULATIONHEADERTYPE_UNSET {
-				v := int64(ep.Type)
-				if v < 0 || v > 8 {
-					return nil, fmt.Errorf("invalid EncapHeader Type %v", ep.Type)
-				}
-				eh.Type = aft.E_AftTypes_EncapsulationHeaderType(v)
-			}
-			if g := ep.Gre; g != nil && (g.DstIp != nil || g.SrcIp != nil || g.Ttl != nil) {
-				gre := &aft.Afts_NextHop_EncapHeader_Gre{}
-				if g.DstIp != nil {
-					ip := g.DstIp.GetValue()
-					if !isValidIPAddr(ip) {
-						return nil, fmt.Errorf("invalid EncapHeader Gre DstIp %q", ip)
-					}
-					gre.DstIp = ygot.String(ip)
-				}
-				if g.SrcIp != nil {
-					ip := g.SrcIp.GetValue()
-					if !isValidIPAddr(ip) {
-						return nil, fmt.Errorf("invalid EncapHeader Gre SrcIp %q", ip)
-					}
-					gre.SrcIp = ygot.String(ip)
-				}
-				if g.Ttl != nil {
-					ttl := g.Ttl.GetValue()
-					if ttl > math.MaxUint8 {
-						return nil, fmt.Errorf("invalid EncapHeader Gre Ttl %d", ttl)
-					}
-					gre.Ttl = ygot.Uint8(uint8(ttl))
-				}
-				eh.Gre = gre
-			}
-			if v4 := ep.Ipv4; v4 != nil && (v4.DstIp != nil || v4.SrcIp != nil) {
-				ip4 := &aft.Afts_NextHop_EncapHeader_Ipv4{}
-				if v4.DstIp != nil {
-					ip := v4.DstIp.GetValue()
-					if pfx, err := netip.ParseAddr(ip); err != nil || !pfx.Is4() {
-						return nil, fmt.Errorf("invalid EncapHeader Ipv4 DstIp %q", ip)
-					}
-					ip4.DstIp = ygot.String(ip)
-				}
-				if v4.SrcIp != nil {
-					ip := v4.SrcIp.GetValue()
-					if pfx, err := netip.ParseAddr(ip); err != nil || !pfx.Is4() {
-						return nil, fmt.Errorf("invalid EncapHeader Ipv4 SrcIp %q", ip)
-					}
-					ip4.SrcIp = ygot.String(ip)
-				}
-				eh.Ipv4 = ip4
-			}
-			if v6 := ep.Ipv6; v6 != nil && (v6.DstIp != nil || v6.SrcIp != nil) {
-				ip6 := &aft.Afts_NextHop_EncapHeader_Ipv6{}
-				if v6.DstIp != nil {
-					ip := v6.DstIp.GetValue()
-					if pfx, err := netip.ParseAddr(ip); err != nil || !pfx.Is6() || pfx.Zone() != "" {
-						return nil, fmt.Errorf("invalid EncapHeader Ipv6 DstIp %q", ip)
-					}
-					ip6.DstIp = ygot.String(ip)
-				}
-				if v6.SrcIp != nil {
-					ip := v6.SrcIp.GetValue()
-					if pfx, err := netip.ParseAddr(ip); err != nil || !pfx.Is6() || pfx.Zone() != "" {
-						return nil, fmt.Errorf("invalid EncapHeader Ipv6 SrcIp %q", ip)
-					}
-					ip6.SrcIp = ygot.String(ip)
-				}
-				eh.Ipv6 = ip6
-			}
-			if m := ep.Mpls; m != nil && (len(m.MplsLabelStack) > 0 || m.TrafficClass != nil) {
-				mpls := &aft.Afts_NextHop_EncapHeader_Mpls{}
-				if len(m.MplsLabelStack) > 0 {
-					stack := make([]aft.Afts_NextHop_EncapHeader_Mpls_MplsLabelStack_Union, 0, len(m.MplsLabelStack))
-					for _, u := range m.MplsLabelStack {
-						if u == nil {
-							continue
-						}
-						if u.MplsLabelStackOpenconfigmplstypesmplslabelenum != enumpb.OpenconfigMplsTypesMplsLabelEnum_OPENCONFIGMPLSTYPESMPLSLABELENUM_UNSET {
-							v := int64(u.MplsLabelStackOpenconfigmplstypesmplslabelenum)
-							if v < 1 || v > 8 {
-								return nil, fmt.Errorf("invalid EncapHeader MplsLabelStack enum %v", u.MplsLabelStackOpenconfigmplstypesmplslabelenum)
-							}
-							stack = append(stack, aft.E_MplsTypes_MplsLabel_Enum(v))
-						} else if u.MplsLabelStackUint64 != 0 {
-							if u.MplsLabelStackUint64 < 16 || u.MplsLabelStackUint64 > 1048575 {
-								return nil, fmt.Errorf("invalid EncapHeader MplsLabelStack label %d out of range [16..1048575]", u.MplsLabelStackUint64)
-							}
-							stack = append(stack, aft.UnionUint32(uint32(u.MplsLabelStackUint64)))
-						}
-					}
-					if len(stack) > 0 {
-						mpls.MplsLabelStack = stack
-					}
-				}
-				if m.TrafficClass != nil {
-					tc := m.TrafficClass.GetValue()
-					if tc > 7 {
-						return nil, fmt.Errorf("invalid EncapHeader Mpls TrafficClass %d", tc)
-					}
-					mpls.TrafficClass = ygot.Uint8(uint8(tc))
-				}
-				eh.Mpls = mpls
-			}
-			if u4 := ep.UdpV4; u4 != nil && (u4.Dscp != nil || u4.DstIp != nil || u4.DstUdpPort != nil || u4.IpTtl != nil || u4.SrcIp != nil || u4.SrcUdpPort != nil) {
-				udp4 := &aft.Afts_NextHop_EncapHeader_UdpV4{}
-				if u4.Dscp != nil {
-					dscp := u4.Dscp.GetValue()
-					if dscp > 63 {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV4 Dscp %d", dscp)
-					}
-					udp4.Dscp = ygot.Uint8(uint8(dscp))
-				}
-				if u4.DstIp != nil {
-					ip := u4.DstIp.GetValue()
-					if pfx, err := netip.ParseAddr(ip); err != nil || !pfx.Is4() {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV4 DstIp %q", ip)
-					}
-					udp4.DstIp = ygot.String(ip)
-				}
-				if u4.DstUdpPort != nil {
-					port := u4.DstUdpPort.GetValue()
-					if port > math.MaxUint16 {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV4 DstUdpPort %d", port)
-					}
-					udp4.DstUdpPort = ygot.Uint16(uint16(port))
-				}
-				if u4.IpTtl != nil {
-					ttl := u4.IpTtl.GetValue()
-					if ttl > math.MaxUint8 {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV4 IpTtl %d", ttl)
-					}
-					udp4.IpTtl = ygot.Uint8(uint8(ttl))
-				}
-				if u4.SrcIp != nil {
-					ip := u4.SrcIp.GetValue()
-					if pfx, err := netip.ParseAddr(ip); err != nil || !pfx.Is4() {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV4 SrcIp %q", ip)
-					}
-					udp4.SrcIp = ygot.String(ip)
-				}
-				if u4.SrcUdpPort != nil {
-					port := u4.SrcUdpPort.GetValue()
-					if port > math.MaxUint16 {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV4 SrcUdpPort %d", port)
-					}
-					udp4.SrcUdpPort = ygot.Uint16(uint16(port))
-				}
-				eh.UdpV4 = udp4
-			}
-			if u6 := ep.UdpV6; u6 != nil && (u6.Dscp != nil || u6.DstIp != nil || u6.DstUdpPort != nil || u6.IpTtl != nil || u6.SrcIp != nil || u6.SrcUdpPort != nil) {
-				udp6 := &aft.Afts_NextHop_EncapHeader_UdpV6{}
-				if u6.Dscp != nil {
-					dscp := u6.Dscp.GetValue()
-					if dscp > 63 {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV6 Dscp %d", dscp)
-					}
-					udp6.Dscp = ygot.Uint8(uint8(dscp))
-				}
-				if u6.DstIp != nil {
-					ip := u6.DstIp.GetValue()
-					if pfx, err := netip.ParseAddr(ip); err != nil || !pfx.Is6() || pfx.Zone() != "" {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV6 DstIp %q", ip)
-					}
-					udp6.DstIp = ygot.String(ip)
-				}
-				if u6.DstUdpPort != nil {
-					port := u6.DstUdpPort.GetValue()
-					if port > math.MaxUint16 {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV6 DstUdpPort %d", port)
-					}
-					udp6.DstUdpPort = ygot.Uint16(uint16(port))
-				}
-				if u6.IpTtl != nil {
-					ttl := u6.IpTtl.GetValue()
-					if ttl > math.MaxUint8 {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV6 IpTtl %d", ttl)
-					}
-					udp6.IpTtl = ygot.Uint8(uint8(ttl))
-				}
-				if u6.SrcIp != nil {
-					ip := u6.SrcIp.GetValue()
-					if pfx, err := netip.ParseAddr(ip); err != nil || !pfx.Is6() || pfx.Zone() != "" {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV6 SrcIp %q", ip)
-					}
-					udp6.SrcIp = ygot.String(ip)
-				}
-				if u6.SrcUdpPort != nil {
-					port := u6.SrcUdpPort.GetValue()
-					if port > math.MaxUint16 {
-						return nil, fmt.Errorf("invalid EncapHeader UdpV6 SrcUdpPort %d", port)
-					}
-					udp6.SrcUdpPort = ygot.Uint16(uint16(port))
-				}
-				eh.UdpV6 = udp6
-			}
-			ehs[idx] = eh
-		}
-		e.EncapHeader = ehs
-	}
-	return e, nil
-}
-
-// candidateRIB takes the input set of Afts and returns them as an aft.RIB pointer
+// candidateRIB takes the input set of Afts and returns them as a aft.RIB pointer
 // that can be merged into an existing RIB.
 func candidateRIB(a *aftpb.Afts) (*aft.RIB, error) {
-	if a == nil {
-		return &aft.RIB{}, nil
+	paths, err := protomap.PathsFromProto(a)
+	if err != nil {
+		return nil, err
 	}
-	afts := &aft.Afts{}
-	if len(a.Ipv4Entry) > 0 {
-		afts.Ipv4Entry = make(map[string]*aft.Afts_Ipv4Entry, len(a.Ipv4Entry))
-		for _, k := range a.Ipv4Entry {
-			e, err := ipv4EntryFromProto(k)
-			if err != nil {
-				return nil, err
+
+	nr := &aft.RIB{}
+	for p, v := range paths {
+		sv, err := value.FromScalar(v)
+
+		if err != nil {
+			ps := p.String()
+			if yps, err := ygot.PathToString(p); err == nil {
+				ps = yps
 			}
-			if _, exists := afts.Ipv4Entry[k.Prefix]; exists {
-				return nil, fmt.Errorf("duplicate IPv4 prefix %q", k.Prefix)
-			}
-			afts.Ipv4Entry[k.Prefix] = e
+			return nil, fmt.Errorf("cannot convert field %s to scalar, %v", ps, sv)
+		}
+		// Use the global aftSchema to avoid needing to unmarshal again.
+		if err := ytypes.SetNode(aftSchema, nr, p, sv, &ytypes.InitMissingElements{}); err != nil {
+			return nil, fmt.Errorf("invalid RIB %s, %v", a, err)
 		}
 	}
-	if len(a.Ipv6Entry) > 0 {
-		afts.Ipv6Entry = make(map[string]*aft.Afts_Ipv6Entry, len(a.Ipv6Entry))
-		for _, k := range a.Ipv6Entry {
-			e, err := ipv6EntryFromProto(k)
-			if err != nil {
-				return nil, err
-			}
-			if _, exists := afts.Ipv6Entry[k.Prefix]; exists {
-				return nil, fmt.Errorf("duplicate IPv6 prefix %q", k.Prefix)
-			}
-			afts.Ipv6Entry[k.Prefix] = e
-		}
+
+	// We validate against the schema, but not semantically within gRIBI.
+	if err := nr.Afts.Validate(&ytypes.LeafrefOptions{
+		IgnoreMissingData: true,
+		Log:               false,
+	}); err != nil {
+		return nil, fmt.Errorf("invalid entry provided, %v", err)
 	}
-	if len(a.LabelEntry) > 0 {
-		afts.LabelEntry = make(map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry, len(a.LabelEntry))
-		for _, k := range a.LabelEntry {
-			lk, e, err := mplsEntryFromProto(k)
-			if err != nil {
-				return nil, err
-			}
-			if _, exists := afts.LabelEntry[lk]; exists {
-				return nil, fmt.Errorf("duplicate MPLS label %v", lk)
-			}
-			afts.LabelEntry[lk] = e
-		}
-	}
-	if len(a.NextHopGroup) > 0 {
-		afts.NextHopGroup = make(map[uint64]*aft.Afts_NextHopGroup, len(a.NextHopGroup))
-		for _, k := range a.NextHopGroup {
-			e, err := nhgEntryFromProto(k)
-			if err != nil {
-				return nil, err
-			}
-			if _, exists := afts.NextHopGroup[k.Id]; exists {
-				return nil, fmt.Errorf("duplicate NextHopGroup ID %d", k.Id)
-			}
-			afts.NextHopGroup[k.Id] = e
-		}
-	}
-	if len(a.NextHop) > 0 {
-		afts.NextHop = make(map[uint64]*aft.Afts_NextHop, len(a.NextHop))
-		for _, k := range a.NextHop {
-			e, err := nhEntryFromProto(k)
-			if err != nil {
-				return nil, err
-			}
-			if _, exists := afts.NextHop[k.Index]; exists {
-				return nil, fmt.Errorf("duplicate NextHop index %d", k.Index)
-			}
-			afts.NextHop[k.Index] = e
-		}
-	}
-	return &aft.RIB{Afts: afts}, nil
+
+	return nr, nil
 }
 
 // AddIPv4 adds the IPv4 entry described by e to the RIB. If the explicitReplace
@@ -1834,26 +1249,25 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey, explicitReplace bool) (b
 		return false, nil, errors.New("nil IPv4 Entry provided")
 	}
 
-	entry, err := ipv4EntryFromProto(e)
+	// This is a hack, since ygot does not know that the field that we
+	// have provided is a list entry, then it doesn't do the right thing. So
+	// we just give it the root so that it knows.
+	nr, err := candidateRIB(&aftpb.Afts{
+		Ipv4Entry: []*aftpb.Afts_Ipv4EntryKey{e},
+	})
 	if err != nil {
 		return false, nil, fmt.Errorf("invalid IPv4Entry, %v", err)
 	}
-	pfx := e.GetPrefix()
-	nr := &aft.RIB{
-		Afts: &aft.Afts{
-			Ipv4Entry: map[string]*aft.Afts_Ipv4Entry{pfx: entry},
-		},
-	}
 
-	if explicitReplace && !r.ipv4Exists(pfx) {
-		return false, nil, fmt.Errorf("cannot replace IPv4 Entry %s, does not exist", pfx)
+	if explicitReplace && !r.ipv4Exists(e.GetPrefix()) {
+		return false, nil, fmt.Errorf("cannot replace IPv4 Entry %s, does not exist", e.GetPrefix())
 	}
 
 	var orig *aft.Afts_Ipv4Entry
 	// If we are replacing this entry, return the original to allow the caller to handle any
 	// refcounting that is required.
-	if explicitReplace || r.ipv4Exists(pfx) {
-		orig = r.retrieveIPv4(pfx)
+	if explicitReplace || r.ipv4Exists(e.GetPrefix()) {
+		orig = r.retrieveIPv4(e.GetPrefix())
 	}
 
 	if r.checkFn != nil {
@@ -1874,12 +1288,17 @@ func (r *RIBHolder) AddIPv4(e *aftpb.Afts_Ipv4EntryKey, explicitReplace bool) (b
 		}
 	}
 
-	if _, err := r.doAddIPv4(pfx, nr); err != nil {
+	if _, err := r.doAddIPv4(e.GetPrefix(), nr); err != nil {
 		return false, nil, err
 	}
 
+	// We expect that there is just a single entry here since we are
+	// being called based on a single entry, but we loop since we don't
+	// know the key.
 	if r.postChangeHook != nil {
-		r.postChangeHook(constants.Add, unixTS(), r.name, entry)
+		for _, ip4 := range nr.Afts.Ipv4Entry {
+			r.postChangeHook(constants.Add, unixTS(), r.name, ip4)
+		}
 	}
 
 	return true, orig, nil
@@ -1904,13 +1323,18 @@ func (r *RIBHolder) doAddIPv4(pfx string, newRIB *aft.RIB) (bool, error) {
 		return false, fmt.Errorf("candidate RIB specifies entries other than NextHopGroups, got: %d nhg, %d nh", nhg, nh)
 	}
 
-	afts := r.r.GetOrCreateAfts()
-	_, implicit := afts.Ipv4Entry[pfx]
-	if afts.Ipv4Entry == nil {
-		afts.Ipv4Entry = make(map[string]*aft.Afts_Ipv4Entry, len(newRIB.Afts.Ipv4Entry))
-	}
-	for k, v := range newRIB.Afts.Ipv4Entry {
-		afts.Ipv4Entry[k] = v
+	// Check whether this is an implicit replace.
+	_, implicit := r.r.GetAfts().Ipv4Entry[pfx]
+
+	// MergeStructInto doesn't completely replace a list entry if it finds a missing key,
+	// so will append the two entries together.
+	// We don't use Delete itself because it will deadlock (we already hold the lock).
+	delete(r.r.GetAfts().Ipv4Entry, pfx)
+
+	// TODO(robjs): consider what happens if this fails -- we may leave the RIB in
+	// an inconsistent state.
+	if err := ygot.MergeStructInto(r.r, newRIB); err != nil {
+		return false, fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
 	}
 	return implicit, nil
 }
@@ -1996,24 +1420,20 @@ func (r *RIBHolder) AddIPv6(e *aftpb.Afts_Ipv6EntryKey, explicitReplace bool) (b
 		return false, nil, errors.New("nil IPv6 Entry provided")
 	}
 
-	entry, err := ipv6EntryFromProto(e)
+	nr, err := candidateRIB(&aftpb.Afts{
+		Ipv6Entry: []*aftpb.Afts_Ipv6EntryKey{e},
+	})
 	if err != nil {
 		return false, nil, fmt.Errorf("invalid IPv6Entry, %v", err)
 	}
-	pfx := e.GetPrefix()
-	nr := &aft.RIB{
-		Afts: &aft.Afts{
-			Ipv6Entry: map[string]*aft.Afts_Ipv6Entry{pfx: entry},
-		},
-	}
 
-	if explicitReplace && !r.ipv6Exists(pfx) {
-		return false, nil, fmt.Errorf("cannot replace IPv6 Entry %s, does not exist", pfx)
+	if explicitReplace && !r.ipv6Exists(e.GetPrefix()) {
+		return false, nil, fmt.Errorf("cannot replace IPv6 Entry %s, does not exist", e.GetPrefix())
 	}
 
 	var orig *aft.Afts_Ipv6Entry
-	if r.ipv6Exists(pfx) {
-		orig = r.retrieveIPv6(pfx)
+	if r.ipv6Exists(e.GetPrefix()) {
+		orig = r.retrieveIPv6(e.GetPrefix())
 	}
 
 	if r.checkFn != nil {
@@ -2026,12 +1446,14 @@ func (r *RIBHolder) AddIPv6(e *aftpb.Afts_Ipv6EntryKey, explicitReplace bool) (b
 		}
 	}
 
-	if _, err := r.doAddIPv6(pfx, nr); err != nil {
+	if _, err := r.doAddIPv6(e.GetPrefix(), nr); err != nil {
 		return false, nil, err
 	}
 
 	if r.postChangeHook != nil {
-		r.postChangeHook(constants.Add, unixTS(), r.name, entry)
+		for _, ip4 := range nr.Afts.Ipv6Entry {
+			r.postChangeHook(constants.Add, unixTS(), r.name, ip4)
+		}
 	}
 
 	return true, orig, nil
@@ -2055,13 +1477,14 @@ func (r *RIBHolder) doAddIPv6(pfx string, newRIB *aft.RIB) (bool, error) {
 		return false, fmt.Errorf("candidate RIB specifies entries other than NextHopGroups, got: %d nhg, %d nh", nhg, nh)
 	}
 
-	afts := r.r.GetOrCreateAfts()
-	_, implicit := afts.Ipv6Entry[pfx]
-	if afts.Ipv6Entry == nil {
-		afts.Ipv6Entry = make(map[string]*aft.Afts_Ipv6Entry, len(newRIB.Afts.Ipv6Entry))
-	}
-	for k, v := range newRIB.Afts.Ipv6Entry {
-		afts.Ipv6Entry[k] = v
+	_, implicit := r.r.GetAfts().Ipv6Entry[pfx]
+
+	delete(r.r.GetAfts().Ipv6Entry, pfx)
+
+	// TODO(robjs): consider what happens if this fails -- we may leave the RIB in
+	// an inconsistent state.
+	if err := ygot.MergeStructInto(r.r, newRIB); err != nil {
+		return false, fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
 	}
 	return implicit, nil
 }
@@ -2147,24 +1570,20 @@ func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (
 		return false, nil, errors.New("nil MPLS Entry provided")
 	}
 
-	lk, entry, err := mplsEntryFromProto(e)
+	nr, err := candidateRIB(&aftpb.Afts{
+		LabelEntry: []*aftpb.Afts_LabelEntryKey{e},
+	})
 	if err != nil {
 		return false, nil, fmt.Errorf("invalid LabelEntry, %v", err)
 	}
-	nr := &aft.RIB{
-		Afts: &aft.Afts{
-			LabelEntry: map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry{lk: entry},
-		},
-	}
 
-	lbl := uint32(e.GetLabelUint64())
-	if explicitReplace && !r.mplsExists(lbl) {
+	if explicitReplace && !r.mplsExists(uint32(e.GetLabelUint64())) {
 		return false, nil, fmt.Errorf("cannot replace MPLS Entry %d, does not exist", e.GetLabelUint64())
 	}
 
 	var orig *aft.Afts_LabelEntry
-	if r.mplsExists(lbl) {
-		orig = r.retrieveMPLS(lbl)
+	if r.mplsExists(uint32(e.GetLabelUint64())) {
+		orig = r.retrieveMPLS(uint32(e.GetLabelUint64()))
 	}
 
 	if r.checkFn != nil {
@@ -2185,12 +1604,17 @@ func (r *RIBHolder) AddMPLS(e *aftpb.Afts_LabelEntryKey, explicitReplace bool) (
 		}
 	}
 
-	if _, err := r.doAddMPLS(lbl, nr); err != nil {
+	if _, err := r.doAddMPLS(uint32(e.GetLabelUint64()), nr); err != nil {
 		return false, nil, err
 	}
 
+	// We expect that there is just a single entry here since we are
+	// being called based on a single entry, but we loop since we don't
+	// know the key.
 	if r.postChangeHook != nil {
-		r.postChangeHook(constants.Add, unixTS(), r.name, entry)
+		for _, mpls := range nr.Afts.LabelEntry {
+			r.postChangeHook(constants.Add, unixTS(), r.name, mpls)
+		}
 	}
 
 	return true, orig, nil
@@ -2207,7 +1631,7 @@ func (r *RIBHolder) mplsExists(label uint32) bool {
 
 // doAddMPLS implements the addition of the label entry specified by label
 // with the contents of the newRIB specified. It holds the shortest possible
-// lock on the RIB. doAddMPLS returns a bool indicating whether the update was
+// lock on the RIB. doMPLS returns a bool indicating whether the update was
 // an implicit replace.
 func (r *RIBHolder) doAddMPLS(label uint32, newRIB *aft.RIB) (bool, error) {
 	r.mu.Lock()
@@ -2218,13 +1642,18 @@ func (r *RIBHolder) doAddMPLS(label uint32, newRIB *aft.RIB) (bool, error) {
 		return false, fmt.Errorf("candidate RIB specifies entries other than NextHopGroups, got: %d nhg, %d nh", nhg, nh)
 	}
 
-	afts := r.r.GetOrCreateAfts()
-	_, implicit := afts.LabelEntry[aft.UnionUint32(label)]
-	if afts.LabelEntry == nil {
-		afts.LabelEntry = make(map[aft.Afts_LabelEntry_Label_Union]*aft.Afts_LabelEntry, len(newRIB.Afts.LabelEntry))
-	}
-	for k, v := range newRIB.Afts.LabelEntry {
-		afts.LabelEntry[k] = v
+	// Check whether this is an implicit replace.
+	_, implicit := r.r.GetAfts().LabelEntry[aft.UnionUint32(label)]
+
+	// MergeStructInto doesn't completely replace a list entry if it finds a missing key,
+	// so will append the two entries together.
+	// We don't use Delete itself because it will deadlock (we already hold the lock).
+	delete(r.r.GetAfts().LabelEntry, aft.UnionUint32(label))
+
+	// TODO(robjs): consider what happens if this fails -- we may leave the RIB in
+	// an inconsistent state.
+	if err := ygot.MergeStructInto(r.r, newRIB); err != nil {
+		return false, fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
 	}
 	return implicit, nil
 }
@@ -2474,24 +1903,20 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey, explicitRepla
 		return false, nil, errors.New("nil NextHopGroup provided")
 	}
 
-	entry, err := nhgEntryFromProto(e)
+	nr, err := candidateRIB(&aftpb.Afts{
+		NextHopGroup: []*aftpb.Afts_NextHopGroupKey{e},
+	})
 	if err != nil {
 		return false, nil, fmt.Errorf("invalid NextHopGroup, %v", err)
 	}
-	id := e.GetId()
-	nr := &aft.RIB{
-		Afts: &aft.Afts{
-			NextHopGroup: map[uint64]*aft.Afts_NextHopGroup{id: entry},
-		},
-	}
 
-	if explicitReplace && !r.nhgExists(id) {
-		return false, nil, fmt.Errorf("cannot replace NextHopGroup %d, does not exist", id)
+	if explicitReplace && !r.nhgExists(e.GetId()) {
+		return false, nil, fmt.Errorf("cannot replace NextHopGroup %d, does not exist", e.GetId())
 	}
 
 	var orig *aft.Afts_NextHopGroup
-	if r.nhgExists(id) {
-		orig = r.retrieveNHG(id)
+	if r.nhgExists(e.GetId()) {
+		orig = r.retrieveNHG(e.GetId())
 	}
 
 	if r.checkFn != nil {
@@ -2502,18 +1927,20 @@ func (r *RIBHolder) AddNextHopGroup(e *aftpb.Afts_NextHopGroupKey, explicitRepla
 			return false, nil, err
 		}
 		if !ok {
-			log.V(2).Infof("NextHopGroup %d added to pending queue - not installed", id)
+			log.Infof("NextHopGroup %d added to pending queue - not installed", e.GetId())
 			// Entry is not valid for installation right now.
 			return false, nil, nil
 		}
 	}
 
-	if _, err := r.doAddNHG(id, nr); err != nil {
+	if _, err := r.doAddNHG(e.GetId(), nr); err != nil {
 		return false, nil, err
 	}
 
 	if r.postChangeHook != nil {
-		r.postChangeHook(constants.Add, unixTS(), r.name, entry)
+		for _, nhg := range nr.Afts.NextHopGroup {
+			r.postChangeHook(constants.Add, unixTS(), r.name, nhg)
+		}
 	}
 
 	return true, orig, nil
@@ -2538,13 +1965,13 @@ func (r *RIBHolder) doAddNHG(ID uint64, newRIB *aft.RIB) (bool, error) {
 		return false, fmt.Errorf("candidate RIB specifies entries other than NextHopGroups, got: %d ipv4, %d nh", ip4, nh)
 	}
 
-	afts := r.r.GetOrCreateAfts()
-	_, wasReplace := afts.NextHopGroup[ID]
-	if afts.NextHopGroup == nil {
-		afts.NextHopGroup = make(map[uint64]*aft.Afts_NextHopGroup, len(newRIB.Afts.NextHopGroup))
-	}
-	for k, v := range newRIB.Afts.NextHopGroup {
-		afts.NextHopGroup[k] = v
+	_, wasReplace := r.r.GetAfts().NextHopGroup[ID]
+
+	// Handle implicit replace.
+	delete(r.r.GetAfts().NextHopGroup, ID)
+
+	if err := ygot.MergeStructInto(r.r, newRIB); err != nil {
+		return false, fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
 	}
 	return wasReplace, nil
 }
@@ -2590,24 +2017,20 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey, explicitReplace bool) (
 		return false, nil, errors.New("nil NextHop provided")
 	}
 
-	entry, err := nhEntryFromProto(e)
+	nr, err := candidateRIB(&aftpb.Afts{
+		NextHop: []*aftpb.Afts_NextHopKey{e},
+	})
 	if err != nil {
 		return false, nil, fmt.Errorf("invalid NextHop, %v", err)
 	}
-	idx := e.GetIndex()
-	nr := &aft.RIB{
-		Afts: &aft.Afts{
-			NextHop: map[uint64]*aft.Afts_NextHop{idx: entry},
-		},
-	}
 
-	if explicitReplace && !r.nhExists(idx) {
-		return false, nil, fmt.Errorf("cannot replace NextHop %d, does not exist", idx)
+	if explicitReplace && !r.nhExists(e.GetIndex()) {
+		return false, nil, fmt.Errorf("cannot replace NextHop %d, does not exist", e.GetIndex())
 	}
 
 	var replaced *aft.Afts_NextHop
-	if r.nhExists(idx) {
-		replaced = r.retrieveNH(idx)
+	if r.nhExists(e.GetIndex()) {
+		replaced = r.retrieveNH(e.GetIndex())
 	}
 
 	if r.checkFn != nil {
@@ -2623,12 +2046,14 @@ func (r *RIBHolder) AddNextHop(e *aftpb.Afts_NextHopKey, explicitReplace bool) (
 		}
 	}
 
-	if _, err := r.doAddNH(idx, nr); err != nil {
+	if _, err := r.doAddNH(e.GetIndex(), nr); err != nil {
 		return false, nil, err
 	}
 
 	if r.postChangeHook != nil {
-		r.postChangeHook(constants.Add, unixTS(), r.name, entry)
+		for _, nh := range nr.Afts.NextHop {
+			r.postChangeHook(constants.Add, unixTS(), r.name, nh)
+		}
 	}
 
 	return true, replaced, nil
@@ -2654,13 +2079,13 @@ func (r *RIBHolder) doAddNH(index uint64, newRIB *aft.RIB) (bool, error) {
 		return false, fmt.Errorf("candidate RIB specifies entries other than NextHopGroups, got: %d ipv4, %d nhg", ip4, nhg)
 	}
 
-	afts := r.r.GetOrCreateAfts()
-	_, implicit := afts.NextHop[index]
-	if afts.NextHop == nil {
-		afts.NextHop = make(map[uint64]*aft.Afts_NextHop, len(newRIB.Afts.NextHop))
-	}
-	for k, v := range newRIB.Afts.NextHop {
-		afts.NextHop[k] = v
+	_, implicit := r.r.GetAfts().NextHop[index]
+
+	// Handle implicit replace.
+	delete(r.r.GetAfts().NextHop, index)
+
+	if err := ygot.MergeStructInto(r.r, newRIB); err != nil {
+		return false, fmt.Errorf("cannot merge candidate RIB into existing RIB, %v", err)
 	}
 	return implicit, nil
 }
@@ -2694,21 +2119,17 @@ func (r *RIBHolder) nhReferenced(i uint64) bool {
 // ConcreteIPv4Proto takes the input Ipv4Entry GoStruct and returns it as a gRIBI
 // Ipv4EntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func ConcreteIPv4Proto(e *aft.Afts_Ipv4Entry) (*aftpb.Afts_Ipv4EntryKey, error) {
-	if e == nil || e.Prefix == nil {
-		return nil, fmt.Errorf("cannot marshal IPv4 prefix %s, nil entry or prefix", e.GetPrefix())
-	}
 	ip4proto := &aftpb.Afts_Ipv4Entry{}
-	if e.DecapsulateHeader != aft.AftTypes_EncapsulationHeaderType_UNSET {
-		ip4proto.DecapsulateHeader = enumpb.OpenconfigAftTypesEncapsulationHeaderType(e.DecapsulateHeader)
-	}
-	if e.EntryMetadata != nil {
-		ip4proto.EntryMetadata = &wpb.BytesValue{Value: []byte(e.EntryMetadata)}
-	}
-	if e.NextHopGroup != nil {
-		ip4proto.NextHopGroup = &wpb.UintValue{Value: *e.NextHopGroup}
-	}
-	if e.NextHopGroupNetworkInstance != nil {
-		ip4proto.NextHopGroupNetworkInstance = &wpb.StringValue{Value: *e.NextHopGroupNetworkInstance}
+	if err := protoFromGoStruct(e, &gpb.Path{
+		Elem: []*gpb.PathElem{{
+			Name: "afts",
+		}, {
+			Name: "ipv4-unicast",
+		}, {
+			Name: "ipv4-entry",
+		}},
+	}, ip4proto); err != nil {
+		return nil, fmt.Errorf("cannot marshal IPv4 prefix %s, %v", e.GetPrefix(), err)
 	}
 	return &aftpb.Afts_Ipv4EntryKey{
 		Prefix:    *e.Prefix,
@@ -2719,21 +2140,17 @@ func ConcreteIPv4Proto(e *aft.Afts_Ipv4Entry) (*aftpb.Afts_Ipv4EntryKey, error) 
 // ConcreteIPv6Proto takes the input Ipv6Entry GoStruct and returns it as a gRIBI
 // Ipv6EntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func ConcreteIPv6Proto(e *aft.Afts_Ipv6Entry) (*aftpb.Afts_Ipv6EntryKey, error) {
-	if e == nil || e.Prefix == nil {
-		return nil, fmt.Errorf("cannot marshal IPv6 prefix %s, nil entry or prefix", e.GetPrefix())
-	}
 	ip6proto := &aftpb.Afts_Ipv6Entry{}
-	if e.DecapsulateHeader != aft.AftTypes_EncapsulationHeaderType_UNSET {
-		ip6proto.DecapsulateHeader = enumpb.OpenconfigAftTypesEncapsulationHeaderType(e.DecapsulateHeader)
-	}
-	if e.EntryMetadata != nil {
-		ip6proto.EntryMetadata = &wpb.BytesValue{Value: []byte(e.EntryMetadata)}
-	}
-	if e.NextHopGroup != nil {
-		ip6proto.NextHopGroup = &wpb.UintValue{Value: *e.NextHopGroup}
-	}
-	if e.NextHopGroupNetworkInstance != nil {
-		ip6proto.NextHopGroupNetworkInstance = &wpb.StringValue{Value: *e.NextHopGroupNetworkInstance}
+	if err := protoFromGoStruct(e, &gpb.Path{
+		Elem: []*gpb.PathElem{{
+			Name: "afts",
+		}, {
+			Name: "ipv6-unicast",
+		}, {
+			Name: "ipv6-entry",
+		}},
+	}, ip6proto); err != nil {
+		return nil, fmt.Errorf("cannot marshal IPv6 prefix %s, %v", e.GetPrefix(), err)
 	}
 	return &aftpb.Afts_Ipv6EntryKey{
 		Prefix:    *e.Prefix,
@@ -2744,39 +2161,24 @@ func ConcreteIPv6Proto(e *aft.Afts_Ipv6Entry) (*aftpb.Afts_Ipv6EntryKey, error) 
 // ConcreteMPLSProto takes the input LabelEntry GoStruct and returns it as a gRIBI
 // LabelEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func ConcreteMPLSProto(e *aft.Afts_LabelEntry) (*aftpb.Afts_LabelEntryKey, error) {
-	if e == nil {
-		return nil, errors.New("cannot marshal nil MPLS label entry")
+	mplsProto := &aftpb.Afts_LabelEntry{}
+	if err := protoFromGoStruct(e, &gpb.Path{
+		Elem: []*gpb.PathElem{{
+			Name: "afts",
+		}, {
+			Name: "mpls",
+		}, {
+			Name: "label-entry",
+		}},
+	}, mplsProto); err != nil {
+		return nil, fmt.Errorf("cannot marshal MPLS label %v, %v", e.GetLabel(), err)
 	}
+
 	l, ok := e.GetLabel().(aft.UnionUint32)
 	if !ok {
 		return nil, fmt.Errorf("cannot marshal MPLS label %v, incorrect type %T", e.GetLabel(), e.GetLabel())
 	}
-	mplsProto := &aftpb.Afts_LabelEntry{}
-	if e.EntryMetadata != nil {
-		mplsProto.EntryMetadata = &wpb.BytesValue{Value: []byte(e.EntryMetadata)}
-	}
-	if e.NextHopGroup != nil {
-		mplsProto.NextHopGroup = &wpb.UintValue{Value: *e.NextHopGroup}
-	}
-	if e.NextHopGroupNetworkInstance != nil {
-		mplsProto.NextHopGroupNetworkInstance = &wpb.StringValue{Value: *e.NextHopGroupNetworkInstance}
-	}
-	if len(e.PoppedMplsLabelStack) > 0 {
-		stack := make([]*aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion, 0, len(e.PoppedMplsLabelStack))
-		for _, u := range e.PoppedMplsLabelStack {
-			switch v := u.(type) {
-			case aft.UnionUint32:
-				stack = append(stack, &aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
-					PoppedMplsLabelStackUint64: uint64(v),
-				})
-			case aft.E_MplsTypes_MplsLabel_Enum:
-				stack = append(stack, &aftpb.Afts_LabelEntry_PoppedMplsLabelStackUnion{
-					PoppedMplsLabelStackOpenconfigmplstypesmplslabelenum: enumpb.OpenconfigMplsTypesMplsLabelEnum(v),
-				})
-			}
-		}
-		mplsProto.PoppedMplsLabelStack = stack
-	}
+
 	return &aftpb.Afts_LabelEntryKey{
 		Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
 			LabelUint64: uint64(l),
@@ -2788,199 +2190,17 @@ func ConcreteMPLSProto(e *aft.Afts_LabelEntry) (*aftpb.Afts_LabelEntryKey, error
 // ConcreteNextHopProto takes the input NextHop GoStruct and returns it as a gRIBI
 // NextHopEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func ConcreteNextHopProto(e *aft.Afts_NextHop) (*aftpb.Afts_NextHopKey, error) {
-	if e == nil || e.Index == nil {
-		return nil, fmt.Errorf("cannot marshal next-hop index %d, nil entry or index", e.GetIndex())
-	}
 	nhproto := &aftpb.Afts_NextHop{}
-	if e.DecapsulateHeader != aft.AftTypes_EncapsulationHeaderType_UNSET {
-		nhproto.DecapsulateHeader = enumpb.OpenconfigAftTypesEncapsulationHeaderType(e.DecapsulateHeader)
-	}
-	if e.EncapsulateHeader != aft.AftTypes_EncapsulationHeaderType_UNSET {
-		nhproto.EncapsulateHeader = enumpb.OpenconfigAftTypesEncapsulationHeaderType(e.EncapsulateHeader)
-	}
-	if e.IpAddress != nil {
-		nhproto.IpAddress = &wpb.StringValue{Value: *e.IpAddress}
-	}
-	if e.MacAddress != nil {
-		nhproto.MacAddress = &wpb.StringValue{Value: *e.MacAddress}
-	}
-	if e.NetworkInstance != nil {
-		nhproto.NetworkInstance = &wpb.StringValue{Value: *e.NetworkInstance}
-	}
-	if e.PopTopLabel != nil {
-		nhproto.PopTopLabel = &wpb.BoolValue{Value: *e.PopTopLabel}
-	}
-	if e.TunnelSrcIpAddress != nil {
-		nhproto.TunnelSrcIpAddress = &wpb.StringValue{Value: *e.TunnelSrcIpAddress}
-	}
-	if e.VniLabel != nil {
-		nhproto.VniLabel = &wpb.UintValue{Value: uint64(*e.VniLabel)}
-	}
-	if g := e.Gre; g != nil && (g.DstIp != nil || g.SrcIp != nil || g.Ttl != nil) {
-		gre := &aftpb.Afts_NextHop_Gre{}
-		if g.DstIp != nil {
-			gre.DstIp = &wpb.StringValue{Value: *g.DstIp}
-		}
-		if g.SrcIp != nil {
-			gre.SrcIp = &wpb.StringValue{Value: *g.SrcIp}
-		}
-		if g.Ttl != nil {
-			gre.Ttl = &wpb.UintValue{Value: uint64(*g.Ttl)}
-		}
-		nhproto.Gre = gre
-	}
-	if ipip := e.IpInIp; ipip != nil && (ipip.DstIp != nil || ipip.SrcIp != nil) {
-		ii := &aftpb.Afts_NextHop_IpInIp{}
-		if ipip.DstIp != nil {
-			ii.DstIp = &wpb.StringValue{Value: *ipip.DstIp}
-		}
-		if ipip.SrcIp != nil {
-			ii.SrcIp = &wpb.StringValue{Value: *ipip.SrcIp}
-		}
-		nhproto.IpInIp = ii
-	}
-	if iref := e.InterfaceRef; iref != nil && (iref.Interface != nil || iref.Subinterface != nil) {
-		ir := &aftpb.Afts_NextHop_InterfaceRef{}
-		if iref.Interface != nil {
-			ir.Interface = &wpb.StringValue{Value: *iref.Interface}
-		}
-		if iref.Subinterface != nil {
-			ir.Subinterface = &wpb.UintValue{Value: uint64(*iref.Subinterface)}
-		}
-		nhproto.InterfaceRef = ir
-	}
-	if len(e.PushedMplsLabelStack) > 0 {
-		stack := make([]*aftpb.Afts_NextHop_PushedMplsLabelStackUnion, 0, len(e.PushedMplsLabelStack))
-		for _, u := range e.PushedMplsLabelStack {
-			switch v := u.(type) {
-			case aft.UnionUint32:
-				stack = append(stack, &aftpb.Afts_NextHop_PushedMplsLabelStackUnion{
-					PushedMplsLabelStackUint64: uint64(v),
-				})
-			case aft.E_MplsTypes_MplsLabel_Enum:
-				stack = append(stack, &aftpb.Afts_NextHop_PushedMplsLabelStackUnion{
-					PushedMplsLabelStackOpenconfigmplstypesmplslabelenum: enumpb.OpenconfigMplsTypesMplsLabelEnum(v),
-				})
-			}
-		}
-		nhproto.PushedMplsLabelStack = stack
-	}
-	if len(e.EncapHeader) > 0 {
-		ehs := make([]*aftpb.Afts_NextHop_EncapHeaderKey, 0, len(e.EncapHeader))
-		for idx, eh := range e.EncapHeader {
-			if eh == nil {
-				continue
-			}
-			ep := &aftpb.Afts_NextHop_EncapHeader{}
-			if eh.Type != aft.AftTypes_EncapsulationHeaderType_UNSET {
-				ep.Type = enumpb.OpenconfigAftTypesEncapsulationHeaderType(eh.Type)
-			}
-			if g := eh.Gre; g != nil && (g.DstIp != nil || g.SrcIp != nil || g.Ttl != nil) {
-				gre := &aftpb.Afts_NextHop_EncapHeader_Gre{}
-				if g.DstIp != nil {
-					gre.DstIp = &wpb.StringValue{Value: *g.DstIp}
-				}
-				if g.SrcIp != nil {
-					gre.SrcIp = &wpb.StringValue{Value: *g.SrcIp}
-				}
-				if g.Ttl != nil {
-					gre.Ttl = &wpb.UintValue{Value: uint64(*g.Ttl)}
-				}
-				ep.Gre = gre
-			}
-			if v4 := eh.Ipv4; v4 != nil && (v4.DstIp != nil || v4.SrcIp != nil) {
-				ip4 := &aftpb.Afts_NextHop_EncapHeader_Ipv4{}
-				if v4.DstIp != nil {
-					ip4.DstIp = &wpb.StringValue{Value: *v4.DstIp}
-				}
-				if v4.SrcIp != nil {
-					ip4.SrcIp = &wpb.StringValue{Value: *v4.SrcIp}
-				}
-				ep.Ipv4 = ip4
-			}
-			if v6 := eh.Ipv6; v6 != nil && (v6.DstIp != nil || v6.SrcIp != nil) {
-				ip6 := &aftpb.Afts_NextHop_EncapHeader_Ipv6{}
-				if v6.DstIp != nil {
-					ip6.DstIp = &wpb.StringValue{Value: *v6.DstIp}
-				}
-				if v6.SrcIp != nil {
-					ip6.SrcIp = &wpb.StringValue{Value: *v6.SrcIp}
-				}
-				ep.Ipv6 = ip6
-			}
-			if m := eh.Mpls; m != nil && (len(m.MplsLabelStack) > 0 || m.TrafficClass != nil) {
-				mpls := &aftpb.Afts_NextHop_EncapHeader_Mpls{}
-				if len(m.MplsLabelStack) > 0 {
-					stack := make([]*aftpb.Afts_NextHop_EncapHeader_Mpls_MplsLabelStackUnion, 0, len(m.MplsLabelStack))
-					for _, u := range m.MplsLabelStack {
-						switch v := u.(type) {
-						case aft.UnionUint32:
-							stack = append(stack, &aftpb.Afts_NextHop_EncapHeader_Mpls_MplsLabelStackUnion{
-								MplsLabelStackUint64: uint64(v),
-							})
-						case aft.E_MplsTypes_MplsLabel_Enum:
-							stack = append(stack, &aftpb.Afts_NextHop_EncapHeader_Mpls_MplsLabelStackUnion{
-								MplsLabelStackOpenconfigmplstypesmplslabelenum: enumpb.OpenconfigMplsTypesMplsLabelEnum(v),
-							})
-						}
-					}
-					mpls.MplsLabelStack = stack
-				}
-				if m.TrafficClass != nil {
-					mpls.TrafficClass = &wpb.UintValue{Value: uint64(*m.TrafficClass)}
-				}
-				ep.Mpls = mpls
-			}
-			if u4 := eh.UdpV4; u4 != nil && (u4.Dscp != nil || u4.DstIp != nil || u4.DstUdpPort != nil || u4.IpTtl != nil || u4.SrcIp != nil || u4.SrcUdpPort != nil) {
-				udp4 := &aftpb.Afts_NextHop_EncapHeader_UdpV4{}
-				if u4.Dscp != nil {
-					udp4.Dscp = &wpb.UintValue{Value: uint64(*u4.Dscp)}
-				}
-				if u4.DstIp != nil {
-					udp4.DstIp = &wpb.StringValue{Value: *u4.DstIp}
-				}
-				if u4.DstUdpPort != nil {
-					udp4.DstUdpPort = &wpb.UintValue{Value: uint64(*u4.DstUdpPort)}
-				}
-				if u4.IpTtl != nil {
-					udp4.IpTtl = &wpb.UintValue{Value: uint64(*u4.IpTtl)}
-				}
-				if u4.SrcIp != nil {
-					udp4.SrcIp = &wpb.StringValue{Value: *u4.SrcIp}
-				}
-				if u4.SrcUdpPort != nil {
-					udp4.SrcUdpPort = &wpb.UintValue{Value: uint64(*u4.SrcUdpPort)}
-				}
-				ep.UdpV4 = udp4
-			}
-			if u6 := eh.UdpV6; u6 != nil && (u6.Dscp != nil || u6.DstIp != nil || u6.DstUdpPort != nil || u6.IpTtl != nil || u6.SrcIp != nil || u6.SrcUdpPort != nil) {
-				udp6 := &aftpb.Afts_NextHop_EncapHeader_UdpV6{}
-				if u6.Dscp != nil {
-					udp6.Dscp = &wpb.UintValue{Value: uint64(*u6.Dscp)}
-				}
-				if u6.DstIp != nil {
-					udp6.DstIp = &wpb.StringValue{Value: *u6.DstIp}
-				}
-				if u6.DstUdpPort != nil {
-					udp6.DstUdpPort = &wpb.UintValue{Value: uint64(*u6.DstUdpPort)}
-				}
-				if u6.IpTtl != nil {
-					udp6.IpTtl = &wpb.UintValue{Value: uint64(*u6.IpTtl)}
-				}
-				if u6.SrcIp != nil {
-					udp6.SrcIp = &wpb.StringValue{Value: *u6.SrcIp}
-				}
-				if u6.SrcUdpPort != nil {
-					udp6.SrcUdpPort = &wpb.UintValue{Value: uint64(*u6.SrcUdpPort)}
-				}
-				ep.UdpV6 = udp6
-			}
-			ehs = append(ehs, &aftpb.Afts_NextHop_EncapHeaderKey{
-				Index:       uint64(idx),
-				EncapHeader: ep,
-			})
-		}
-		nhproto.EncapHeader = ehs
+	if err := protoFromGoStruct(e, &gpb.Path{
+		Elem: []*gpb.PathElem{{
+			Name: "afts",
+		}, {
+			Name: "next-hops",
+		}, {
+			Name: "next-hop",
+		}},
+	}, nhproto); err != nil {
+		return nil, fmt.Errorf("cannot marshal next-hop index %d, %v", e.GetIndex(), err)
 	}
 	return &aftpb.Afts_NextHopKey{
 		Index:   *e.Index,
@@ -2991,37 +2211,51 @@ func ConcreteNextHopProto(e *aft.Afts_NextHop) (*aftpb.Afts_NextHopKey, error) {
 // ConcreteNextHopGroupProto takes the input NextHopGroup GoStruct and returns it as a gRIBI
 // NextHopGroupEntryKey protobuf. It returns an error if the protobuf cannot be marshalled.
 func ConcreteNextHopGroupProto(e *aft.Afts_NextHopGroup) (*aftpb.Afts_NextHopGroupKey, error) {
-	if e == nil || e.Id == nil {
-		return nil, fmt.Errorf("cannot marshal next-hop index %d, nil entry or id", e.GetId())
-	}
 	nhgproto := &aftpb.Afts_NextHopGroup{}
-	if e.BackupNextHopGroup != nil {
-		nhgproto.BackupNextHopGroup = &wpb.UintValue{Value: *e.BackupNextHopGroup}
-	}
-	if e.Color != nil {
-		nhgproto.Color = &wpb.UintValue{Value: *e.Color}
-	}
-	if len(e.NextHop) > 0 {
-		nhs := make([]*aftpb.Afts_NextHopGroup_NextHopKey, 0, len(e.NextHop))
-		for idx, nh := range e.NextHop {
-			if nh == nil {
-				continue
-			}
-			nhp := &aftpb.Afts_NextHopGroup_NextHop{}
-			if nh.Weight != nil {
-				nhp.Weight = &wpb.UintValue{Value: *nh.Weight}
-			}
-			nhs = append(nhs, &aftpb.Afts_NextHopGroup_NextHopKey{
-				Index:   idx,
-				NextHop: nhp,
-			})
-		}
-		nhgproto.NextHop = nhs
+	if err := protoFromGoStruct(e, &gpb.Path{
+		Elem: []*gpb.PathElem{{
+			Name: "afts",
+		}, {
+			Name: "next-hop-groups",
+		}, {
+			Name: "next-hop-group",
+		}},
+	}, nhgproto); err != nil {
+		return nil, fmt.Errorf("cannot marshal next-hop index %d, %v", e.GetId(), err)
 	}
 	return &aftpb.Afts_NextHopGroupKey{
 		Id:           *e.Id,
 		NextHopGroup: nhgproto,
 	}, nil
+}
+
+// protoFromGoStruct takes the input GoStruct and marshals into the supplied pb
+// protobuf message, trimming the prefix specified from the annotated paths within
+// the protobuf.
+func protoFromGoStruct(s ygot.ValidatedGoStruct, prefix *gpb.Path, pb proto.Message) error {
+	ns, err := ygot.TogNMINotifications(s, 0, ygot.GNMINotificationsConfig{
+		UsePathElem: true,
+	})
+	if err != nil {
+		return fmt.Errorf("cannot marshal existing entry key %s, %v", s, err)
+	}
+
+	vals := map[*gpb.Path]any{}
+	for _, n := range ns {
+		for _, u := range n.GetUpdate() {
+			vals[u.Path] = u.Val
+		}
+	}
+
+	if err := protomap.ProtoFromPaths(pb, vals,
+		protomap.ProtobufMessagePrefix(prefix),
+		protomap.ValuePathPrefix(prefix),
+		protomap.IgnoreExtraPaths(),
+	); err != nil {
+		return fmt.Errorf("cannot unmarshal gNMI paths, %v", err)
+	}
+
+	return nil
 }
 
 // GetRIB writes the contents of the RIBs specified in the filter to msgCh. filter is a map,

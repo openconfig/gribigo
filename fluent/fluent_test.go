@@ -16,6 +16,14 @@ package fluent
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"math/big"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -23,10 +31,13 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openconfig/gribigo/device"
+	"github.com/openconfig/gribigo/rib"
 	"github.com/openconfig/gribigo/server"
 	"github.com/openconfig/gribigo/testcommon"
 	"github.com/openconfig/testt"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -35,6 +46,14 @@ import (
 	spb "github.com/openconfig/gribi/v1/proto/service"
 	wpb "github.com/openconfig/ygot/proto/ywrapper"
 )
+
+// skipVerifyDialOpt returns a gRPC dial option that disables server TLS
+// certificate verification for unit tests using self-signed fixtures.
+func skipVerifyDialOpt() grpc.DialOption {
+	return grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+		InsecureSkipVerify: true,
+	}))
+}
 
 func TestGRIBIClient(t *testing.T) {
 	tests := []struct {
@@ -52,7 +71,7 @@ func TestGRIBIClient(t *testing.T) {
 		desc: "simple connection between client and server",
 		inFn: func(addr string, t testing.TB) {
 			c := NewClient()
-			c.Connection().WithTarget(addr)
+			c.Connection().WithTarget(addr).WithDialOptions(skipVerifyDialOpt())
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			c.Start(ctx, t)
@@ -73,7 +92,7 @@ func TestGRIBIClient(t *testing.T) {
 		desc: "unsuccessful connection - check converges",
 		inFn: func(addr string, t testing.TB) {
 			c := NewClient()
-			c.Connection().WithTarget(addr).WithRedundancyMode(AllPrimaryClients)
+			c.Connection().WithTarget(addr).WithDialOptions(skipVerifyDialOpt()).WithRedundancyMode(AllPrimaryClients)
 			c.Start(context.Background(), t)
 			c.StartSending(context.Background(), t)
 			// NB: we discard the error here, this test case is just to check we are
@@ -85,7 +104,7 @@ func TestGRIBIClient(t *testing.T) {
 		desc: "write basic IPv4 entry",
 		inFn: func(addr string, t testing.TB) {
 			c := NewClient()
-			c.Connection().WithTarget(addr).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
+			c.Connection().WithTarget(addr).WithDialOptions(skipVerifyDialOpt()).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
 			c.Start(context.Background(), t)
 			c.Modify().AddEntry(t, NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("2.2.2.2"))
 			c.Modify().AddEntry(t, NextHopGroupEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithID(1).AddNextHop(1, 1))
@@ -109,7 +128,7 @@ func TestGRIBIClient(t *testing.T) {
 		desc: "remove basic next-hop",
 		inFn: func(addr string, t testing.TB) {
 			c := NewClient()
-			c.Connection().WithTarget(addr).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
+			c.Connection().WithTarget(addr).WithDialOptions(skipVerifyDialOpt()).WithRedundancyMode(ElectedPrimaryClient).WithInitialElectionID(0, 1).WithPersistence()
 			c.Start(context.Background(), t)
 			nh := NextHopEntry().WithNetworkInstance(server.DefaultNetworkInstanceName).WithIndex(1).WithIPAddress("1.1.1.1")
 			c.Modify().AddEntry(t, nh)
@@ -135,6 +154,27 @@ func TestGRIBIClient(t *testing.T) {
 
 			c.Stop(t)
 		},
+	}, {
+		desc: "default TLS verification rejects untrusted server certificate",
+		inFn: func(addr string, t testing.TB) {
+			c := NewClient()
+			c.Connection().WithTarget(addr)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			c.Start(ctx, t)
+			defer c.Stop(t)
+			if _, err := c.Get().WithNetworkInstance(server.DefaultNetworkInstanceName).WithAFT(AllAFTs).Send(); err == nil {
+				t.Fatalf("Get().Send(): got nil error against untrusted server certificate, want TLS verification error")
+			}
+		},
+	}, {
+		desc: "cannot specify dial options when using a stub",
+		inFn: func(_ string, t testing.TB) {
+			c := NewClient()
+			c.Connection().WithStub(spb.NewGRIBIClient(nil)).WithDialOptions(skipVerifyDialOpt())
+			c.Start(context.Background(), t)
+		},
+		wantFatalMsg: "cannot specify dial options when using a stub",
 	}}
 
 	for _, tt := range tests {
@@ -833,5 +873,86 @@ func TestModifyError(t *testing.T) {
 				t.Fatalf("did not get expected status.proto, diff(-got,+want):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestGRIBIClientVerifiedTLS verifies that WithDialOptions succeeds when a
+// custom root CA pool validates the server's 127.0.0.1 IP SAN certificate.
+func TestGRIBIClientVerifiedTLS(t *testing.T) {
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey(): got unexpected error: %v", err)
+	}
+	now := time.Now()
+	caTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "gribigo-fluent-test-ca"},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTmpl, caTmpl, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("x509.CreateCertificate(CA): got unexpected error: %v", err)
+	}
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatalf("x509.ParseCertificate(CA): got unexpected error: %v", err)
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(caCert)
+
+	srvKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey(server): got unexpected error: %v", err)
+	}
+	srvTmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: "gribigo-fluent-test-server"},
+		NotBefore:    now.Add(-time.Hour),
+		NotAfter:     now.Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	srvDER, err := x509.CreateCertificate(rand.Reader, srvTmpl, caCert, &srvKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("x509.CreateCertificate(server): got unexpected error: %v", err)
+	}
+
+	srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{srvDER},
+			PrivateKey:  srvKey,
+		}},
+	})))
+	s, err := server.NewFake(server.DisableRIBCheckFn())
+	if err != nil {
+		t.Fatalf("server.NewFake(): got unexpected error: %v", err)
+	}
+	s.InjectRIB(rib.New(server.DefaultNetworkInstanceName, rib.DisableRIBCheckFn()))
+	spb.RegisterGRIBIServer(srv, s)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen(): got unexpected error: %v", err)
+	}
+	go srv.Serve(lis)
+	defer srv.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	c := NewClient()
+	c.Connection().WithTarget(lis.Addr().String()).WithDialOptions(
+		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{RootCAs: pool})),
+	)
+	c.Start(ctx, t)
+	defer c.Stop(t)
+
+	if _, err := c.Get().WithNetworkInstance(server.DefaultNetworkInstanceName).WithAFT(AllAFTs).Send(); err != nil {
+		t.Fatalf("Get().Send(): got unexpected error over verified TLS: %v", err)
 	}
 }

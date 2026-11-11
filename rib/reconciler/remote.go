@@ -6,6 +6,7 @@ import (
 
 	"github.com/openconfig/gribigo/client"
 	"github.com/openconfig/gribigo/rib"
+	"google.golang.org/grpc"
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
@@ -19,9 +20,12 @@ type RemoteRIB struct {
 }
 
 // NewRemoteRIB returns a new remote gRIBI RIB. The context supplied is used to
-// dial the remote gRIBI server at the address 'addr'. the 'defName' argument
-// is used to identify the name of the default network instance on the server.
-func NewRemoteRIB(ctx context.Context, defName, addr string) (*RemoteRIB, error) {
+// dial the remote gRIBI server at the address addr using any supplied gRPC
+// dial options. By default, TLS verification against the host root CA pool is
+// enabled. The defName argument identifies the name of the default network
+// instance on the server. It returns an error if the client cannot be created
+// or dialed.
+func NewRemoteRIB(ctx context.Context, defName, addr string, opts ...grpc.DialOption) (*RemoteRIB, error) {
 	gc, err := client.New()
 	if err != nil {
 		return nil, fmt.Errorf("cannot create gRIBI client, %v", err)
@@ -32,7 +36,7 @@ func NewRemoteRIB(ctx context.Context, defName, addr string) (*RemoteRIB, error)
 		defaultName: defName,
 	}
 
-	if err := r.c.Dial(ctx, addr); err != nil {
+	if err := r.c.Dial(ctx, addr, opts...); err != nil {
 		return nil, fmt.Errorf("cannot dial remote server, %v", err)
 	}
 	return r, nil

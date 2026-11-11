@@ -25,6 +25,7 @@ import (
 	log "github.com/golang/glog"
 	"github.com/openconfig/gribigo/client"
 	"github.com/openconfig/gribigo/constants"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -55,6 +56,9 @@ type GRIBIClient struct {
 type gRIBIConnection struct {
 	// targetAddr stores the address that is to be dialed by the client.
 	targetAddr string
+	// dialOpts stores gRPC dial options passed to client.Dial when dialing
+	// targetAddr.
+	dialOpts []grpc.DialOption
 	// stub is a gRPC GRIBIClient stub implementation that could be used
 	// alternatively in lieu of targetAddr.
 	stub spb.GRIBIClient
@@ -98,6 +102,14 @@ func (g *GRIBIClient) Connection() *gRIBIConnection {
 func (g *gRIBIConnection) WithTarget(addr string) *gRIBIConnection {
 	g.targetAddr = addr
 	g.stub = nil
+	return g
+}
+
+// WithDialOptions specifies gRPC dial options to pass when dialing the gRIBI
+// target address. By default, dialing uses TLS verified against the host root
+// CA pool.
+func (g *gRIBIConnection) WithDialOptions(opts ...grpc.DialOption) *gRIBIConnection {
+	g.dialOpts = append(g.dialOpts, opts...)
 	return g
 }
 
@@ -169,6 +181,9 @@ func (g *GRIBIClient) Start(ctx context.Context, t testing.TB) {
 	if c := g.connection; c.targetAddr == "" && c.stub == nil {
 		t.Fatalf("cannot dial without specifying target address or stub")
 	}
+	if g.connection.stub != nil && len(g.connection.dialOpts) != 0 {
+		t.Fatalf("cannot specify dial options when using a stub")
+	}
 
 	opts := []client.Opt{}
 	switch g.connection.redundMode {
@@ -201,7 +216,7 @@ func (g *GRIBIClient) Start(ctx context.Context, t testing.TB) {
 		c.UseStub(g.connection.stub)
 	} else {
 		log.V(2).Infof("dialing %s", g.connection.targetAddr)
-		if err := c.Dial(ctx, g.connection.targetAddr); err != nil {
+		if err := c.Dial(ctx, g.connection.targetAddr, g.connection.dialOpts...); err != nil {
 			t.Fatalf("cannot dial target, %v", err)
 		}
 	}

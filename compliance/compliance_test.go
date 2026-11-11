@@ -16,6 +16,7 @@ package compliance
 
 import (
 	"context"
+	"crypto/tls"
 	"strings"
 	"testing"
 
@@ -26,6 +27,8 @@ import (
 	"github.com/openconfig/gribigo/testcommon"
 	"github.com/openconfig/testt"
 	"github.com/openconfig/ygot/ygot"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 func TestCompliance(t *testing.T) {
@@ -57,11 +60,15 @@ func TestCompliance(t *testing.T) {
 				t.Fatalf("cannot start server, %v", err)
 			}
 
+			dialOpt := grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+				InsecureSkipVerify: true,
+			}))
+
 			c := fluent.NewClient()
-			c.Connection().WithTarget(d.GRIBIAddr())
+			c.Connection().WithTarget(d.GRIBIAddr()).WithDialOptions(dialOpt)
 
 			sc := fluent.NewClient()
-			sc.Connection().WithTarget(d.GRIBIAddr())
+			sc.Connection().WithTarget(d.GRIBIAddr()).WithDialOptions(dialOpt)
 			opts := []TestOpt{
 				SecondClient(sc),
 			}

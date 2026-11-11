@@ -1370,15 +1370,17 @@ func TestReconcileRemote(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 
-			intendedTarget, err := NewRemoteRIB(ctx, dn, intendedAddr)
+			intendedTarget, err := NewRemoteRIB(ctx, dn, intendedAddr, skipVerifyDialOpt())
 			if err != nil {
 				t.Fatalf("cannot create intended RIBTarget, %v", err)
 			}
+			defer intendedTarget.CleanUp()
 
-			targetTarget, err := NewRemoteRIB(ctx, dn, targetAddr)
+			targetTarget, err := NewRemoteRIB(ctx, dn, targetAddr, skipVerifyDialOpt())
 			if err != nil {
 				t.Fatalf("cannot create target RIBTarget, %v", err)
 			}
+			defer targetTarget.CleanUp()
 
 			rr := New(intendedTarget, targetTarget)
 

@@ -16,9 +16,16 @@ package client
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"os"
 	"sync"
@@ -36,6 +43,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -48,6 +57,14 @@ func TestMain(m *testing.M) {
 	debug = true
 	defer func() { debug = false }()
 	os.Exit(m.Run())
+}
+
+// skipVerifyDialOpt returns a gRPC dial option that disables server TLS
+// certificate verification for unit tests using self-signed fixtures.
+func skipVerifyDialOpt() grpc.DialOption {
+	return grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+		InsecureSkipVerify: true,
+	}))
 }
 
 func TestHandleParams(t *testing.T) {
@@ -1403,7 +1420,7 @@ func TestGet(t *testing.T) {
 			dctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
-			if err := c.Dial(dctx, l.Addr().String()); err != nil {
+			if err := c.Dial(dctx, l.Addr().String(), skipVerifyDialOpt()); err != nil {
 				t.Fatalf("cannot connect to fake server, %v", err)
 			}
 
@@ -1756,7 +1773,7 @@ func TestFlush(t *testing.T) {
 			dctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
-			if err := tt.inClient.Dial(dctx, l.Addr().String()); err != nil {
+			if err := tt.inClient.Dial(dctx, l.Addr().String(), skipVerifyDialOpt()); err != nil {
 				t.Fatalf("cannot connect to fake server, %v", err)
 			}
 
@@ -1922,7 +1939,7 @@ func TestServerModifyIntegration(t *testing.T) {
 			}
 			dctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			if err := c.Dial(dctx, l.Addr().String()); err != nil {
+			if err := c.Dial(dctx, l.Addr().String(), skipVerifyDialOpt()); err != nil {
 				t.Fatalf("Dial(_, %s): cannot dial fake server, err: %v", l.Addr().String(), err)
 			}
 			ctx, cancel := context.WithCancel(context.Background())
@@ -2096,7 +2113,7 @@ func TestDone(t *testing.T) {
 
 			dctx, cancel := context.WithTimeout(context.Background(), dur)
 			defer cancel()
-			if err := c.Dial(dctx, addr); err != nil {
+			if err := c.Dial(dctx, addr, skipVerifyDialOpt()); err != nil {
 				t.Fatalf("c.Dial(_, %s): cannot dial fake server, got err: %v", addr, err)
 			}
 
@@ -2305,7 +2322,7 @@ func TestReconnect(t *testing.T) {
 				dctx, cancel := context.WithTimeout(context.Background(), to)
 				defer cancel()
 
-				if err := c.Dial(dctx, addr); err != nil {
+				if err := c.Dial(dctx, addr, skipVerifyDialOpt()); err != nil {
 					t.Fatalf("c.Dial(_, %s): cannot dial fake server, got err: %v", addr, err)
 				}
 
@@ -2555,6 +2572,246 @@ func TestAckResult(t *testing.T) {
 			}
 			if diff := cmp.Diff(tt.inClient.qs.resultq, tt.wantResultQ); diff != "" {
 				t.Fatalf("(client).AckResult(%v): did not get expected results q, diff(-got,+want):\n%s", tt.inACK, diff)
+			}
+		})
+	}
+}
+
+// testPKI holds ephemeral CA and server TLS material for unit tests.
+type testPKI struct {
+	// rootPool is a certificate pool containing the ephemeral root CA.
+	rootPool *x509.CertPool
+	// validServerCert is a CA-signed server certificate valid for 127.0.0.1.
+	validServerCert tls.Certificate
+	// wrongSANServerCert is a CA-signed server certificate valid only for 192.0.2.1.
+	wrongSANServerCert tls.Certificate
+	// untrustedServerCert is a self-signed certificate not present in rootPool.
+	untrustedServerCert tls.Certificate
+}
+
+// newTestPKI generates an ephemeral ECDSA root CA and server certificates for
+// testing TLS verification behaviour in Dial.
+func newTestPKI(t *testing.T) *testPKI {
+	t.Helper()
+	now := time.Now()
+
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey(CA): got unexpected error: %v", err)
+	}
+	caTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "gribigo-test-ca"},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTmpl, caTmpl, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("x509.CreateCertificate(CA): got unexpected error: %v", err)
+	}
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatalf("x509.ParseCertificate(CA): got unexpected error: %v", err)
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(caCert)
+
+	signLeaf := func(serial int64, ip string, parent *x509.Certificate, signer *ecdsa.PrivateKey) tls.Certificate {
+		leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatalf("ecdsa.GenerateKey(leaf %d): got unexpected error: %v", serial, err)
+		}
+		leafTmpl := &x509.Certificate{
+			SerialNumber: big.NewInt(serial),
+			Subject:      pkix.Name{CommonName: "gribigo-test-server"},
+			NotBefore:    now.Add(-time.Hour),
+			NotAfter:     now.Add(time.Hour),
+			KeyUsage:     x509.KeyUsageDigitalSignature,
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			IPAddresses:  []net.IP{net.ParseIP(ip)},
+		}
+		parentCert := parent
+		signerKey := signer
+		if parentCert == nil {
+			parentCert = leafTmpl
+			signerKey = leafKey
+		}
+		leafDER, err := x509.CreateCertificate(rand.Reader, leafTmpl, parentCert, &leafKey.PublicKey, signerKey)
+		if err != nil {
+			t.Fatalf("x509.CreateCertificate(leaf %d): got unexpected error: %v", serial, err)
+		}
+		return tls.Certificate{
+			Certificate: [][]byte{leafDER},
+			PrivateKey:  leafKey,
+		}
+	}
+
+	return &testPKI{
+		rootPool:            pool,
+		validServerCert:     signLeaf(2, "127.0.0.1", caCert, caKey),
+		wrongSANServerCert:  signLeaf(3, "192.0.2.1", caCert, caKey),
+		untrustedServerCert: signLeaf(4, "127.0.0.1", nil, nil),
+	}
+}
+
+// staticTokenCreds implements credentials.PerRPCCredentials for testing
+// dial option composition alongside verified TLS.
+type staticTokenCreds struct {
+	// token is the bearer token value sent in RPC request metadata.
+	token string
+}
+
+// GetRequestMetadata returns the configured bearer token metadata map.
+func (s staticTokenCreds) GetRequestMetadata(_ context.Context, _ ...string) (map[string]string, error) {
+	return map[string]string{"authorization": s.token}, nil
+}
+
+// RequireTransportSecurity reports that transport security is required before
+// sending token metadata.
+func (staticTokenCreds) RequireTransportSecurity() bool {
+	return true
+}
+
+// TestDialTLS verifies that Dial enforces server TLS certificate verification
+// by default and honours caller-supplied gRPC dial options.
+func TestDialTLS(t *testing.T) {
+	pki := newTestPKI(t)
+
+	tests := []struct {
+		desc              string
+		inPlaintextServer bool
+		inServerCert      tls.Certificate
+		inAddrOverride    string
+		inDialOpts        []grpc.DialOption
+		wantDialErr       bool
+		wantGetErr        bool
+		wantAuthMetadata  []string
+	}{{
+		desc:         "default dial rejects untrusted self-signed certificate",
+		inServerCert: pki.untrustedServerCert,
+		wantGetErr:   true,
+	}, {
+		desc:         "custom root CA rejects certificate with mismatched IP SAN",
+		inServerCert: pki.wrongSANServerCert,
+		inDialOpts: []grpc.DialOption{
+			grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+				RootCAs: pki.rootPool,
+			})),
+		},
+		wantGetErr: true,
+	}, {
+		desc:         "custom root CA succeeds for matching 127.0.0.1 IP SAN",
+		inServerCert: pki.validServerCert,
+		inDialOpts: []grpc.DialOption{
+			grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+				RootCAs: pki.rootPool,
+			})),
+		},
+	}, {
+		desc:         "skip verify succeeds against untrusted self-signed certificate",
+		inServerCert: pki.untrustedServerCert,
+		inDialOpts:   []grpc.DialOption{skipVerifyDialOpt()},
+	}, {
+		desc:              "insecure credentials succeed against plaintext server",
+		inPlaintextServer: true,
+		inDialOpts: []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		},
+	}, {
+		desc:         "per-RPC credentials attach metadata whilst preserving verified TLS",
+		inServerCert: pki.validServerCert,
+		inDialOpts: []grpc.DialOption{
+			grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+				RootCAs: pki.rootPool,
+			})),
+			grpc.WithPerRPCCredentials(staticTokenCreds{token: "secret-token"}),
+		},
+		wantAuthMetadata: []string{"secret-token"},
+	}, {
+		desc:           "invalid target URI fails during Dial",
+		inServerCert:   pki.validServerCert,
+		inAddrOverride: "http\r://invalid",
+		wantDialErr:    true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			var (
+				mdMu      sync.Mutex
+				gotAuthMD []string
+			)
+
+			var srvOpts []grpc.ServerOption
+			if !tt.inPlaintextServer {
+				srvOpts = append(srvOpts, grpc.Creds(credentials.NewTLS(&tls.Config{
+					Certificates: []tls.Certificate{tt.inServerCert},
+				})))
+			}
+			srvOpts = append(srvOpts, grpc.StreamInterceptor(func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+				if md, ok := metadata.FromIncomingContext(ss.Context()); ok {
+					mdMu.Lock()
+					gotAuthMD = append([]string(nil), md.Get("authorization")...)
+					mdMu.Unlock()
+				}
+				return handler(srv, ss)
+			}))
+
+			srv := grpc.NewServer(srvOpts...)
+			s, err := server.NewFake(server.DisableRIBCheckFn())
+			if err != nil {
+				t.Fatalf("server.NewFake(): got unexpected error: %v", err)
+			}
+			s.InjectRIB(rib.New(server.DefaultNetworkInstanceName, rib.DisableRIBCheckFn()))
+			spb.RegisterGRIBIServer(srv, s)
+
+			lis, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("net.Listen(): got unexpected error: %v", err)
+			}
+			go srv.Serve(lis)
+			defer srv.Stop()
+
+			c, err := New()
+			if err != nil {
+				t.Fatalf("New(): got unexpected error: %v", err)
+			}
+			defer c.Close()
+
+			addr := lis.Addr().String()
+			if tt.inAddrOverride != "" {
+				addr = tt.inAddrOverride
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			err = c.Dial(ctx, addr, tt.inDialOpts...)
+			if (err != nil) != tt.wantDialErr {
+				t.Fatalf("Dial(ctx, %q): did not get expected error, got: %v, wantErr? %v", addr, err, tt.wantDialErr)
+			}
+			if err != nil {
+				return
+			}
+
+			_, err = c.Get(ctx, &spb.GetRequest{
+				NetworkInstance: &spb.GetRequest_Name{Name: server.DefaultNetworkInstanceName},
+				Aft:             spb.AFTType_ALL,
+			})
+			if (err != nil) != tt.wantGetErr {
+				t.Fatalf("Get(): did not get expected error, got: %v, wantErr? %v", err, tt.wantGetErr)
+			}
+			if err != nil {
+				return
+			}
+
+			mdMu.Lock()
+			gotMD := gotAuthMD
+			mdMu.Unlock()
+			if diff := cmp.Diff(gotMD, tt.wantAuthMetadata); diff != "" {
+				t.Fatalf("Get(): did not receive expected authorisation metadata, diff(-got,+want):\n%s", diff)
 			}
 		})
 	}

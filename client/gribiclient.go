@@ -217,7 +217,9 @@ func handleParams(opts ...Opt) (*clientState, error) {
 // cannot be created.
 func (c *Client) Dial(ctx context.Context, addr string, opts ...grpc.DialOption) error {
 	dialOpts := append([]grpc.DialOption{
-		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
+		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			// Default zero-value config enables host root CA and SAN verification.
+		})),
 	}, opts...)
 
 	conn, err := grpc.NewClient(addr, dialOpts...)

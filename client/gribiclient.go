@@ -722,6 +722,9 @@ func (o *OpResult) String() string {
 	return buf.String()
 }
 
+// Proto converts the OpResult to its protobuf representation, returning nil if
+// the receiver is nil. It returns an error if both session and operation fields
+// are populated, or if multiple entry detail fields are set in Details.
 func (o *OpResult) Proto() (*rpb.OpResult, error) {
 	if o == nil {
 		return nil, nil

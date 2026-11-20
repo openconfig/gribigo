@@ -38,7 +38,7 @@ import (
 var (
 	addr              = flag.String("addr", "", "address of the gRIBI server in the format hostname:port")
 	insecureFlag      = flag.Bool("insecure", false, "dial insecure gRPC (no TLS)")
-	skipVerify        = flag.Bool("skip_verify", true, "allow self-signed TLS certificate; not needed for -insecure")
+	skipVerify        = flag.Bool("skip_verify", false, "allow self-signed TLS certificate; not needed for -insecure")
 	username          = flag.String("username", os.Getenv("USER"), "username to be sent as gRPC metadata")
 	password          = flag.String("password", "", "password to be sent as gRPC metadata")
 	initialElectionID = flag.Uint("initial_electionid", 0, "initial election ID to be used")
@@ -94,14 +94,16 @@ func TestCompliance(t *testing.T) {
 
 	compliance.SetDefaultNetworkInstanceName(*defaultNIName)
 
-	dialOpts := []grpc.DialOption{}
-	if *insecureFlag {
+	var dialOpts []grpc.DialOption
+	switch {
+	case *insecureFlag:
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	} else if *skipVerify {
-		tlsc := credentials.NewTLS(&tls.Config{
-			InsecureSkipVerify: *skipVerify,
-		})
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(tlsc))
+	case *skipVerify:
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true,
+		})))
+	default:
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})))
 	}
 
 	if *password != "" {

@@ -207,23 +207,20 @@ func handleParams(opts ...Opt) (*clientState, error) {
 	return s, nil
 }
 
-// DialOpt specifies options that can be used when dialing the gRIBI server
-// specified by the client.
-type DialOpt interface {
-	isDialOpt()
-}
-
 // Dial dials the server specified in the addr string, using the specified
-// set of dial options.
-func (c *Client) Dial(ctx context.Context, addr string, opts ...DialOpt) error {
-	// TODO(robjs): translate any options within the dial options here, we may
-	// want to consider just accepting some gRPC dialoptions directly.
-
-	dialOpts := []grpc.DialOption{}
-	tlsc := credentials.NewTLS(&tls.Config{
-		InsecureSkipVerify: true,
-	})
-	dialOpts = append(dialOpts, grpc.WithTransportCredentials(tlsc))
+// set of gRPC dial options. By default, Dial configures TLS transport
+// credentials verified against the host root CA pool, which callers may
+// override via grpc.WithTransportCredentials. Note that
+// grpc.WithCredentialsBundle cannot be combined with Dial's default
+// TransportCredentials; callers using a credentials.Bundle should dial via
+// grpc.NewClient and pass UseStub. It returns an error if the gRPC client
+// cannot be created.
+func (c *Client) Dial(ctx context.Context, addr string, opts ...grpc.DialOption) error {
+	dialOpts := append([]grpc.DialOption{
+		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			// Default zero-value config enables host root CA and SAN verification.
+		})),
+	}, opts...)
 
 	conn, err := grpc.NewClient(addr, dialOpts...)
 	if err != nil {
@@ -725,6 +722,9 @@ func (o *OpResult) String() string {
 	return buf.String()
 }
 
+// Proto converts the OpResult to its protobuf representation, returning nil if
+// the receiver is nil. It returns an error if both session and operation fields
+// are populated, or if multiple entry detail fields are set in Details.
 func (o *OpResult) Proto() (*rpb.OpResult, error) {
 	if o == nil {
 		return nil, nil

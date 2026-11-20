@@ -15,17 +15,21 @@
 package ipv4
 
 import (
+	"crypto/tls"
 	"flag"
 	"testing"
 	"time"
 
 	"github.com/openconfig/gribigo/compliance"
 	"github.com/openconfig/gribigo/fluent"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 var (
-	addr = flag.String("addr", "", "address of the gRIBI target")
-	run  = flag.Bool("run", false, "whether to run the tests, this stops this file causing failures in CI")
+	addr       = flag.String("addr", "", "address of the gRIBI target")
+	run        = flag.Bool("run", false, "whether to run the tests, this stops this file causing failures in CI")
+	skipVerify = flag.Bool("skip_verify", false, "allow self-signed TLS certificate")
 )
 
 func TestDemo(t *testing.T) {
@@ -37,7 +41,12 @@ func TestDemo(t *testing.T) {
 		t.Fatalf("must specify an address")
 	}
 	c := fluent.NewClient()
-	c.Connection().WithTarget(*addr)
+	conn := c.Connection().WithTarget(*addr)
+	if *skipVerify {
+		conn.WithDialOptions(grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true,
+		})))
+	}
 	compliance.AddIPv4Entry(c, fluent.InstalledInRIB, t)
 	time.Sleep(2 * time.Second)
 }

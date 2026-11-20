@@ -43,15 +43,28 @@ func newServer(t *testing.T, r *rib.RIB) (string, func()) {
 	return l.Addr().String(), srv.Stop
 }
 
+// skipVerifyDialOpt returns a gRPC dial option that disables server TLS
+// certificate verification for unit tests using self-signed fixtures.
+func skipVerifyDialOpt() grpc.DialOption {
+	return grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+		InsecureSkipVerify: true,
+	}))
+}
+
 func TestNewRemoteRIB(t *testing.T) {
 	tests := []struct {
 		desc           string
 		inDefName      string
 		inAddrOverride string
+		inDialOpts     []grpc.DialOption
 		wantErr        bool
 	}{{
-		desc:      "successful dial",
+		desc:      "successful dial with default TLS",
 		inDefName: "DEFAULT",
+	}, {
+		desc:       "successful dial with skip verify",
+		inDefName:  "DEFAULT",
+		inDialOpts: []grpc.DialOption{skipVerifyDialOpt()},
 	}, {
 		desc:           "unsuccessful dial",
 		inDefName:      "DEFAULT",
@@ -71,8 +84,12 @@ func TestNewRemoteRIB(t *testing.T) {
 				addr = tt.inAddrOverride
 			}
 
-			if _, err := NewRemoteRIB(ctx, tt.inDefName, addr); (err != nil) != tt.wantErr {
+			rr, err := NewRemoteRIB(ctx, tt.inDefName, addr, tt.inDialOpts...)
+			if (err != nil) != tt.wantErr {
 				t.Fatalf("NewRemoteRIB(ctx, %s, %s): did not get expected error, got: %v, wantErr? %v", tt.inDefName, addr, err, tt.wantErr)
+			}
+			if rr != nil {
+				rr.CleanUp()
 			}
 		})
 	}
@@ -171,17 +188,20 @@ func TestGet(t *testing.T) {
 		inDefName       string
 		inServer        func(*testing.T, *rib.RIB) (string, func())
 		inInjectedRIB   *rib.RIB
+		inDialOpts      []grpc.DialOption
 		wantRIBContents map[string]*aft.RIB
 		wantErr         bool
 	}{{
-		desc:      "cannot get RIB",
-		inDefName: "DEFAULT",
-		inServer:  newBadServer,
-		wantErr:   true,
+		desc:       "cannot get RIB",
+		inDefName:  "DEFAULT",
+		inServer:   newBadServer,
+		inDialOpts: []grpc.DialOption{skipVerifyDialOpt()},
+		wantErr:    true,
 	}, {
-		desc:      "successfully got RIB",
-		inDefName: dn,
-		inServer:  newServer,
+		desc:       "successfully got RIB",
+		inDefName:  dn,
+		inServer:   newServer,
+		inDialOpts: []grpc.DialOption{skipVerifyDialOpt()},
 		inInjectedRIB: func() *rib.RIB {
 			r := rib.NewFake(dn)
 			if err := r.InjectNH(dn, 1, "int42"); err != nil {
@@ -206,9 +226,15 @@ func TestGet(t *testing.T) {
 			}(),
 		},
 	}, {
-		desc:      "hanging gRIBI",
+		desc:       "hanging gRIBI",
+		inDefName:  dn,
+		inServer:   newHangingServer,
+		inDialOpts: []grpc.DialOption{skipVerifyDialOpt()},
+		wantErr:    true,
+	}, {
+		desc:      "default TLS verification rejects untrusted server certificate",
 		inDefName: dn,
-		inServer:  newHangingServer,
+		inServer:  newServer,
 		wantErr:   true,
 	}}
 
@@ -220,10 +246,11 @@ func TestGet(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 
-			rr, err := NewRemoteRIB(ctx, tt.inDefName, addr)
+			rr, err := NewRemoteRIB(ctx, tt.inDefName, addr, tt.inDialOpts...)
 			if err != nil {
 				t.Fatalf("NewRemoteRIB(_, %s, %s): cannot connect, got err: %v", tt.inDefName, addr, err)
 			}
+			defer rr.CleanUp()
 
 			got, err := rr.Get(ctx)
 			if (err != nil) != tt.wantErr {

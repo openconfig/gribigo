@@ -16,6 +16,7 @@ package device
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"testing"
 
@@ -24,6 +25,8 @@ import (
 	"github.com/openconfig/gribigo/ocrt"
 	"github.com/openconfig/gribigo/testcommon"
 	"github.com/openconfig/ygot/ygot"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 func jsonDevice() []byte {
@@ -65,7 +68,9 @@ func TestDevice(t *testing.T) {
 		t.Fatalf("got unexpected error from device, got: %v", err)
 	case addr := <-devCh:
 		c := fluent.NewClient()
-		c.Connection().WithTarget(addr)
+		c.Connection().WithTarget(addr).WithDialOptions(grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true,
+		})))
 		compliance.AddIPv4Entry(c, fluent.InstalledInRIB, t)
 	}
 }

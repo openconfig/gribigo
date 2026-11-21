@@ -1,0 +1,626 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package protorib
+
+import (
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"google.golang.org/protobuf/testing/protocmp"
+
+	aftpb "github.com/openconfig/gribi/v1/proto/gribi_aft"
+	spb "github.com/openconfig/gribi/v1/proto/service"
+	wpb "github.com/openconfig/ygot/proto/ywrapper"
+)
+
+// TestFromGetResponses verifies that FromGetResponses constructs a RIB from gRIBI GetResponse messages.
+func TestFromGetResponses(t *testing.T) {
+	defaultName := "DEFAULT"
+	tests := []struct {
+		// desc is the human-readable test case description.
+		desc string
+		// inDefaultName is the default network instance name passed to FromGetResponses.
+		inDefaultName string
+		// inResponses is the slice of GetResponse messages passed to FromGetResponses.
+		inResponses []*spb.GetResponse
+		// wantRIB is the expected RIB state.
+		wantRIB *RIB
+		// wantErr indicates whether an error is expected.
+		wantErr bool
+	}{{
+		desc: "single ipv4 entry",
+		inResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-1",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+		inDefaultName: "DEFAULT",
+		wantRIB: &RIB{
+			defaultName: defaultName,
+			niRIB: map[string]*RIBHolder{
+				"DEFAULT": {
+					name: "DEFAULT",
+					r:    &AFTs{},
+				},
+				"VRF-1": {
+					name: "VRF-1",
+					r: &AFTs{
+						IPv4Entry: map[string]*aftpb.Afts_Ipv4EntryKey{
+							"1.1.1.1/32": {
+								Prefix: "1.1.1.1/32",
+								Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+									NextHopGroup: &wpb.UintValue{Value: 42},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "single ipv6 entry",
+		inResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-1",
+				Entry: &spb.AFTEntry_Ipv6{
+					Ipv6: &aftpb.Afts_Ipv6EntryKey{
+						Prefix: "2001:db8::/32",
+						Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+		inDefaultName: "DEFAULT",
+		wantRIB: &RIB{
+			defaultName: defaultName,
+			niRIB: map[string]*RIBHolder{
+				"DEFAULT": {
+					name: "DEFAULT",
+					r:    &AFTs{},
+				},
+				"VRF-1": {
+					name: "VRF-1",
+					r: &AFTs{
+						IPv6Entry: map[string]*aftpb.Afts_Ipv6EntryKey{
+							"2001:db8::/32": {
+								Prefix: "2001:db8::/32",
+								Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+									NextHopGroup: &wpb.UintValue{Value: 42},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "next-hop group entry",
+		inResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: defaultName,
+				Entry: &spb.AFTEntry_NextHopGroup{
+					NextHopGroup: &aftpb.Afts_NextHopGroupKey{
+						Id: 42,
+						NextHopGroup: &aftpb.Afts_NextHopGroup{
+							BackupNextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+		inDefaultName: "DEFAULT",
+		wantRIB: &RIB{
+			defaultName: defaultName,
+			niRIB: map[string]*RIBHolder{
+				"DEFAULT": {
+					name: "DEFAULT",
+					r: &AFTs{
+						NextHopGroup: map[uint64]*aftpb.Afts_NextHopGroupKey{
+							42: {
+								Id: 42,
+								NextHopGroup: &aftpb.Afts_NextHopGroup{
+									BackupNextHopGroup: &wpb.UintValue{Value: 42},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "nexthop entry",
+		inResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: defaultName,
+				Entry: &spb.AFTEntry_NextHop{
+					NextHop: &aftpb.Afts_NextHopKey{
+						Index: 42,
+						NextHop: &aftpb.Afts_NextHop{
+							IpAddress: &wpb.StringValue{Value: "1.1.1.1"},
+						},
+					},
+				},
+			}},
+		}},
+		inDefaultName: "DEFAULT",
+		wantRIB: &RIB{
+			defaultName: defaultName,
+			niRIB: map[string]*RIBHolder{
+				"DEFAULT": {
+					name: "DEFAULT",
+					r: &AFTs{
+						NextHop: map[uint64]*aftpb.Afts_NextHopKey{
+							42: {
+								Index: 42,
+								NextHop: &aftpb.Afts_NextHop{
+									IpAddress: &wpb.StringValue{Value: "1.1.1.1"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "mpls entry",
+		inResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: defaultName,
+				Entry: &spb.AFTEntry_Mpls{
+					Mpls: &aftpb.Afts_LabelEntryKey{
+						Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+							LabelUint64: 42,
+						},
+						LabelEntry: &aftpb.Afts_LabelEntry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+		inDefaultName: "DEFAULT",
+		wantRIB: &RIB{
+			defaultName: defaultName,
+			niRIB: map[string]*RIBHolder{
+				"DEFAULT": {
+					name: "DEFAULT",
+					r: &AFTs{
+						LabelEntry: map[MPLSLabelKey]*aftpb.Afts_LabelEntryKey{
+							{Label: 42}: {
+								Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+									LabelUint64: 42,
+								},
+								LabelEntry: &aftpb.Afts_LabelEntry{
+									NextHopGroup: &wpb.UintValue{Value: 42},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "multiple network instances",
+		inResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: "VRF-1",
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}, {
+				NetworkInstance: defaultName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix: "2.2.2.2/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+							NextHopGroup: &wpb.UintValue{Value: 42},
+						},
+					},
+				},
+			}},
+		}},
+		inDefaultName: "DEFAULT",
+		wantRIB: &RIB{
+			defaultName: defaultName,
+			niRIB: map[string]*RIBHolder{
+				"DEFAULT": {
+					name: "DEFAULT",
+					r: &AFTs{
+						IPv4Entry: map[string]*aftpb.Afts_Ipv4EntryKey{
+							"2.2.2.2/32": {
+								Prefix: "2.2.2.2/32",
+								Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+									NextHopGroup: &wpb.UintValue{Value: 42},
+								},
+							},
+						},
+					},
+				},
+				"VRF-1": {
+					name: "VRF-1",
+					r: &AFTs{
+						IPv4Entry: map[string]*aftpb.Afts_Ipv4EntryKey{
+							"1.1.1.1/32": {
+								Prefix: "1.1.1.1/32",
+								Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+									NextHopGroup: &wpb.UintValue{Value: 42},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "duplicate ipv4 entry returns error",
+		inResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: defaultName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}, {
+				NetworkInstance: defaultName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "1.1.1.1/32",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}},
+		inDefaultName: defaultName,
+		wantErr:       true,
+	}, {
+		desc: "invalid ipv4 prefix returns error",
+		inResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: defaultName,
+				Entry: &spb.AFTEntry_Ipv4{
+					Ipv4: &aftpb.Afts_Ipv4EntryKey{
+						Prefix:    "not-a-prefix",
+						Ipv4Entry: &aftpb.Afts_Ipv4Entry{},
+					},
+				},
+			}},
+		}},
+		inDefaultName: defaultName,
+		wantErr:       true,
+	}, {
+		desc: "unhandled entry type returns error",
+		inResponses: []*spb.GetResponse{{
+			Entry: []*spb.AFTEntry{{
+				NetworkInstance: defaultName,
+			}},
+		}},
+		inDefaultName: defaultName,
+		wantErr:       true,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got, err := FromGetResponses(tt.inDefaultName, tt.inResponses)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("FromGetResponses(...): did not get expected error, got: %v, wantErr? %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+
+			if diff := cmp.Diff(got, tt.wantRIB,
+				protocmp.Transform(),
+				cmpopts.EquateEmpty(),
+				cmp.AllowUnexported(RIB{}),
+				cmpopts.IgnoreFields(RIB{}, "nrMu", "pendMu", "ribCheck"),
+				cmp.AllowUnexported(RIBHolder{}),
+				cmpopts.IgnoreFields(RIBHolder{}, "mu", "refCounts", "checkFn"),
+			); diff != "" {
+				t.Fatalf("FromGetResponses(...): did not get expected RIB, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestFakeRIB verifies that NewFake and its Inject* methods populate the RIB as expected.
+func TestFakeRIB(t *testing.T) {
+	dn := "DEFAULT"
+	tests := []struct {
+		// desc is the human-readable test case description.
+		desc string
+		// inBuild constructs the fakeRIB under test.
+		inBuild func() *FakeRIB
+		// wantRIB is the expected RIB state.
+		wantRIB *RIB
+	}{{
+		desc: "nh only",
+		inBuild: func() *FakeRIB {
+			f := NewFake(dn)
+			if err := f.InjectNH(dn, 1, "int42"); err != nil {
+				t.Fatalf("cannot add NH, err: %v", err)
+			}
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &AFTs{
+						NextHop: map[uint64]*aftpb.Afts_NextHopKey{
+							1: {
+								Index: 1,
+								NextHop: &aftpb.Afts_NextHop{
+									InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+										Interface: &wpb.StringValue{Value: "int42"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "ipv4 only",
+		inBuild: func() *FakeRIB {
+			f := NewFake(dn, DisableRIBCheckFn())
+			if err := f.InjectIPv4(dn, "1.0.0.0/24", 1); err != nil {
+				t.Fatalf("cannot add IPv4, err: %v", err)
+			}
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &AFTs{
+						IPv4Entry: map[string]*aftpb.Afts_Ipv4EntryKey{
+							"1.0.0.0/24": {
+								Prefix: "1.0.0.0/24",
+								Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+									NextHopGroup: &wpb.UintValue{Value: 1},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "ipv6 only",
+		inBuild: func() *FakeRIB {
+			f := NewFake(dn, DisableRIBCheckFn())
+			if err := f.InjectIPv6(dn, "2001:db8::1/128", 1); err != nil {
+				t.Fatalf("cannot add IPv6, err: %v", err)
+			}
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &AFTs{
+						IPv6Entry: map[string]*aftpb.Afts_Ipv6EntryKey{
+							"2001:db8::1/128": {
+								Prefix: "2001:db8::1/128",
+								Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+									NextHopGroup: &wpb.UintValue{Value: 1},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "mpls only",
+		inBuild: func() *FakeRIB {
+			f := NewFake(dn, DisableRIBCheckFn())
+			if err := f.InjectMPLS(dn, 42, 1); err != nil {
+				t.Fatalf("cannot add MPLS, err: %v", err)
+			}
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &AFTs{
+						LabelEntry: map[MPLSLabelKey]*aftpb.Afts_LabelEntryKey{
+							{Label: 42}: {
+								Label: &aftpb.Afts_LabelEntryKey_LabelUint64{
+									LabelUint64: 42,
+								},
+								LabelEntry: &aftpb.Afts_LabelEntry{
+									NextHopGroup: &wpb.UintValue{Value: 1},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "nhg only",
+		inBuild: func() *FakeRIB {
+			f := NewFake(dn, DisableRIBCheckFn())
+			if err := f.InjectNHG(dn, 1, map[uint64]uint64{1: 1}); err != nil {
+				t.Fatalf("cannot add NHG, err: %v", err)
+			}
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &AFTs{
+						NextHopGroup: map[uint64]*aftpb.Afts_NextHopGroupKey{
+							1: {
+								Id: 1,
+								NextHopGroup: &aftpb.Afts_NextHopGroup{
+									NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+										Index: 1,
+										NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+											Weight: &wpb.UintValue{Value: 1},
+										},
+									}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "full ipv4 chain",
+		inBuild: func() *FakeRIB {
+			f := NewFake(dn)
+			_ = f.InjectNH(dn, 1, "int42")
+			_ = f.InjectNHG(dn, 1, map[uint64]uint64{1: 1})
+			_ = f.InjectIPv4(dn, "192.0.2.1/32", 1)
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &AFTs{
+						NextHop: map[uint64]*aftpb.Afts_NextHopKey{
+							1: {
+								Index: 1,
+								NextHop: &aftpb.Afts_NextHop{
+									InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+										Interface: &wpb.StringValue{Value: "int42"},
+									},
+								},
+							},
+						},
+						NextHopGroup: map[uint64]*aftpb.Afts_NextHopGroupKey{
+							1: {
+								Id: 1,
+								NextHopGroup: &aftpb.Afts_NextHopGroup{
+									NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+										Index: 1,
+										NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+											Weight: &wpb.UintValue{Value: 1},
+										},
+									}},
+								},
+							},
+						},
+						IPv4Entry: map[string]*aftpb.Afts_Ipv4EntryKey{
+							"192.0.2.1/32": {
+								Prefix: "192.0.2.1/32",
+								Ipv4Entry: &aftpb.Afts_Ipv4Entry{
+									NextHopGroup: &wpb.UintValue{Value: 1},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, {
+		desc: "full ipv6 chain",
+		inBuild: func() *FakeRIB {
+			f := NewFake(dn)
+			_ = f.InjectNH(dn, 1, "int42")
+			_ = f.InjectNHG(dn, 1, map[uint64]uint64{1: 1})
+			_ = f.InjectIPv6(dn, "2001:db8::1/128", 1)
+			return f
+		},
+		wantRIB: &RIB{
+			defaultName: dn,
+			niRIB: map[string]*RIBHolder{
+				dn: {
+					name: dn,
+					r: &AFTs{
+						NextHop: map[uint64]*aftpb.Afts_NextHopKey{
+							1: {
+								Index: 1,
+								NextHop: &aftpb.Afts_NextHop{
+									InterfaceRef: &aftpb.Afts_NextHop_InterfaceRef{
+										Interface: &wpb.StringValue{Value: "int42"},
+									},
+								},
+							},
+						},
+						NextHopGroup: map[uint64]*aftpb.Afts_NextHopGroupKey{
+							1: {
+								Id: 1,
+								NextHopGroup: &aftpb.Afts_NextHopGroup{
+									NextHop: []*aftpb.Afts_NextHopGroup_NextHopKey{{
+										Index: 1,
+										NextHop: &aftpb.Afts_NextHopGroup_NextHop{
+											Weight: &wpb.UintValue{Value: 1},
+										},
+									}},
+								},
+							},
+						},
+						IPv6Entry: map[string]*aftpb.Afts_Ipv6EntryKey{
+							"2001:db8::1/128": {
+								Prefix: "2001:db8::1/128",
+								Ipv6Entry: &aftpb.Afts_Ipv6Entry{
+									NextHopGroup: &wpb.UintValue{Value: 1},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got := tt.inBuild().RIB()
+			if diff := cmp.Diff(got, tt.wantRIB,
+				protocmp.Transform(),
+				cmpopts.EquateEmpty(),
+				cmp.AllowUnexported(RIB{}),
+				cmpopts.IgnoreFields(RIB{}, "nrMu", "pendMu", "ribCheck"),
+				cmp.AllowUnexported(RIBHolder{}),
+				cmpopts.IgnoreFields(RIBHolder{}, "mu", "refCounts", "checkFn"),
+			); diff != "" {
+				t.Fatalf("FakeRIB.RIB(...): did not get expected RIB, diff(-got,+want):\n%s", diff)
+			}
+		})
+	}
+}

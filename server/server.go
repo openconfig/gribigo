@@ -26,6 +26,7 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
+	"github.com/openconfig/gribigo/protorib"
 	"github.com/openconfig/gribigo/rib"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -34,6 +35,154 @@ import (
 
 	spb "github.com/openconfig/gribi/v1/proto/service"
 )
+
+// serverNIRIB abstracts a single network-instance RIB holder within the server.
+type serverNIRIB interface {
+	// IsValid reports whether the network-instance RIB holder is initialised.
+	IsValid() bool
+	// GetRIB writes the AFT entries matching filter to msgCh.
+	GetRIB(filter map[spb.AFTType]bool, msgCh chan *spb.GetResponse, stopCh chan struct{}) error
+}
+
+// serverRIB abstracts the RIB implementation used by Server.
+type serverRIB interface {
+	// AddNetworkInstance creates a new network instance with the given name.
+	AddNetworkInstance(name string) error
+	// KnownNetworkInstances returns the names of all known network instances.
+	KnownNetworkInstances() []string
+	// NetworkInstanceRIB returns the RIB holder for the named network instance.
+	NetworkInstanceRIB(name string) (serverNIRIB, bool)
+	// AddEntry adds or replaces the entry described by op in network instance ni.
+	AddEntry(ni string, op *spb.AFTOperation) (oks, faileds []*protorib.OpResult, err error)
+	// DeleteEntry deletes the entry described by op from network instance ni.
+	DeleteEntry(ni string, op *spb.AFTOperation) (oks, faileds []*protorib.OpResult, err error)
+	// Flush removes all entries from the specified network instances.
+	Flush(nis []string) error
+}
+
+// protoServerRIB adapts a *protorib.RIB to the serverRIB interface.
+type protoServerRIB struct {
+	// r is the underlying protobuf-native RIB.
+	r *protorib.RIB
+}
+
+// newProtoServerRIB wraps r in a serverRIB implementation, returning nil if r is nil.
+func newProtoServerRIB(r *protorib.RIB) serverRIB {
+	if r == nil {
+		return nil
+	}
+	return &protoServerRIB{r: r}
+}
+
+// AddNetworkInstance creates a new network instance with the given name.
+func (p *protoServerRIB) AddNetworkInstance(name string) error {
+	return p.r.AddNetworkInstance(name)
+}
+
+// KnownNetworkInstances returns the names of all known network instances.
+func (p *protoServerRIB) KnownNetworkInstances() []string {
+	return p.r.KnownNetworkInstances()
+}
+
+// NetworkInstanceRIB returns the RIB holder for the named network instance.
+func (p *protoServerRIB) NetworkInstanceRIB(name string) (serverNIRIB, bool) {
+	if p == nil || p.r == nil {
+		return nil, false
+	}
+	rh, ok := p.r.NetworkInstanceRIB(name)
+	if !ok || rh == nil {
+		return nil, false
+	}
+	return rh, true
+}
+
+// AddEntry adds or replaces the entry described by op in network instance ni.
+func (p *protoServerRIB) AddEntry(ni string, op *spb.AFTOperation) ([]*protorib.OpResult, []*protorib.OpResult, error) {
+	return p.r.AddEntry(ni, op)
+}
+
+// DeleteEntry deletes the entry described by op from network instance ni.
+func (p *protoServerRIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*protorib.OpResult, []*protorib.OpResult, error) {
+	return p.r.DeleteEntry(ni, op)
+}
+
+// Flush removes all entries from the specified network instances.
+func (p *protoServerRIB) Flush(nis []string) error {
+	return p.r.Flush(nis)
+}
+
+// legacyServerRIB adapts a legacy *rib.RIB to the serverRIB interface.
+type legacyServerRIB struct {
+	// r is the underlying ygot-backed RIB.
+	r *rib.RIB
+}
+
+// newLegacyServerRIB wraps r in a serverRIB implementation, returning nil if r is nil.
+func newLegacyServerRIB(r *rib.RIB) serverRIB {
+	if r == nil {
+		return nil
+	}
+	return &legacyServerRIB{r: r}
+}
+
+// convertLegacyOpResults converts a slice of rib.OpResult pointers to protorib.OpResult pointers.
+func convertLegacyOpResults(in []*rib.OpResult) []*protorib.OpResult {
+	if len(in) == 0 {
+		return nil
+	}
+	vals := make([]protorib.OpResult, len(in))
+	out := make([]*protorib.OpResult, len(in))
+	for i, r := range in {
+		if r != nil {
+			vals[i] = protorib.OpResult{
+				ID:    r.ID,
+				Op:    r.Op,
+				Error: r.Error,
+			}
+			out[i] = &vals[i]
+		}
+	}
+	return out
+}
+
+// AddNetworkInstance creates a new network instance with the given name.
+func (l *legacyServerRIB) AddNetworkInstance(name string) error {
+	return l.r.AddNetworkInstance(name)
+}
+
+// KnownNetworkInstances returns the names of all known network instances.
+func (l *legacyServerRIB) KnownNetworkInstances() []string {
+	return l.r.KnownNetworkInstances()
+}
+
+// NetworkInstanceRIB returns the RIB holder for the named network instance.
+func (l *legacyServerRIB) NetworkInstanceRIB(name string) (serverNIRIB, bool) {
+	if l == nil || l.r == nil {
+		return nil, false
+	}
+	rh, ok := l.r.NetworkInstanceRIB(name)
+	if !ok || rh == nil {
+		return nil, false
+	}
+	return rh, true
+}
+
+// AddEntry adds or replaces the entry described by op in network instance ni.
+func (l *legacyServerRIB) AddEntry(ni string, op *spb.AFTOperation) ([]*protorib.OpResult, []*protorib.OpResult, error) {
+	oks, faileds, err := l.r.AddEntry(ni, op)
+	return convertLegacyOpResults(oks), convertLegacyOpResults(faileds), err
+}
+
+// DeleteEntry deletes the entry described by op from network instance ni.
+func (l *legacyServerRIB) DeleteEntry(ni string, op *spb.AFTOperation) ([]*protorib.OpResult, []*protorib.OpResult, error) {
+	oks, faileds, err := l.r.DeleteEntry(ni, op)
+	return convertLegacyOpResults(oks), convertLegacyOpResults(faileds), err
+}
+
+// Flush removes all entries from the specified network instances.
+func (l *legacyServerRIB) Flush(nis []string) error {
+	return l.r.Flush(nis)
+}
 
 const (
 	// DefaultNetworkInstanceName specifies the name of the default network instance on the system.
@@ -73,7 +222,7 @@ type Server struct {
 
 	// masterRIB is the single gRIBI RIB that is used for a server that runs with
 	// a single elected master, where a single RIB is written to by all clients.
-	masterRIB *rib.RIB
+	masterRIB serverRIB
 }
 
 // clientState stores information that relates to a specific client
@@ -164,7 +313,7 @@ func hasPostChangeRIBHook(opt []ServerOpt) *postChangeRibHook {
 	return nil
 }
 
-// WithResolvedEntryHook is a Server option that allows a function to be run for
+// WithRIBResolvedEntryHook is a Server option that allows a function to be run for
 // each entry that can be fully resolved within the RIB (e.g., IPv4Entry).
 func WithRIBResolvedEntryHook(fn rib.ResolvedEntryFn) *resolvedEntryHook {
 	return &resolvedEntryHook{fn: fn}
@@ -184,6 +333,58 @@ func (r *resolvedEntryHook) isServerOpt() {}
 func hasResolvedEntryHook(opt []ServerOpt) *resolvedEntryHook {
 	for _, o := range opt {
 		if v, ok := o.(*resolvedEntryHook); ok {
+			return v
+		}
+	}
+	return nil
+}
+
+// WithPostChangeProtoRIBHook specifies that the given protorib.RIBHookFn function
+// should be executed after each change in the protobuf-native RIB.
+func WithPostChangeProtoRIBHook(fn protorib.RIBHookFn) ServerOpt {
+	return &postChangeProtoRibHook{fn: fn}
+}
+
+// postChangeProtoRibHook is the internal implementation of the WithPostChangeProtoRIBHook option.
+type postChangeProtoRibHook struct {
+	// fn is the post-change callback registered on the protobuf-native RIB.
+	fn protorib.RIBHookFn
+}
+
+// isServerOpt implements the ServerOpt interface.
+func (*postChangeProtoRibHook) isServerOpt() {}
+
+// hasPostChangeProtoRIBHook extracts the postChangeProtoRibHook option from opt,
+// returning nil if one is not found.
+func hasPostChangeProtoRIBHook(opt []ServerOpt) *postChangeProtoRibHook {
+	for _, o := range opt {
+		if v, ok := o.(*postChangeProtoRibHook); ok {
+			return v
+		}
+	}
+	return nil
+}
+
+// WithProtoRIBResolvedEntryHook specifies a function to be run for each entry
+// that can be fully resolved within the protobuf-native RIB.
+func WithProtoRIBResolvedEntryHook(fn protorib.ResolvedEntryFn) ServerOpt {
+	return &protoResolvedEntryHook{fn: fn}
+}
+
+// protoResolvedEntryHook is the internal implementation of the WithProtoRIBResolvedEntryHook option.
+type protoResolvedEntryHook struct {
+	// fn is the resolved-entry callback registered on the protobuf-native RIB.
+	fn protorib.ResolvedEntryFn
+}
+
+// isServerOpt implements the ServerOpt interface.
+func (*protoResolvedEntryHook) isServerOpt() {}
+
+// hasProtoResolvedEntryHook extracts the protoResolvedEntryHook option from opt,
+// returning nil if one is not found.
+func hasProtoResolvedEntryHook(opt []ServerOpt) *protoResolvedEntryHook {
+	for _, o := range opt {
+		if v, ok := o.(*protoResolvedEntryHook); ok {
 			return v
 		}
 	}
@@ -260,30 +461,48 @@ func hasWithNoRIBForwardReferences(opt []ServerOpt) bool {
 	return false
 }
 
-// New creates a new gRIBI server.
+// New creates a new gRIBI server. By default, New uses a protobuf-native
+// *protorib.RIB unless a legacy *rib.RIB hook option (WithPostChangeRIBHook or
+// WithRIBResolvedEntryHook) is supplied.
 func New(opt ...ServerOpt) (*Server, error) {
-	ribOpt := []rib.RIBOpt{}
-	if hasDisableCheckFn(opt) {
-		ribOpt = append(ribOpt, rib.DisableRIBCheckFn())
-	}
-
-	if hasWithNoRIBForwardReferences(opt) {
-		ribOpt = append(ribOpt, rib.DisableForwardReferences())
-	}
-
 	s := &Server{
 		cs: map[string]*clientState{},
-		// TODO(robjs): when we implement support for ALL_PRIMARY then we might not
-		// want to create a new RIB by default.
-		masterRIB: rib.New(DefaultNetworkInstanceName, ribOpt...),
 	}
 
-	if v := hasPostChangeRIBHook(opt); v != nil {
-		s.masterRIB.SetPostChangeHook(v.fn)
-	}
-
-	if v := hasResolvedEntryHook(opt); v != nil {
-		s.masterRIB.SetResolvedEntryHook(v.fn)
+	legacyPostHook := hasPostChangeRIBHook(opt)
+	legacyResolvedHook := hasResolvedEntryHook(opt)
+	if legacyPostHook != nil || legacyResolvedHook != nil {
+		ribOpt := []rib.RIBOpt{}
+		if hasDisableCheckFn(opt) {
+			ribOpt = append(ribOpt, rib.DisableRIBCheckFn())
+		}
+		if hasWithNoRIBForwardReferences(opt) {
+			ribOpt = append(ribOpt, rib.DisableForwardReferences())
+		}
+		r := rib.New(DefaultNetworkInstanceName, ribOpt...)
+		if legacyPostHook != nil {
+			r.SetPostChangeHook(legacyPostHook.fn)
+		}
+		if legacyResolvedHook != nil {
+			r.SetResolvedEntryHook(legacyResolvedHook.fn)
+		}
+		s.masterRIB = newLegacyServerRIB(r)
+	} else {
+		protoOpts := []protorib.RIBOpt{}
+		if hasDisableCheckFn(opt) {
+			protoOpts = append(protoOpts, protorib.DisableRIBCheckFn())
+		}
+		if hasWithNoRIBForwardReferences(opt) {
+			protoOpts = append(protoOpts, protorib.DisableForwardReferences())
+		}
+		pr := protorib.New(DefaultNetworkInstanceName, protoOpts...)
+		if v := hasPostChangeProtoRIBHook(opt); v != nil {
+			pr.SetPostChangeHook(v.fn)
+		}
+		if v := hasProtoResolvedEntryHook(opt); v != nil {
+			pr.SetResolvedEntryHook(v.fn)
+		}
+		s.masterRIB = newProtoServerRIB(pr)
 	}
 
 	if vrfs := hasWithVRFs(opt); vrfs != nil {
@@ -304,13 +523,15 @@ func New(opt ...ServerOpt) (*Server, error) {
 func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 	// Initiate the per client state for this client.
 	cid := uuid.New().String()
-	log.V(2).Infof("creating client with ID %s", cid)
+	if log.V(2) {
+		log.Infof("creating client with ID %s", cid)
+	}
 	if err := s.newClient(cid); err != nil {
 		return err
 	}
 
-	resultChan := make(chan *spb.ModifyResponse)
-	errCh := make(chan error)
+	resultChan := make(chan *spb.ModifyResponse, 256)
+	errCh := make(chan error, 2)
 	go func() {
 		// Store whether this is the first message on the Modify RPC, some options - like the session
 		// parameters can only be set as the first message.
@@ -318,14 +539,16 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 		for {
 			in, err := ms.Recv()
 			if err == io.EOF {
-				errCh <- nil
+				close(resultChan)
 				return
 			}
 			if err != nil {
 				errCh <- status.Errorf(codes.Unknown, "error reading message from client, %v", err)
 				return
 			}
-			log.V(2).Infof("received message %s on Modify channel", in)
+			if log.V(2) {
+				log.Infof("received message %s on Modify channel", in)
+			}
 
 			var (
 				res       *spb.ModifyResponse
@@ -381,7 +604,11 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 	go func() {
 		for {
 			select {
-			case res := <-resultChan:
+			case res, ok := <-resultChan:
+				if !ok {
+					errCh <- nil
+					return
+				}
 				if err := ms.Send(res); err != nil {
 					errCh <- status.Errorf(codes.Internal, "cannot write message to client channel, %s", res)
 					return
@@ -403,10 +630,10 @@ func (s *Server) Modify(ms spb.GRIBI_ModifyServer) error {
 
 // Get implements the gRIBI Get RPC.
 func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
-	msgCh := make(chan *spb.GetResponse)
-	errCh := make(chan error)
-	doneCh := make(chan struct{})
-	stopCh := make(chan struct{})
+	msgCh := make(chan *spb.GetResponse, 256)
+	errCh := make(chan error, 1)
+	doneCh := make(chan struct{}, 1)
+	stopCh := make(chan struct{}, 1)
 
 	// defer a function to stop the goroutine and close all channels, since this will be called
 	// when we exit, then it will stop the goroutine that we started to do
@@ -418,16 +645,31 @@ func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
 		case stopCh <- struct{}{}:
 		default:
 		}
+		// Drain any buffered responses so doGet cannot block on a full msgCh.
+		for {
+			select {
+			case <-msgCh:
+			default:
+				return
+			}
+		}
 	}()
 
 	go s.doGet(req, msgCh, doneCh, stopCh, errCh)
 
-	var done bool
-
-	for !done {
+	for {
 		select {
 		case <-doneCh:
-			done = true
+			for {
+				select {
+				case r := <-msgCh:
+					if err := stream.Send(r); err != nil {
+						return status.Errorf(codes.Internal, "cannot write message to client channel, %v", err)
+					}
+				default:
+					return nil
+				}
+			}
 		case err := <-errCh:
 			return status.Errorf(codes.Internal, "cannot generate GetResponse, %v", err)
 		case r := <-msgCh:
@@ -436,7 +678,6 @@ func (s *Server) Get(req *spb.GetRequest, stream spb.GRIBI_GetServer) error {
 			}
 		}
 	}
-	return nil
 }
 
 // Flush implements the gRIBI Flush RPC - used for removing entries from the server.
@@ -459,10 +700,13 @@ func (s *Server) Flush(ctx context.Context, req *spb.FlushRequest) (*spb.FlushRe
 	}
 
 	if err := s.masterRIB.Flush(nis); err != nil {
-		fErr, ok := err.(*rib.FlushErr)
 		det := &bytes.Buffer{}
-		switch ok {
-		case true:
+		switch fErr := err.(type) {
+		case *protorib.FlushErr:
+			for _, msg := range fErr.Errs {
+				det.WriteString(fmt.Sprintf("%s\n", msg))
+			}
+		case *rib.FlushErr:
 			for _, msg := range fErr.Errs {
 				det.WriteString(fmt.Sprintf("%s\n", msg))
 			}
@@ -684,15 +928,6 @@ func isNewMaster(cand, exist *spb.Uint128) (bool, bool, error) {
 	return false, false, nil
 }
 
-// getClientState returns the client state for the client with the specified id, along with
-// whether the client was found.
-func (s *Server) getClientState(id string) (*clientState, bool) {
-	s.csMu.RLock()
-	defer s.csMu.RUnlock()
-	cs, ok := s.cs[id]
-	return cs, ok
-}
-
 // storeClientElectionID stores the latest election ID for a client into the
 // server specified. It returns true if the election ID was stored.
 func (s *Server) storeClientElectionID(id string, elecID *spb.Uint128) bool {
@@ -706,27 +941,18 @@ func (s *Server) storeClientElectionID(id string, elecID *spb.Uint128) bool {
 	return true
 }
 
-// getClientStateCopy returns a copy of the state for the client with the specified ID, since
-// the state of a client is immutable after the initial creation, we never allow a client to
-// get a copy of the pointer so that they could change this. It returns a copy of the clientState
-// an error.
-func (s *Server) getClientStateCopy(id string) (*clientState, error) {
-	s.csMu.RLock()
-	defer s.csMu.RUnlock()
-	if s.cs[id] == nil {
-		return nil, fmt.Errorf("unknown client %s", id)
-	}
-	return s.cs[id].DeepCopy(), nil
-}
-
 // runElection runs an election on the server and checks whether the client with the specified id is
 // the new master.
 func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyResponse, error) {
-	cs, err := s.getClientStateCopy(id)
-	if err != nil {
-		return nil, err
+	s.csMu.RLock()
+	cs := s.cs[id]
+	if cs == nil {
+		s.csMu.RUnlock()
+		return nil, fmt.Errorf("unknown client %s", id)
 	}
-	if !cs.params.ExpectElecID {
+	expectElecID := cs.params != nil && cs.params.ExpectElecID
+	s.csMu.RUnlock()
+	if !expectElecID {
 		return nil, addModifyErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "client ID %s does not expect elections", id), &spb.ModifyRPCErrorDetails{
 			Reason: spb.ModifyRPCErrorDetails_ELECTION_ID_IN_ALL_PRIMARY,
 		})
@@ -734,7 +960,7 @@ func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyRespons
 
 	// If the election ID that we received is 0, then this is an invalid value
 	// in the input message, return an error to the client.
-	if inputID, zero := uint128.New(elecID.Low, elecID.High), uint128.New(0, 0); zero.Cmp(inputID) == 0 {
+	if elecID.High == 0 && elecID.Low == 0 {
 		return nil, status.Newf(codes.InvalidArgument, "client ID %s, zero is an invalid election ID", id).Err()
 	}
 
@@ -746,8 +972,8 @@ func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyRespons
 		return nil, status.Newf(codes.Internal, "cannot store election ID %s for client %s", elecID, id).Err()
 	}
 
-	s.elecMu.RLock()
-	defer s.elecMu.RUnlock()
+	s.elecMu.Lock()
+	defer s.elecMu.Unlock()
 	nm, _, err := isNewMaster(elecID, s.curElecID)
 	if err != nil {
 		return nil, err
@@ -764,10 +990,10 @@ func (s *Server) runElection(id string, elecID *spb.Uint128) (*spb.ModifyRespons
 }
 
 // getElection returns the details of the current election on the server.
-func (s *Server) getElection() *electionDetails {
+func (s *Server) getElection() electionDetails {
 	s.elecMu.RLock()
 	defer s.elecMu.RUnlock()
-	return &electionDetails{
+	return electionDetails{
 		master: s.curMaster,
 		ID:     s.curElecID,
 	}
@@ -777,12 +1003,31 @@ func (s *Server) getElection() *electionDetails {
 // messages for the client with the specified cid. It writes the result to the supplied
 // ModifyResponse channel when successful, or writes the error to the supplied errCh.
 func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.ModifyResponse, errCh chan error) {
-	cs, ok := s.getClientState(cid)
+	s.csMu.RLock()
+	cs, ok := s.cs[cid]
+	var (
+		hasParams    bool
+		expectElecID bool
+		persist      bool
+		fibAck       bool
+		lastElecID   *spb.Uint128
+	)
+	if ok && cs != nil {
+		lastElecID = cs.lastElecID
+		if cs.params != nil {
+			hasParams = true
+			expectElecID = cs.params.ExpectElecID
+			persist = cs.params.Persist
+			fibAck = cs.params.FIBAck
+		}
+	}
+	s.csMu.RUnlock()
+
 	switch {
-	case !ok:
+	case !ok || cs == nil:
 		errCh <- status.Newf(codes.Internal, "operation received for unknown client, %s", cid).Err()
 		return
-	case cs.params == nil || !cs.params.ExpectElecID || !cs.params.Persist:
+	case !hasParams || !expectElecID || !persist:
 		// these are parameters that we do not support.
 		errCh <- addModifyErrDetailsOrReturn(
 			status.New(codes.Unimplemented, "unsupported parameters for client"),
@@ -793,7 +1038,7 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 	}
 
 	elec := s.getElection()
-	elec.clientLatest = cs.lastElecID
+	elec.clientLatest = lastElecID
 	elec.client = cid
 
 	for _, o := range ops {
@@ -837,7 +1082,7 @@ func (s *Server) doModify(cid string, ops []*spb.AFTOperation, resCh chan *spb.M
 		// for ALL_PRIMARY this situation will need to handled likely by creating
 		// some form of lock on each transaction as it is attempted, or building
 		// a more intelligent RIB structure to track missing dependencies.
-		res, err := modifyEntry(s.masterRIB, ni, o, cs.params.FIBAck, elec)
+		res, err := modifyEntry(s.masterRIB, ni, o, fibAck, &elec)
 		switch {
 		case err != nil:
 			errCh <- err
@@ -863,7 +1108,7 @@ type electionDetails struct {
 // instance ni. The client's request ACK mode is specified by fibACK. The details of the
 // current election on the server is described in election.
 // The results are returned as a ModifyResponse and an error which must be a status.Status.
-func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, election *electionDetails) (*spb.ModifyResponse, error) {
+func modifyEntry(r serverRIB, ni string, op *spb.AFTOperation, fibACK bool, election *electionDetails) (*spb.ModifyResponse, error) {
 	if op == nil {
 		return nil, status.Newf(codes.Internal, "invalid nil operation received").Err()
 	}
@@ -885,10 +1130,8 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 		return nil, status.Newf(codes.Internal, "invalid RIB state for network instance name: '%s'", ni).Err()
 	}
 
-	results := []*spb.AFTResult{}
-
 	var (
-		oks, faileds []*rib.OpResult
+		oks, faileds []*protorib.OpResult
 		ribFatalErr  error
 	)
 
@@ -897,7 +1140,9 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 		// AddEntry handles replaces, since an ADD can be an explicit replace. It checks
 		// whether the entry was an explicit replace from the op, and if so errors if the
 		// entry does not already exist.
-		log.V(2).Infof("calling AddEntry for operation ID %d", op.GetId())
+		if log.V(2) {
+			log.Infof("calling AddEntry for operation ID %d", op.GetId())
+		}
 		oks, faileds, ribFatalErr = r.AddEntry(ni, op)
 	case spb.AFTOperation_DELETE:
 		oks, faileds, ribFatalErr = r.DeleteEntry(ni, op)
@@ -925,34 +1170,50 @@ func modifyEntry(r *rib.RIB, ni string, op *spb.AFTOperation, fibACK bool, elect
 		)
 	}
 
-	for _, ok := range oks {
-		log.V(2).Infof("received OK for %d in operation %s", ok.ID, prototext.Format(op))
-		results = append(results, &spb.AFTResult{
-			Id:     ok.ID,
-			Status: spb.AFTResult_RIB_PROGRAMMED,
-		})
-		// For RIB_AND_FIB_ACK we sent both the RIB programmed and FIB programmed
-		// signals back.
-		//
-		// TODO(robjs): Currently, we just say everything that was RIB programmed was
-		// FIB programmed. Add a feedback loop for this.
-		if fibACK {
-			results = append(results, &spb.AFTResult{
-				Id:     ok.ID,
-				Status: spb.AFTResult_FIB_PROGRAMMED,
-			})
-		}
+	totalResults := len(oks) + len(faileds)
+	if fibACK {
+		totalResults += len(oks)
 	}
+	var results []*spb.AFTResult
+	if totalResults > 0 {
+		results = make([]*spb.AFTResult, 0, totalResults)
+		resultBatch := make([]spb.AFTResult, totalResults)
+		batchIdx := 0
 
-	for _, fail := range faileds {
-		log.Errorf("returning failed to client because the RIB declared it failed, %v", fail)
-		results = append(results, &spb.AFTResult{
-			Id:     fail.ID,
-			Status: spb.AFTResult_FAILED,
-			ErrorDetails: &spb.AFTErrorDetails{
+		for _, ok := range oks {
+			if log.V(2) {
+				log.Infof("received OK for %d in operation %s", ok.ID, prototext.Format(op))
+			}
+			r := &resultBatch[batchIdx]
+			batchIdx++
+			r.Id = ok.ID
+			r.Status = spb.AFTResult_RIB_PROGRAMMED
+			results = append(results, r)
+			// For RIB_AND_FIB_ACK we sent both the RIB programmed and FIB programmed
+			// signals back.
+			//
+			// TODO(robjs): Currently, we just say everything that was RIB programmed was
+			// FIB programmed. Add a feedback loop for this.
+			if fibACK {
+				fr := &resultBatch[batchIdx]
+				batchIdx++
+				fr.Id = ok.ID
+				fr.Status = spb.AFTResult_FIB_PROGRAMMED
+				results = append(results, fr)
+			}
+		}
+
+		for _, fail := range faileds {
+			log.Errorf("returning failed to client because the RIB declared it failed, %v", fail)
+			r := &resultBatch[batchIdx]
+			batchIdx++
+			r.Id = fail.ID
+			r.Status = spb.AFTResult_FAILED
+			r.ErrorDetails = &spb.AFTErrorDetails{
 				ErrorMessage: fail.Error,
-			},
-		})
+			}
+			results = append(results, r)
+		}
 	}
 
 	return &spb.ModifyResponse{
@@ -1002,10 +1263,8 @@ func checkElectionForModify(opID uint64, opElecID *spb.Uint128, election *electi
 		}, false, nil
 	}
 
-	thisID := uint128.New(opElecID.Low, opElecID.High)
 	// check that this client sent us the same ID as we had before.
-	currentClientID := uint128.New(election.clientLatest.Low, election.clientLatest.High)
-	if thisID.Cmp(currentClientID) != 0 {
+	if opElecID.High != election.clientLatest.High || opElecID.Low != election.clientLatest.Low {
 		log.Errorf("returning failed to client because operation election ID %s != their latest election ID %s (master is: %s with ID %s)", opElecID, election.clientLatest, election.master, election.ID)
 		return &spb.ModifyResponse{
 			Result: []*spb.AFTResult{{
@@ -1019,12 +1278,13 @@ func checkElectionForModify(opID uint64, opElecID *spb.Uint128, election *electi
 	// checked that the master that is stored in the server is this client. However, we do
 	// an additional check to ensure that the current ID that we are storing is definitely
 	// the same as the one that we just received.
-	currentID := uint128.New(election.ID.Low, election.ID.High)
 	switch {
-	case thisID.Cmp(currentID) > 0:
+	case opElecID.High > election.ID.High || (opElecID.High == election.ID.High && opElecID.Low > election.ID.Low):
 		// this value is greater than the known master ID. Return an error
+		thisID := uint128.New(opElecID.Low, opElecID.High)
+		currentID := uint128.New(election.ID.Low, election.ID.High)
 		return nil, false, status.Newf(codes.FailedPrecondition, "specified election ID was greater than existing election, %s > %s", thisID, currentID).Err()
-	case thisID.Cmp(currentID) < 0:
+	case opElecID.High < election.ID.High || (opElecID.High == election.ID.High && opElecID.Low < election.ID.Low):
 		// this value is less as the current master ID, ignore this transaction.
 		// note that since we don't respond here, the client at the other side
 		// is just going to have a pending transaction forever.
@@ -1047,44 +1307,55 @@ func checkElectionForModify(opID uint64, opElecID *spb.Uint128, election *electi
 // is received on stopCh the function returns. Any errors that are experienced are written to
 // errCh.
 func (s *Server) doGet(req *spb.GetRequest, msgCh chan *spb.GetResponse, doneCh, stopCh chan struct{}, errCh chan error) {
-	// Any time we return we return we tell the done channel that we're complete.
+	var sentErr bool
 	defer func() {
-		doneCh <- struct{}{}
+		if !sentErr {
+			select {
+			case doneCh <- struct{}{}:
+			case <-stopCh:
+			}
+		}
 	}()
 
 	if req == nil {
+		sentErr = true
 		errCh <- status.Errorf(codes.InvalidArgument, "invalid nil GetRequest received")
 		return
 	}
 
-	netInstances := []string{}
+	var netInstances []string
 	switch nireq := req.NetworkInstance.(type) {
 	case *spb.GetRequest_Name:
 		if nireq.Name == "" {
+			sentErr = true
 			errCh <- status.Errorf(codes.InvalidArgument, `invalid string "" returned for NetworkInstance name in GetRequest`)
 			return
 		}
-		netInstances = append(netInstances, nireq.Name)
+		netInstances = []string{nireq.Name}
 	case *spb.GetRequest_All:
 		netInstances = s.masterRIB.KnownNetworkInstances()
 	}
 
-	filter := map[spb.AFTType]bool{}
+	filter := make(map[spb.AFTType]bool, 1)
 	switch v := req.Aft; v {
 	case spb.AFTType_ALL, spb.AFTType_IPV4, spb.AFTType_NEXTHOP, spb.AFTType_NEXTHOP_GROUP, spb.AFTType_MPLS, spb.AFTType_IPV6:
 		filter[v] = true
 	default:
+		sentErr = true
 		errCh <- status.Errorf(codes.Unimplemented, "AFTs other than IPv4, MPLS, IPv6, NHG and NH are unimplemented, requested: %s", v)
+		return
 	}
 
 	for _, ni := range netInstances {
 		netInst, ok := s.masterRIB.NetworkInstanceRIB(ni)
 		if !ok {
+			sentErr = true
 			errCh <- status.Errorf(codes.InvalidArgument, "invalid network instance %s specified", ni)
 			return
 		}
 
 		if err := netInst.GetRIB(filter, msgCh, stopCh); err != nil {
+			sentErr = true
 			errCh <- err
 			return
 		}
@@ -1118,16 +1389,19 @@ func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
 	}
 
 	id := req.GetId()
+	s.elecMu.RLock()
+	curElecID := s.curElecID
+	s.elecMu.RUnlock()
 	switch {
-	case id == nil && s.curElecID == nil:
+	case id == nil && curElecID == nil:
 		// We are in ALL_PRIMARY mode and not given an election ID, which is fine.
 		return nil
-	case id == nil && s.curElecID != nil:
+	case id == nil && curElecID != nil:
 		// We are in SINGLE_PRIMARY mode but we were not given an election behaviour.
 		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "unsupported election behaviour, client in SINGLE_PRIMARY mode"), &spb.FlushResponseError{
 			Status: spb.FlushResponseError_UNSPECIFIED_ELECTION_BEHAVIOR,
 		})
-	case id != nil && s.curElecID == nil:
+	case id != nil && curElecID == nil:
 		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "received election ID in ALL_PRIMARY mode"), &spb.FlushResponseError{
 			Status: spb.FlushResponseError_ELECTION_ID_IN_ALL_PRIMARY,
 		})
@@ -1136,16 +1410,14 @@ func (s *Server) checkFlushRequest(req *spb.FlushRequest) error {
 	// If the Flush specified an ID, then we need to check that it is valid according
 	// to the logic that is defined in the specification - it must be either equal to
 	// or higher than the value that is the current master,
-	candidate := uint128.New(id.Low, id.High)
-
-	if uint128.New(0, 0).Equals(candidate) {
+	if id.High == 0 && id.Low == 0 {
 		return addFlushErrDetailsOrReturn(status.Newf(codes.InvalidArgument, "zero is an invalid election ID"), &spb.FlushResponseError{
 			Status: spb.FlushResponseError_INVALID_ELECTION_ID,
 		})
 	}
 
-	existing := uint128.New(s.curElecID.Low, s.curElecID.High)
-	if candidate.Cmp(existing) < 0 {
+	if id.High < curElecID.High || (id.High == curElecID.High && id.Low < curElecID.Low) {
+		candidate := uint128.New(id.Low, id.High)
 		return addFlushErrDetailsOrReturn(status.Newf(codes.FailedPrecondition, "election ID specified (%v) is not primary", candidate), &spb.FlushResponseError{
 			Status: spb.FlushResponseError_NOT_PRIMARY,
 		})
@@ -1176,10 +1448,16 @@ func NewFake(opt ...ServerOpt) (*FakeServer, error) {
 	return &FakeServer{Server: s}, nil
 }
 
-// InjectRIB allows a client to inject a RIB into the server as though it was
-// received from the master client.
+// InjectRIB allows a client to inject a legacy *rib.RIB into the server as
+// though it was received from the master client.
 func (f *FakeServer) InjectRIB(r *rib.RIB) {
-	f.Server.masterRIB = r
+	f.Server.masterRIB = newLegacyServerRIB(r)
+}
+
+// InjectProtoRIB allows a client to inject a protobuf-native *protorib.RIB into
+// the server as though it was received from the master client.
+func (f *FakeServer) InjectProtoRIB(r *protorib.RIB) {
+	f.Server.masterRIB = newProtoServerRIB(r)
 }
 
 // InjectElectionID allows a client to set an initial election ID on the server as

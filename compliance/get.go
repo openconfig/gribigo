@@ -69,7 +69,8 @@ func GetNH(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.TB
 		fluent.NextHopEntry().
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithIndex(1).
-			WithIPAddress("192.0.2.3"))
+			WithIPAddress("192.0.2.3").
+			WithFIBProgrammed(wantACK))
 
 }
 
@@ -129,7 +130,8 @@ func GetNHG(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.T
 		fluent.NextHopGroupEntry().
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithID(1).
-			AddNextHop(1, 1),
+			AddNextHop(1, 1).
+			WithFIBProgrammed(wantACK),
 	)
 }
 
@@ -208,7 +210,8 @@ func GetIPv4(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithNextHopGroup(1).
 			WithPrefix("42.42.42.42/32").
-			WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
+			WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}).
+			WithFIBProgrammed(wantACK),
 	)
 }
 
@@ -287,7 +290,8 @@ func GetIPv6(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t testing.
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithNextHopGroup(1).
 			WithPrefix("2001:db8::/32").
-			WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
+			WithMetadata([]byte{1, 2, 3, 4, 5, 6, 7, 8}).
+			WithFIBProgrammed(wantACK),
 	)
 }
 
@@ -365,15 +369,18 @@ func GetIPv4Chain(c *fluent.GRIBIClient, wantACK fluent.ProgrammingResult, t tes
 		fluent.IPv4Entry().
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithNextHopGroup(1).
-			WithPrefix("42.42.42.42/32"),
+			WithPrefix("42.42.42.42/32").
+			WithFIBProgrammed(wantACK),
 		fluent.NextHopGroupEntry().
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithID(1).
-			AddNextHop(1, 1),
+			AddNextHop(1, 1).
+			WithFIBProgrammed(wantACK),
 		fluent.NextHopEntry().
 			WithNetworkInstance(defaultNetworkInstanceName).
 			WithIndex(1).
-			WithIPAddress("192.0.2.3"),
+			WithIPAddress("192.0.2.3").
+			WithFIBProgrammed(wantACK),
 	)
 }
 
